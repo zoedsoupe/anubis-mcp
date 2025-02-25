@@ -47,7 +47,7 @@ defmodule Hermes.Client do
 
   defschema :parse_options, [
     {:name, {:atom, {:default, __MODULE__}}},
-    {:transport, {:required, :atom}},
+    {:transport, {:required, {:either, {:pid, :atom}}}},
     {:client_info, {:required, :map}},
     {:capabilities, {:map, {:default, %{"resources" => %{}, "tools" => %{}}}}},
     {:protocol_version, {:string, {:default, @default_protocol_version}}},
@@ -283,14 +283,14 @@ defmodule Hermes.Client do
   end
 
   @impl true
-  def handle_info({:response, response_data}, %{pending_requests: pending_requests} = state) do
+  def handle_info({:response, response_data}, state) do
     case Message.decode(response_data) do
       {:ok, [error]} when Message.is_error(error) ->
         Logger.error("Received error response: #{inspect(error)}")
-        pending = Map.get(pending_requests, error["id"])
-        {:noreply, handle_error(error, pending, state)}
+        {:noreply, handle_error(error, error["id"], state)}
 
       {:ok, [response]} when Message.is_response(response) ->
+        Logger.info("Received response: #{response["id"]}")
         {:noreply, handle_response(response, response["id"], state)}
 
       {:ok, [notification]} when Message.is_notification(notification) ->
@@ -301,22 +301,27 @@ defmodule Hermes.Client do
         Logger.error("Failed to decode response: #{inspect(reason)}")
         {:noreply, state}
     end
+  rescue
+    e ->
+      err = Exception.format(:error, e, __STACKTRACE__)
+      Logger.error("Failed to handle response: #{err}")
+      {:noreply, state}
   end
 
   # Response handling
 
-  defp handle_error(response, nil, state) do
-    Logger.warning("Received error response for unknown request ID: #{response["id"]}")
-    state
-  end
-
-  defp handle_error(%{"error" => error} = response, {from, _}, state) do
-    %{pending_requests: pending} = state
+  defp handle_error(%{"error" => error, "id" => id}, id, state) do
+    {{from, _method}, pending} = Map.pop(state.pending_requests, id)
 
     # unblocks original caller
     GenServer.reply(from, {:error, error})
 
-    %{state | pending_requests: Map.delete(pending, response["id"])}
+    %{state | pending_requests: pending}
+  end
+
+  defp handle_error(response, _, state) do
+    Logger.warning("Received error response for unknown request ID: #{response["id"]}")
+    state
   end
 
   defp handle_response(%{"id" => id, "result" => %{"serverInfo" => _} = result}, id, state) do
@@ -339,7 +344,11 @@ defmodule Hermes.Client do
     {{from, method}, pending} = Map.pop(state.pending_requests, id)
 
     # unblocks original caller
-    GenServer.reply(from, if(method == "ping", do: :pong, else: {:ok, result}))
+    cond do
+      method == "ping" -> GenServer.reply(from, :pong)
+      result["isError"] -> GenServer.reply(from, {:error, result})
+      true -> GenServer.reply(from, {:ok, result})
+    end
 
     %{state | pending_requests: pending}
   end
