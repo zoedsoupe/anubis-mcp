@@ -14,7 +14,8 @@ defmodule Hermes.MixProject do
       docs: docs(),
       package: package(),
       description: description(),
-      dialyzer: [plt_local_path: "priv/plts", ignore_warnings: ".dialyzerignore"]
+      dialyzer: [plt_local_path: "priv/plts", ignore_warnings: ".dialyzerignore.exs"],
+      extra_applications: [:observer, :wx]
     ]
   end
 
