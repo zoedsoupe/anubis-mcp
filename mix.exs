@@ -52,8 +52,39 @@ defmodule Hermes.MixProject do
 
   defp docs do
     [
-      main: "readme",
-      extras: ["README.md", "CHANGELOG.md"]
+      main: "home",
+      extras: [
+        "pages/home.md",
+        "pages/installation.md",
+        "pages/client_usage.md",
+        "pages/transport_options.md",
+        "pages/message_handling.md",
+        "pages/security.md",
+        "pages/troubleshooting.md",
+        "pages/examples.md",
+        "pages/rfc.md",
+        "README.md",
+        "CHANGELOG.md",
+        "pages/interactive_demo.livemd"
+      ],
+      groups_for_extras: [
+        Guides: [
+          "pages/home.md",
+          "pages/installation.md",
+          "pages/client_usage.md",
+          "pages/transport_options.md",
+          "pages/message_handling.md",
+          "pages/interactive_demo.livemd"
+        ],
+        Integration: [
+          "pages/security.md"
+        ],
+        References: [
+          "pages/troubleshooting.md",
+          "pages/examples.md",
+          "pages/rfc.md"
+        ]
+      ]
     ]
   end
 

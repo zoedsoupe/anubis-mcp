@@ -28,6 +28,95 @@ def deps do
 end
 ```
 
+Based on the provided documents, I'll create a section for the README that demonstrates a minimal usage example of the Hermes client interface and transport with supervision tree integration.
+
+## Usage Example
+
+### Creating a Supervised Client
+
+The following example shows how to integrate Hermes MCP into your application's supervision tree for robust client management:
+
+```elixir
+defmodule MyApp.Application do
+  use Application
+
+  def start(_type, _args) do
+    children = [
+      # Start the MCP transport
+      {Hermes.Transport.STDIO, [
+        name: MyApp.MCPTransport,
+        client: MyApp.MCPClient, 
+        command: "mcp",
+        args: ["run", "path/to/server.py"]
+      ]},
+      
+      # Start the MCP client using the transport
+      {Hermes.Client, [
+        name: MyApp.MCPClient,
+        transport: MyApp.MCPTransport,
+        client_info: %{
+          "name" => "MyApp",
+          "version" => "1.0.0"
+        },
+        capabilities: %{
+          "resources" => %{},
+          "tools" => %{},
+          "prompts" => %{}
+        }
+      ]}
+      
+      # Your other application services
+      # ...
+    ]
+    
+    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+end
+```
+
+### Making Client Requests
+
+Once your client is running, you can interact with the MCP server:
+
+```elixir
+# List available resources
+{:ok, %{"resources" => resources}} = Hermes.Client.list_resources(MyApp.MCPClient)
+
+# Read a specific resource
+{:ok, resource} = Hermes.Client.read_resource(MyApp.MCPClient, "file:///example.txt")
+
+# List available tools
+{:ok, %{"tools" => tools}} = Hermes.Client.list_tools(MyApp.MCPClient)
+
+# Call a tool
+{:ok, result} = Hermes.Client.call_tool(MyApp.MCPClient, "example_tool", %{"param" => "value"})
+  
+# List available prompts
+{:ok, %{"prompts" => prompts}} = Hermes.Client.list_prompts(MyApp.MCPClient)
+
+# Get a prompt with arguments
+{:ok, prompt} = Hermes.Client.get_prompt(MyApp.MCPClient, "example_prompt", %{"arg" => "value"})
+```
+
+### Error Handling
+
+Hermes provides standardized error handling:
+
+```elixir
+case Hermes.Client.call_tool(MyApp.MCPClient, "unavailable_tool", %{}) do
+  {:ok, result} ->
+    # Handle successful result
+    IO.inspect(result)
+    
+  {:error, error} ->
+    # Handle error response
+    IO.puts("Error: #{error["message"]} (Code: #{error["code"]})")
+end
+```
+
+The client automatically manages the connection lifecycle, including initial handshake, capability negotiation, and message correlation.
+
 ## Architecture
 
 The library is structured around several core components:
@@ -38,7 +127,7 @@ The library is structured around several core components:
 - Client Components: Manages client-side operations and capability negotiation
 - Supervision Trees: Ensures fault tolerance and automatic recovery
 
-Check out our technical [RFC](rfc.md) that describe each component more in deep.
+Check out our technical [RFC](./rfc.md) that describe each component more in deep.
 
 ## Development Status
 
