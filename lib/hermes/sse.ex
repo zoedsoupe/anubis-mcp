@@ -37,19 +37,12 @@ defmodule Hermes.SSE do
       ref = make_ref()
       task = spawn_stream_task(req, ref, opts)
 
-      Stream.resource(
-        fn -> {ref, task} end,
-        &process_stream/1,
-        fn {_ref, task} -> Task.shutdown(task) end
-      )
+      Stream.resource(fn -> {ref, task} end, &process_stream/1, &shutdown_task/1)
     end
   end
 
-  defp parse_uri(url) when is_binary(url) do
-    case URI.new(url) do
-      {:ok, uri} -> {:ok, URI.append_path(uri, "/sse")}
-      {:error, _} -> {:error, :invalid_url}
-    end
+  defp parse_uri(url) do
+    with {:error, _} <- URI.new(url), do: {:error, :invalid_url}
   end
 
   defp spawn_stream_task(%Finch.Request{} = req, ref, opts) do
@@ -67,15 +60,11 @@ defmodule Hermes.SSE do
 
   defp process_stream({ref, _task} = state) do
     receive do
-      {:chunk, {:data, data}, ^ref} ->
-        {Parser.run(data), state}
-
-      {:chunk, {:status, status}, ^ref} ->
-        Logger.info("SSE stream session status: #{status}")
-        {[], state}
-
-      {:chunk, {:headers, _headers}, ^ref} ->
-        {[], state}
+      {:chunk, {:data, data}, ^ref} -> {Parser.run(data), state}
+      {:chunk, {:status, _status}, ^ref} -> {[], state}
+      {:chunk, {:headers, _headers}, ^ref} -> {[], state}
     end
   end
+
+  defp shutdown_task({_ref, task}), do: Task.shutdown(task)
 end
