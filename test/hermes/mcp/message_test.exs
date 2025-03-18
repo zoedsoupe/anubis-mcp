@@ -5,6 +5,8 @@ defmodule Hermes.MCP.MessageTest do
   alias Hermes.MCP.Message
   alias Hermes.MCP.Response
 
+  @moduletag capture_log: true
+
   doctest Hermes.MCP.Message
 
   describe "decode/1" do

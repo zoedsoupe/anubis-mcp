@@ -3,6 +3,8 @@ defmodule Hermes.MCP.ResponseTest do
 
   alias Hermes.MCP.Response
 
+  @moduletag capture_log: true
+
   doctest Hermes.MCP.Response
 
   describe "from_json_rpc/1" do

@@ -3,6 +3,8 @@ defmodule Hermes.MCP.ErrorTest do
 
   alias Hermes.MCP.Error
 
+  @moduletag capture_log: true
+
   doctest Hermes.MCP.Error
 
   describe "standard JSON-RPC errors" do

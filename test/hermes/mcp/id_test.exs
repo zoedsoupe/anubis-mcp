@@ -3,6 +3,8 @@ defmodule Hermes.MCP.IDTest do
 
   alias Hermes.MCP.ID
 
+  @moduletag capture_log: true
+
   doctest Hermes.MCP.ID
 
   describe "generate/0" do

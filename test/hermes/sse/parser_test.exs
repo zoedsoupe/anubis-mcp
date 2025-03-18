@@ -4,6 +4,8 @@ defmodule Hermes.SSE.ParserTest do
   alias Hermes.Message
   alias Hermes.SSE.Parser
 
+  @moduletag capture_log: true
+
   test "parses a simple event with only data" do
     sse = "data: hello world\n\n"
     assert [event] = Parser.run(sse)

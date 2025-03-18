@@ -5,6 +5,8 @@ defmodule Hermes.MessageTest do
 
   require Hermes.Message
 
+  @moduletag capture_log: true
+
   describe "decode/1" do
     test "decodes a single valid message" do
       json = ~s({"jsonrpc":"2.0","method":"ping","id":1}\n)
