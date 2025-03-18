@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0](https://github.com/cloudwalk/hermes-mcp) - 2025-03-18
+
+### Added
+- Structured server-client logging support (#27)
+- Progress notification tracking (#26)
+- MCP domain model implementation (#28)
+- Comprehensive SSE unit tests (#20)
+- Centralized state management (#31)
+- Standardized error response handling (#32)
+
+### Fixed
+- Improved domain error handling (#33)
+
 ## [0.2.3](https://github.com/cloudwalk/hermes-mcp) - 2025-03-12
 
 ### Added
