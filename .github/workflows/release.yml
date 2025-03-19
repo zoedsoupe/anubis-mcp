@@ -1,0 +1,53 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: prod
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18.3'
+          otp-version: '27.3'
+      
+      - name: Install dependencies
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+      
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.14.0
+      
+      - name: Install XZ
+        run: sudo apt-get update && sudo apt-get install -y xz-utils
+      
+      - name: Install 7z
+        run: sudo apt-get install -y p7zip-full
+            
+      - name: Build release
+        run: |
+          MIX_ENV=prod mix release
+      
+      - name: Create new GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          make_latest: true
+          generate_release_notes: true
+          files: ./burrito_out/*
+          token: ${{ secrets.RELEASE_TOKEN }}
