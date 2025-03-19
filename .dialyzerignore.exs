@@ -6,5 +6,9 @@
   {"lib/mix/tasks/sse.interactive.ex", :callback_info_missing},
   {"lib/mix/tasks/sse.interactive.ex", :unknown_function},
   {"lib/mix/tasks/sse.interactive.ex", :no_return},
-  {"lib/hermes/http.ex", :call}
+  {"lib/mix/tasks/stdio.interactive.ex", :no_return},
+  {"lib/mix/tasks/stdio.interactive.ex", :unknown_function},
+  {"lib/hermes/http.ex", :call},
+  {"lib/hermes/cli.ex", :no_return},
+  {"lib/mix/interactive/cli.ex", :no_return}
 ]

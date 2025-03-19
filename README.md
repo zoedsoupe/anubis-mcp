@@ -25,6 +25,8 @@ Hermes MCP provides a robust client implementation for the [Model Context Protoc
 
 ## Installation
 
+### Library Usage
+
 Add Hermes MCP to your dependencies in `mix.exs`:
 
 ```elixir
@@ -35,7 +37,58 @@ def deps do
 end
 ```
 
+### Standalone CLI Installation
+
+You can use Hermes MCP CLI in one of the following ways:
+
+#### Option 1: Using Pre-built Binaries
+
+Download the appropriate binary for your platform from the [GitHub releases page](https://github.com/cloudwalk/hermes-mcp/releases).
+
+```bash
+# Make it executable (Linux/macOS)
+# or hermes_cli-macos-intel, hermes_cli-macos-arm
+mv hermes_mcp_linux hermes-mcp && chmod +x hermes-mcp
+
+# Run it
+./hermes-mcp --transport sse --base-url="http://localhost:8000"
+```
+
+#### Option 2: Mix Archive (For Elixir Developers)
+
+```bash
+mix archive.install hex hermes_mcp
+```
+
+This makes the mix tasks available globally.
+
 ## Quick Start
+
+### Interactive Testing
+
+Hermes MCP provides interactive tools for testing MCP servers with a user-friendly CLI.
+
+#### Using the CLI Binary:
+
+```bash
+# Test an SSE server
+hermes_cli --transport sse --base-url="http://localhost:8000" --base-path="/mcp"
+
+# Test a local process via STDIO
+hermes_cli --transport stdio --command="mcp" --args="run,path/to/server.py"
+```
+
+#### Using Mix Tasks (For Elixir Developers):
+
+```bash
+# Test an SSE server
+mix hermes.sse.interactive --base-url="http://localhost:8000" --base-path="/mcp"
+
+# Test a local process via STDIO
+mix hermes.stdio.interactive --command="mcp" --args="run,path/to/server.py"
+```
+
+These interactive shells provide commands for listing and calling tools, exploring prompts, and accessing resources.
 
 ### Setting up a Client
 
