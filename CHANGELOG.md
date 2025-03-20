@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.3](https://github.com/cloudwalk/hermes-mcp) - 2025-03-20
+
+### Added
+- Client request cancellation support (#35)
+- Improved URI path handling for SSE transport (#36)
+- Enhanced interactive mix tasks for testing MCP servers (#34)
+
 ## [0.3.2](https://github.com/cloudwalk/hermes-mcp) - 2025-03-19
 
 ### Added
