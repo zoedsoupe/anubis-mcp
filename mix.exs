@@ -33,7 +33,7 @@ defmodule Hermes.MixProject do
   defp deps do
     [
       {:finch, "~> 0.19"},
-      {:peri, "~> 0.4.0-rc2"},
+      {:peri, "~> 0.3.2"},
       {:burrito, "~> 1.0"},
       {:mox, "~> 1.2", only: :test},
       {:bypass, "~> 2.1", only: :test},
