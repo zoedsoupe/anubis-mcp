@@ -15,6 +15,12 @@ defmodule Hermes.CLI do
   """
   def main do
     args = Util.Args.argv()
+
+    if Enum.join(args) =~ "help" do
+      Interactive.CLI.show_help()
+      System.halt(0)
+    end
+
     Interactive.CLI.main(args)
   end
 end
