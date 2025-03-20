@@ -4,17 +4,28 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build release for (e.g. v0.3.3)'
+        required: true
+        type: string
 
 jobs:
   build:
     name: Build Binaries
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
     env:
       MIX_ENV: prod
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -45,9 +56,8 @@ jobs:
       
       - name: Create new GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
-          make_latest: true
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          make_latest: ${{ github.event.inputs.tag == '' || github.event.inputs.tag == github.ref_name }}
           generate_release_notes: true
           files: ./burrito_out/*
-          token: ${{ secrets.RELEASE_TOKEN }}
