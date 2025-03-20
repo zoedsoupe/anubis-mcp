@@ -10,7 +10,7 @@ jobs:
     name: Build Binaries
     runs-on: ubuntu-latest
     env:
-      MIX_ENV=prod
+      MIX_ENV: prod
     
     steps:
       - name: Checkout code
@@ -50,3 +50,4 @@ jobs:
           make_latest: true
           generate_release_notes: true
           files: ./burrito_out/*
+          token: ${{ secrets.RELEASE_TOKEN }}
