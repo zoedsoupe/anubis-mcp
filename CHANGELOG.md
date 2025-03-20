@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.4](https://github.com/cloudwalk/hermes-mcp) - 2025-03-20
+
+### Added
+- `help` command and flag on the interactive CLI (#37)
+- improve SSE connection status on interactive task/cli (#37)
+
 ## [0.3.3](https://github.com/cloudwalk/hermes-mcp) - 2025-03-20
 
 ### Added
