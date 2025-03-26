@@ -43,23 +43,25 @@ defmodule Hermes.Client do
   @type progress_callback :: (String.t() | integer(), number(), number() | nil -> any())
   @type log_callback :: (String.t(), term(), String.t() | nil -> any())
   @type option ::
-          {:name, atom | {:via, atom, any}}
-          | {:transport, module}
+          {:name, GenServer.name()}
+          | {:transport, GenServer.server()}
           | {:client_info, map}
           | {:capabilities, map}
           | {:protocol_version, String.t()}
           | {:request_timeout, integer}
           | Supervisor.init_option()
 
+  @default_client_capabilities %{"roots" => %{"listChanged" => true}, "sampling" => %{}}
+
   defschema(:parse_options, [
     {:name, {{:custom, &Hermes.genserver_name/1}, {:default, __MODULE__}}},
     {:transport,
      [
        layer: {:required, :atom},
-       name: {:custom, &Hermes.genserver_name/1}
+       name: {:oneof, [{:custom, &Hermes.genserver_name/1}, :pid, {:tuple, [:atom, :any]}]}
      ]},
     {:client_info, {:required, :map}},
-    {:capabilities, {:map, {:default, %{"resources" => %{}, "tools" => %{}, "logging" => %{}}}}},
+    {:capabilities, {:map, {:default, @default_client_capabilities}}},
     {:protocol_version, {:string, {:default, @default_protocol_version}}},
     {:request_timeout, {:integer, {:default, @default_timeout}}}
   ])
@@ -115,7 +117,11 @@ defmodule Hermes.Client do
     params = if cursor, do: %{"cursor" => cursor}, else: %{}
 
     if progress_opts do
-      GenServer.call(client, {:request, "resources/list", params, progress_opts}, timeout || @default_timeout)
+      GenServer.call(
+        client,
+        {:request, "resources/list", params, progress_opts},
+        timeout || @default_timeout
+      )
     else
       GenServer.call(client, {:request, "resources/list", params}, timeout || @default_timeout)
     end
@@ -138,7 +144,11 @@ defmodule Hermes.Client do
     params = %{"uri" => uri}
 
     if progress_opts do
-      GenServer.call(client, {:request, "resources/read", params, progress_opts}, timeout || @default_timeout)
+      GenServer.call(
+        client,
+        {:request, "resources/read", params, progress_opts},
+        timeout || @default_timeout
+      )
     else
       GenServer.call(client, {:request, "resources/read", params}, timeout || @default_timeout)
     end
@@ -163,7 +173,11 @@ defmodule Hermes.Client do
     params = if cursor, do: %{"cursor" => cursor}, else: %{}
 
     if progress_opts do
-      GenServer.call(client, {:request, "prompts/list", params, progress_opts}, timeout || @default_timeout)
+      GenServer.call(
+        client,
+        {:request, "prompts/list", params, progress_opts},
+        timeout || @default_timeout
+      )
     else
       GenServer.call(client, {:request, "prompts/list", params}, timeout || @default_timeout)
     end
@@ -187,7 +201,11 @@ defmodule Hermes.Client do
     params = if arguments, do: Map.put(params, "arguments", arguments), else: params
 
     if progress_opts do
-      GenServer.call(client, {:request, "prompts/get", params, progress_opts}, timeout || @default_timeout)
+      GenServer.call(
+        client,
+        {:request, "prompts/get", params, progress_opts},
+        timeout || @default_timeout
+      )
     else
       GenServer.call(client, {:request, "prompts/get", params}, timeout || @default_timeout)
     end
@@ -212,7 +230,11 @@ defmodule Hermes.Client do
     params = if cursor, do: %{"cursor" => cursor}, else: %{}
 
     if progress_opts do
-      GenServer.call(client, {:request, "tools/list", params, progress_opts}, timeout || @default_timeout)
+      GenServer.call(
+        client,
+        {:request, "tools/list", params, progress_opts},
+        timeout || @default_timeout
+      )
     else
       GenServer.call(client, {:request, "tools/list", params}, timeout || @default_timeout)
     end
@@ -236,7 +258,11 @@ defmodule Hermes.Client do
     params = if arguments, do: Map.put(params, "arguments", arguments), else: params
 
     if progress_opts do
-      GenServer.call(client, {:request, "tools/call", params, progress_opts}, timeout || @default_timeout)
+      GenServer.call(
+        client,
+        {:request, "tools/call", params, progress_opts},
+        timeout || @default_timeout
+      )
     else
       GenServer.call(client, {:request, "tools/call", params}, timeout || @default_timeout)
     end
@@ -323,7 +349,11 @@ defmodule Hermes.Client do
   The callback function will be called whenever a progress notification with the
   matching token is received.
   """
-  @spec register_progress_callback(GenServer.server(), String.t() | integer(), progress_callback()) ::
+  @spec register_progress_callback(
+          GenServer.server(),
+          String.t() | integer(),
+          progress_callback()
+        ) ::
           :ok
   def register_progress_callback(client, progress_token, callback)
       when is_function(callback, 3) and (is_binary(progress_token) or is_integer(progress_token)) do
@@ -493,7 +523,8 @@ defmodule Hermes.Client do
 
   def handle_call({:send_progress, progress_token, progress, total}, _from, state) do
     result =
-      with {:ok, notification} <- Message.encode_progress_notification(progress_token, progress, total) do
+      with {:ok, notification} <-
+             Message.encode_progress_notification(progress_token, progress, total) do
         send_to_transport(state.transport, notification)
       end
 
@@ -576,12 +607,7 @@ defmodule Hermes.Client do
     {:stop, :normal, state}
   end
 
-  def handle_cast(:initialize, state), do: handle_info(:initialize, state)
-
-  def handle_cast({:response, response_data}, state), do: handle_info({:response, response_data}, state)
-
-  @impl true
-  def handle_info(:initialize, state) do
+  def handle_cast(:initialize, state) do
     Logger.debug("Making initial client <> server handshake")
 
     params = %{
@@ -590,7 +616,8 @@ defmodule Hermes.Client do
       "clientInfo" => state.client_info
     }
 
-    {request_id, updated_state} = State.add_request(state, "initialize", params, {self(), make_ref()})
+    {request_id, updated_state} =
+      State.add_request(state, "initialize", params, {self(), make_ref()})
 
     with {:ok, request_data} <- encode_request("initialize", params, request_id),
          :ok <- send_to_transport(state.transport, request_data) do
@@ -605,24 +632,8 @@ defmodule Hermes.Client do
       {:stop, :unexpected, state}
   end
 
-  def handle_info({:request_timeout, request_id}, state) do
-    case State.handle_request_timeout(state, request_id) do
-      {nil, state} ->
-        {:noreply, state}
-
-      {request, updated_state} ->
-        elapsed_ms = Request.elapsed_time(request)
-        error = Error.client_error(:request_timeout, %{message: "Request timed out after #{elapsed_ms}ms"})
-        GenServer.reply(request.from, {:error, error})
-
-        # Send cancellation notification when a request times out
-        _ = send_cancellation(updated_state, request_id, "timeout")
-
-        {:noreply, updated_state}
-    end
-  end
-
-  def handle_info({:response, response_data}, state) do
+  @impl true
+  def handle_cast({:response, response_data}, state) do
     case Message.decode(response_data) do
       {:ok, [error]} when Message.is_error(error) ->
         Logger.debug("Received server error response: #{inspect(error)}")
@@ -646,6 +657,29 @@ defmodule Hermes.Client do
       err = Exception.format(:error, e, __STACKTRACE__)
       Logger.error("Failed to handle response: #{err}")
       {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:request_timeout, request_id}, state) do
+    case State.handle_request_timeout(state, request_id) do
+      {nil, state} ->
+        {:noreply, state}
+
+      {request, updated_state} ->
+        elapsed_ms = Request.elapsed_time(request)
+
+        error =
+          Error.client_error(:request_timeout, %{
+            message: "Request timed out after #{elapsed_ms}ms"
+          })
+
+        GenServer.reply(request.from, {:error, error})
+
+        # Send cancellation notification when a request times out
+        _ = send_cancellation(updated_state, request_id, "timeout")
+
+        {:noreply, updated_state}
+    end
   end
 
   # Response handling
