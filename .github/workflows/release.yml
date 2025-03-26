@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      token: read
     env:
       MIX_ENV: prod
+      HERMES_MCP_COMPILE_CLI: "true"
     
     steps:
       - name: Checkout code

@@ -1,7 +1,7 @@
 defmodule Hermes.MixProject do
   use Mix.Project
 
-  @version "0.3.3"
+  @version "0.3.5"
   @source_url "https://github.com/cloudwalk/hermes-mcp"
 
   def project do
@@ -81,7 +81,10 @@ defmodule Hermes.MixProject do
   end
 
   defp aliases do
-    [setup: ["deps.get", "compile --force"]]
+    [
+      setup: ["deps.get", "compile --force"],
+      lint: ["format --check-formatted", "credo --strict", "dialyzer"]
+    ]
   end
 
   defp docs do
