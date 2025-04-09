@@ -1,7 +1,7 @@
 defmodule Hermes.MixProject do
   use Mix.Project
 
-  @version "0.3.6"
+  @version "0.3.7"
   @source_url "https://github.com/cloudwalk/hermes-mcp"
 
   def project do
@@ -104,9 +104,11 @@ defmodule Hermes.MixProject do
         "pages/progress_tracking.md",
         "pages/logging.md",
         "pages/error_handling.md",
+        "pages/protocol_upgrade_2025_03_26.md",
         "README.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
+        "ROADMAP.md",
         "LICENSE"
       ],
       groups_for_extras: [
@@ -121,7 +123,9 @@ defmodule Hermes.MixProject do
           "pages/logging.md"
         ],
         References: [
-          "pages/rfc.md"
+          "pages/rfc.md",
+          "ROADMAP.md",
+          "pages/protocol_upgrade_2025_03_26.md"
         ]
       ]
     ]
