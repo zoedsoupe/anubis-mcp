@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.8](https://github.com/cloudwalk/hermes-mcp) - 2025-04-10
+
+### Added
+- Created `Operation` struct to standardize client API calls (#56)
+- Fixed ERTS version to avoid release errors
+
+### Fixed
+- Resolved client timeout confusion by standardizing timeout handling (#42)
+
+## [0.3.7](https://github.com/cloudwalk/hermes-mcp) - 2025-04-01
+
+### Fixed
+- Client reinitialization from interactive CLI (#55)
+
+## [0.3.6](https://github.com/cloudwalk/hermes-mcp) - 2025-03-28
+
+### Added
+- New roadmap and protocol update proposal (#53)
+- Added documentation for the 2025-03-26 protocol update
+
+## [0.3.5](https://github.com/cloudwalk/hermes-mcp) - 2025-03-25
+
+### Documentation
+- Added Roadmap to README (#47)
+
 ## [0.3.4](https://github.com/cloudwalk/hermes-mcp) - 2025-03-20
 
 ### Added
