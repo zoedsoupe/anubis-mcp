@@ -49,6 +49,7 @@ defmodule Hermes.MixProject do
   end
 
   # Define releases for standalone binaries
+  # Fixed ERTS version https://github.com/burrito-elixir/burrito/issues/178
   def releases do
     [
       hermes_mcp: [
@@ -59,10 +60,29 @@ defmodule Hermes.MixProject do
         include_executables_for: [:unix, :windows],
         burrito: [
           targets: [
-            macos_intel: [os: :darwin, cpu: :x86_64],
-            macos_arm: [os: :darwin, cpu: :aarch64],
-            linux: [os: :linux, cpu: :x86_64],
-            windows: [os: :windows, cpu: :x86_64]
+            macos_intel: [
+              os: :darwin,
+              cpu: :x86_64,
+              custom_erts:
+                "https://beam-machine-universal.b-cdn.net/OTP-27.3/macos/universal/otp_27.3_macos_universal_ssl_3.1.4.tar.gz?please-respect-my-bandwidth-costs=thank-you"
+            ],
+            macos_arm: [
+              os: :darwin,
+              cpu: :aarch64,
+              custom_erts:
+                "https://beam-machine-universal.b-cdn.net/OTP-27.3/macos/universal/otp_27.3_macos_universal_ssl_3.1.4.tar.gz?please-respect-my-bandwidth-costs=thank-you"
+            ],
+            linux: [
+              os: :linux,
+              cpu: :x86_64,
+              custom_erts:
+                "https://beam-machine-universal.b-cdn.net/musl/libc-musl-17613ec13d9aa9e5e907e6750785c5bbed3ad49472ec12281f592e2f0f2d3dbd.so?please-respect-my-bandwidth-costs=thank-you"
+            ],
+            windows: [
+              os: :windows,
+              cpu: :x86_64,
+              custom_erts: "https://github.com/erlang/otp/releases/download/OTP-27.3/otp_win64_27.3.exe"
+            ]
           ]
         ],
         # Set the CLI module as the main entry point
