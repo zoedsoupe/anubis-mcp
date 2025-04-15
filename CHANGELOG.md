@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.9](https://github.com/cloudwalk/hermes-mcp) - 2025-04-15
+
+### Fixed
+- Improved and simplified SSE endpoint event URI merging (#64)
+
+### Added
+- Added internal client/transport state inspection on CLI/mix tasks (#61)
+
 ## [0.3.8](https://github.com/cloudwalk/hermes-mcp) - 2025-04-10
 
 ### Added
