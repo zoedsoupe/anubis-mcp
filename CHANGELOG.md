@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.10](https://github.com/cloudwalk/hermes-mcp) - 2025-04-17
+
+### Fixed
+- Handle SSE ping and reconnect events from server (#65)
+
 ## [0.3.9](https://github.com/cloudwalk/hermes-mcp) - 2025-04-15
 
 ### Fixed
