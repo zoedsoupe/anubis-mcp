@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.12](https://github.com/cloudwalk/hermes-mcp) - 2025-04-24
+
+### Fixed
+- Correctly handles "nested" timeouts (genserver vs MCP) (#71)
+
 ## [0.3.11](https://github.com/cloudwalk/hermes-mcp) - 2025-04-17
 
 ### Added
