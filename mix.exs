@@ -14,16 +14,20 @@ defmodule Hermes.MixProject do
       docs: docs(),
       package: package(),
       description: description(),
+      elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       dialyzer: [
         plt_local_path: "priv/plts",
         ignore_warnings: ".dialyzerignore.exs",
-        plt_add_apps: [:mix]
+        plt_add_apps: [:mix, :ex_unit]
       ],
       extra_applications: [:observer, :wx],
       releases: releases()
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
