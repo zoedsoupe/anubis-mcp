@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+- Implemented WebSocket transport (#10)
+  - Support for bidirectional WebSocket communication
+  - Integration with the Gun library for WebSocket handling
+  - New mix task for testing WebSocket servers interactively
+
+## [0.3.12](https://github.com/cloudwalk/hermes-mcp) - 2025-04-24
+
+### Fixed
+- Correctly handles "nested" timeouts (genserver vs MCP) (#71)
+
+## [0.3.11](https://github.com/cloudwalk/hermes-mcp) - 2025-04-17
+
+### Added
+- Improved core library logging and added verbosity level on interactive/CLI (#68)
+
+## [0.3.10](https://github.com/cloudwalk/hermes-mcp) - 2025-04-17
+
+### Fixed
+- Handle SSE ping and reconnect events from server (#65)
+
+## [0.3.9](https://github.com/cloudwalk/hermes-mcp) - 2025-04-15
+
+### Fixed
+- Improved and simplified SSE endpoint event URI merging (#64)
+
+### Added
+- Added internal client/transport state inspection on CLI/mix tasks (#61)
+
 ## [0.3.8](https://github.com/cloudwalk/hermes-mcp) - 2025-04-10
 
 ### Added

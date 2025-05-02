@@ -19,12 +19,13 @@ defmodule Hermes.Client do
   alias Hermes.Client.Operation
   alias Hermes.Client.Request
   alias Hermes.Client.State
+  alias Hermes.Logging
   alias Hermes.MCP.Error
   alias Hermes.MCP.Message
   alias Hermes.MCP.Response
+  alias Hermes.Telemetry
 
   require Hermes.MCP.Message
-  require Logger
 
   @default_protocol_version "2024-11-05"
 
@@ -33,12 +34,12 @@ defmodule Hermes.Client do
   @typedoc """
   MCP client transport options
 
-  - `:layer` - The transport layer to use, either `Hermes.Transport.STDIO` or `Hermes.Transport.SSE` (required)
+  - `:layer` - The transport layer to use, either `Hermes.Transport.STDIO`, `Hermes.Transport.SSE`, or `Hermes.Transport.WebSocket` (required)
   - `:name` - The transport optional custom name
   """
   @type transport ::
           list(
-            {:layer, Hermes.Transport.STDIO | Hermes.Transport.SSE}
+            {:layer, Hermes.Transport.STDIO | Hermes.Transport.SSE | Hermes.Transport.WebSocket}
             | {:name, GenServer.server()}
           )
 
@@ -131,7 +132,8 @@ defmodule Hermes.Client do
         timeout: Keyword.get(opts, :timeout)
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
@@ -158,7 +160,8 @@ defmodule Hermes.Client do
         timeout: Keyword.get(opts, :timeout)
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
@@ -181,7 +184,8 @@ defmodule Hermes.Client do
         timeout: Keyword.get(opts, :timeout)
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
@@ -208,7 +212,8 @@ defmodule Hermes.Client do
         timeout: Keyword.get(opts, :timeout)
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
@@ -235,7 +240,8 @@ defmodule Hermes.Client do
         timeout: Keyword.get(opts, :timeout)
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
@@ -262,7 +268,8 @@ defmodule Hermes.Client do
         timeout: Keyword.get(opts, :timeout)
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
@@ -289,15 +296,17 @@ defmodule Hermes.Client do
         timeout: Keyword.get(opts, :timeout)
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
   Merges additional capabilities into the client's capabilities.
   """
-  @spec merge_capabilities(t, map()) :: map()
-  def merge_capabilities(client, additional_capabilities) do
-    GenServer.call(client, {:merge_capabilities, additional_capabilities})
+  @spec merge_capabilities(t, map(), opts :: Keyword.t()) :: map()
+  def merge_capabilities(client, additional_capabilities, opts \\ []) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, {:merge_capabilities, additional_capabilities}, timeout)
   end
 
   @doc """
@@ -305,9 +314,10 @@ defmodule Hermes.Client do
 
   Returns `nil` if the client has not been initialized yet.
   """
-  @spec get_server_capabilities(t) :: map() | nil
-  def get_server_capabilities(client) do
-    GenServer.call(client, :get_server_capabilities)
+  @spec get_server_capabilities(t, opts :: Keyword.t()) :: map() | nil
+  def get_server_capabilities(client, opts \\ []) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, :get_server_capabilities, timeout)
   end
 
   @doc """
@@ -315,9 +325,10 @@ defmodule Hermes.Client do
 
   Returns `nil` if the client has not been initialized yet.
   """
-  @spec get_server_info(t) :: map() | nil
-  def get_server_info(client) do
-    GenServer.call(client, :get_server_info)
+  @spec get_server_info(t, opts :: Keyword.t()) :: map() | nil
+  def get_server_info(client, opts \\ []) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, :get_server_info, timeout)
   end
 
   @doc """
@@ -338,7 +349,8 @@ defmodule Hermes.Client do
         params: %{"level" => level}
       })
 
-    GenServer.call(client, {:operation, operation})
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
 
   @doc """
@@ -351,9 +363,10 @@ defmodule Hermes.Client do
 
   The callback function will be called whenever a log message notification is received.
   """
-  @spec register_log_callback(t, State.log_callback()) :: :ok
-  def register_log_callback(client, callback) when is_function(callback, 3) do
-    GenServer.call(client, {:register_log_callback, callback})
+  @spec register_log_callback(t, State.log_callback(), opts :: Keyword.t()) :: :ok
+  def register_log_callback(client, callback, opts \\ []) when is_function(callback, 3) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, {:register_log_callback, callback}, timeout)
   end
 
   @doc """
@@ -364,9 +377,10 @@ defmodule Hermes.Client do
     * `client` - The client process
     * `callback` - The callback function to unregister
   """
-  @spec unregister_log_callback(t) :: :ok
-  def unregister_log_callback(client) do
-    GenServer.call(client, :unregister_log_callback)
+  @spec unregister_log_callback(t, opts :: Keyword.t()) :: :ok
+  def unregister_log_callback(client, opts \\ []) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, :unregister_log_callback, timeout)
   end
 
   @doc """
@@ -385,12 +399,14 @@ defmodule Hermes.Client do
   @spec register_progress_callback(
           t,
           String.t() | integer(),
-          State.progress_callback()
+          State.progress_callback(),
+          opts :: Keyword.t()
         ) ::
           :ok
-  def register_progress_callback(client, progress_token, callback)
+  def register_progress_callback(client, progress_token, callback, opts \\ [])
       when is_function(callback, 3) and (is_binary(progress_token) or is_integer(progress_token)) do
-    GenServer.call(client, {:register_progress_callback, progress_token, callback})
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, {:register_progress_callback, progress_token, callback}, timeout)
   end
 
   @doc """
@@ -401,9 +417,11 @@ defmodule Hermes.Client do
     * `client` - The client process
     * `progress_token` - The progress token to stop watching (string or integer)
   """
-  @spec unregister_progress_callback(t, String.t() | integer()) :: :ok
-  def unregister_progress_callback(client, progress_token) when is_binary(progress_token) or is_integer(progress_token) do
-    GenServer.call(client, {:unregister_progress_callback, progress_token})
+  @spec unregister_progress_callback(t, String.t() | integer(), opts :: Keyword.t()) :: :ok
+  def unregister_progress_callback(client, progress_token, opts \\ [])
+      when is_binary(progress_token) or is_integer(progress_token) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, {:unregister_progress_callback, progress_token}, timeout)
   end
 
   @doc """
@@ -418,11 +436,12 @@ defmodule Hermes.Client do
 
   Returns `:ok` if notification was sent successfully, or `{:error, reason}` otherwise.
   """
-  @spec send_progress(t, String.t() | integer(), number(), number() | nil) ::
+  @spec send_progress(t, String.t() | integer(), number(), number() | nil, opts :: Keyword.t()) ::
           :ok | {:error, term()}
-  def send_progress(client, progress_token, progress, total \\ nil)
+  def send_progress(client, progress_token, progress, total \\ nil, opts \\ [])
       when is_number(progress) and (is_binary(progress_token) or is_integer(progress_token)) do
-    GenServer.call(client, {:send_progress, progress_token, progress, total})
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, {:send_progress, progress_token, progress, total}, timeout)
   end
 
   @doc """
@@ -440,10 +459,11 @@ defmodule Hermes.Client do
     * `{:error, reason}` if an error occurred
     * `{:not_found, request_id}` if the request ID was not found
   """
-  @spec cancel_request(t, String.t(), String.t()) ::
+  @spec cancel_request(t, String.t(), String.t(), opts :: Keyword.t()) ::
           :ok | {:error, Error.t()}
-  def cancel_request(client, request_id, reason \\ "client_cancelled") do
-    GenServer.call(client, {:cancel_request, request_id, reason})
+  def cancel_request(client, request_id, reason \\ "client_cancelled", opts \\ []) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, {:cancel_request, request_id, reason}, timeout)
   end
 
   @doc """
@@ -459,10 +479,11 @@ defmodule Hermes.Client do
     * `{:ok, requests}` - A list of the Request structs that were cancelled
     * `{:error, reason}` - If an error occurred
   """
-  @spec cancel_all_requests(t, String.t()) ::
+  @spec cancel_all_requests(t, String.t(), opts :: Keyword.t()) ::
           {:ok, list(Request.t())} | {:error, Error.t()}
-  def cancel_all_requests(client, reason \\ "client_cancelled") do
-    GenServer.call(client, {:cancel_all_requests, reason})
+  def cancel_all_requests(client, reason \\ "client_cancelled", opts \\ []) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, {:cancel_all_requests, reason}, timeout)
   end
 
   @doc """
@@ -490,22 +511,52 @@ defmodule Hermes.Client do
         transport: transport
       })
 
-    Logger.metadata(mcp_client: opts.name, mcp_transport: opts.transport)
+    # Set up logging context
+    client_name = get_in(opts, [:client_info, "name"])
+
+    Hermes.Logging.context(
+      mcp_client: opts.name,
+      mcp_client_name: client_name,
+      mcp_transport: opts.transport
+    )
+
+    Hermes.Logging.client_event("initializing", %{
+      protocol_version: opts.protocol_version,
+      capabilities: opts.capabilities
+    })
+
+    Telemetry.execute(
+      Telemetry.event_client_init(),
+      %{system_time: System.system_time()},
+      %{
+        client_name: client_name,
+        transport: transport,
+        protocol_version: opts.protocol_version,
+        capabilities: opts.capabilities
+      }
+    )
 
     {:ok, state, :hibernate}
   end
 
   @impl true
   def handle_call({:operation, %Operation{} = operation}, from, state) do
+    method = operation.method
     params_with_token = State.add_progress_token_to_params(operation.params, operation.progress_opts)
 
-    with :ok <- State.validate_capability(state, operation.method),
+    with :ok <- State.validate_capability(state, method),
          {request_id, updated_state} = State.add_request_from_operation(state, operation, from),
-         {:ok, request_data} <- encode_request(operation.method, params_with_token, request_id),
+         {:ok, request_data} <- encode_request(method, params_with_token, request_id),
          :ok <- send_to_transport(state.transport, request_data) do
+      Telemetry.execute(
+        Telemetry.event_client_request(),
+        %{system_time: System.system_time()},
+        %{method: method, request_id: request_id}
+      )
+
       {:noreply, updated_state}
     else
-      {:error, _reason} = err -> {:reply, err, state}
+      err -> {:reply, err, state}
     end
   end
 
@@ -607,7 +658,7 @@ defmodule Hermes.Client do
   end
 
   def handle_cast(:initialize, state) do
-    Logger.debug("Making initial client <> server handshake")
+    Logging.client_event("handshake", "Making initial client <> server handshake")
 
     params = %{
       "protocolVersion" => state.protocol_version,
@@ -633,7 +684,7 @@ defmodule Hermes.Client do
   rescue
     e ->
       err = Exception.format(:error, e, __STACKTRACE__)
-      Logger.error("Failed to initialize client: #{err}")
+      Logging.client_event("initialization_failed", %{error: err})
       {:stop, :unexpected, state}
   end
 
@@ -641,26 +692,42 @@ defmodule Hermes.Client do
   def handle_cast({:response, response_data}, state) do
     case Message.decode(response_data) do
       {:ok, [error]} when Message.is_error(error) ->
-        Logger.debug("Received server error response: #{inspect(error)}")
+        Hermes.Logging.message("incoming", "error", error["id"], error)
         {:noreply, handle_error_response(error, error["id"], state)}
 
       {:ok, [response]} when Message.is_response(response) ->
-        Logger.debug("Received server response: #{response["id"]}")
+        Hermes.Logging.message("incoming", "response", response["id"], response)
         {:noreply, handle_success_response(response, response["id"], state)}
 
       {:ok, [notification]} when Message.is_notification(notification) ->
-        method = notification["method"]
-        Logger.debug("Received server notification: #{method}")
+        Hermes.Logging.message("incoming", "notification", nil, notification)
         {:noreply, handle_notification(notification, state)}
 
       {:error, error} ->
-        Logger.error("Failed to decode response: #{inspect(error)}")
+        Logging.client_event(
+          "decode_failed",
+          %{
+            error: error,
+            message_sample: String.slice(response_data, 0, 200)
+          },
+          level: :warning
+        )
+
         {:noreply, state}
     end
   rescue
     e ->
       err = Exception.format(:error, e, __STACKTRACE__)
-      Logger.error("Failed to handle response: #{err}")
+
+      Logging.client_event(
+        "response_handling_failed",
+        %{
+          error: err,
+          response_sample: String.slice(response_data, 0, 200)
+        },
+        level: :error
+      )
+
       {:noreply, state}
   end
 
@@ -689,13 +756,29 @@ defmodule Hermes.Client do
 
   @impl true
   def terminate(reason, %{client_info: %{"name" => name}} = state) do
-    Logger.warning("Terminating #{name} MCP client with #{inspect(reason)}, closing transport")
+    Logging.client_event("terminating", %{
+      name: name,
+      reason: reason
+    })
 
     pending_requests = State.list_pending_requests(state)
+    pending_count = length(pending_requests)
 
-    if length(pending_requests) > 0 do
-      Logger.warning("Closing client with #{length(pending_requests)} pending requests")
+    if pending_count > 0 do
+      Logging.client_event("pending_requests", %{
+        count: pending_count
+      })
     end
+
+    Telemetry.execute(
+      Telemetry.event_client_terminate(),
+      %{system_time: System.system_time()},
+      %{
+        client_name: name,
+        reason: reason,
+        pending_requests: pending_count
+      }
+    )
 
     for request <- pending_requests do
       send_notification(state, "notifications/cancelled", %{
@@ -712,16 +795,39 @@ defmodule Hermes.Client do
   defp handle_error_response(%{"error" => json_error, "id" => id}, id, state) do
     case State.remove_request(state, id) do
       {nil, state} ->
-        Logger.warning("Received error response for unknown request ID: #{id}")
+        error_code = json_error["code"]
+        error_msg = json_error["message"]
+
+        Logging.client_event("unknown_error_response", %{
+          id: id,
+          code: error_code,
+          message: error_msg,
+          pending_ids: state.pending_requests |> Map.keys() |> Enum.join(", ")
+        })
+
         state
 
       {request, updated_state} ->
-        # Convert JSON-RPC error to our domain error
         error = Error.from_json_rpc(json_error)
+        elapsed_ms = Request.elapsed_time(request)
 
-        # Unblock original caller with error
+        Logging.client_event("error_response", %{
+          id: id,
+          method: request.method
+        })
+
+        Telemetry.execute(
+          Telemetry.event_client_error(),
+          %{duration: elapsed_ms, system_time: System.system_time()},
+          %{
+            id: id,
+            method: request.method,
+            error_code: json_error["code"],
+            error_message: json_error["message"]
+          }
+        )
+
         GenServer.reply(request.from, {:error, error})
-
         updated_state
     end
   end
@@ -740,7 +846,10 @@ defmodule Hermes.Client do
             result["serverInfo"]
           )
 
-        Logger.info("Initialized successfully, notifying server")
+        Logging.client_event("initialized", %{
+          server_info: result["serverInfo"],
+          capabilities: result["capabilities"]
+        })
 
         # Confirm to the server the handshake is complete
         :ok = send_notification(updated_state, "notifications/initialized")
@@ -752,12 +861,45 @@ defmodule Hermes.Client do
   defp handle_success_response(%{"id" => id, "result" => result}, id, state) do
     case State.remove_request(state, id) do
       {nil, state} ->
-        Logger.warning("Received response for unknown request ID: #{id}")
+        result_summary =
+          case result do
+            %{} -> "fields: #{Enum.join(Map.keys(result), ", ")}"
+            _ -> "type: #{inspect(result)}"
+          end
+
+        Logging.client_event("unknown_response", %{
+          id: id,
+          result_summary: result_summary,
+          pending_ids: state.pending_requests |> Map.keys() |> Enum.join(", ")
+        })
+
         state
 
       {request, updated_state} ->
-        # Convert to our domain response
         response = Response.from_json_rpc(%{"result" => result, "id" => id})
+        elapsed_ms = Request.elapsed_time(request)
+
+        result_summary =
+          case result do
+            %{} -> "with #{map_size(result)} fields"
+            _ -> ""
+          end
+
+        Logging.client_event("success_response", %{
+          id: id,
+          method: request.method,
+          result_summary: result_summary
+        })
+
+        Telemetry.execute(
+          Telemetry.event_client_response(),
+          %{duration: elapsed_ms, system_time: System.system_time()},
+          %{
+            id: id,
+            method: request.method,
+            status: :success
+          }
+        )
 
         if request.method == "ping" do
           GenServer.reply(request.from, :pong)
@@ -770,7 +912,7 @@ defmodule Hermes.Client do
   end
 
   defp handle_success_response(%{"id" => id}, _id, state) do
-    Logger.warning("Received malformed response for request ID: #{id}")
+    Logging.client_event("malformed_response", %{id: id})
     state
   end
 
@@ -797,7 +939,10 @@ defmodule Hermes.Client do
     {request, updated_state} = State.remove_request(state, request_id)
 
     if request do
-      Logger.info("Request #{request_id} cancelled by server: #{reason}")
+      Logging.client_event("request_cancelled", %{
+        id: request_id,
+        reason: reason
+      })
 
       error =
         Error.client_error(:request_cancelled, %{
@@ -841,35 +986,30 @@ defmodule Hermes.Client do
   end
 
   defp log_to_logger(level, data, logger) do
-    prefix = if logger, do: "[#{logger}] ", else: ""
-    message = "#{prefix}#{inspect(data)}"
-
     # Map MCP log levels to Elixir Logger levels
-    case level do
-      level when level in ["debug"] ->
-        Logger.debug(message)
+    elixir_level =
+      case level do
+        level when level in ["debug"] -> :debug
+        level when level in ["info", "notice"] -> :info
+        level when level in ["warning"] -> :warning
+        level when level in ["error", "critical", "alert", "emergency"] -> :error
+        _ -> :info
+      end
 
-      level when level in ["info", "notice"] ->
-        Logger.info(message)
-
-      level when level in ["warning"] ->
-        Logger.warning(message)
-
-      level when level in ["error", "critical", "alert", "emergency"] ->
-        Logger.error(message)
-
-      _ ->
-        Logger.info(message)
-    end
+    Logging.client_event("server_log", %{level: level, data: data, logger: logger}, level: elixir_level)
   end
 
   # Helper functions
   defp encode_request(method, params, request_id) do
-    Message.encode_request(%{"method" => method, "params" => params}, request_id)
+    request = %{"method" => method, "params" => params}
+    Hermes.Logging.message("outgoing", "request", request_id, request)
+    Message.encode_request(request, request_id)
   end
 
   defp encode_notification(method, params) do
-    Message.encode_notification(%{"method" => method, "params" => params})
+    notification = %{"method" => method, "params" => params}
+    Hermes.Logging.message("outgoing", "notification", nil, notification)
+    Message.encode_notification(notification)
   end
 
   defp send_cancellation(state, request_id, reason) do
