@@ -9,7 +9,7 @@ Add Hermes MCP to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:hermes_mcp, "~> 0.3"}
+    {:hermes_mcp, "~> 0.4"}
   ]
 end
 ```

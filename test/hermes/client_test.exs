@@ -1,5 +1,5 @@
 defmodule Hermes.ClientTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import Hermes.Client.Contexts
   import Hermes.Client.Fixtures
@@ -9,6 +9,7 @@ defmodule Hermes.ClientTest do
   alias Hermes.Client.Operation
   alias Hermes.MCP.Error
   alias Hermes.MCP.ID
+  alias Hermes.MCP.Message
   alias Hermes.MCP.Response
 
   @moduletag capture_log: true
@@ -47,7 +48,7 @@ defmodule Hermes.ClientTest do
   end
 
   describe "request methods" do
-    setup :setup_initialized_client
+    setup :initialized_client
 
     test "ping sends correct request", %{client: client} do
       expect(Hermes.MockTransport, :send_message, fn _, message ->
@@ -315,7 +316,6 @@ defmodule Hermes.ClientTest do
         "isError" => true
       }
 
-      # Should return {:ok, response} even though isError is true
       assert {:ok, response} = Task.await(task)
       assert %Response{} = response
       assert response.result == expected_result
@@ -324,7 +324,7 @@ defmodule Hermes.ClientTest do
   end
 
   describe "non support request methods" do
-    setup :setup_client_with_limited_capabilities
+    setup :initialized_client
 
     test "ping sends correct request since it is always supported", %{client: client} do
       expect(Hermes.MockTransport, :send_message, fn _, message ->
@@ -349,6 +349,7 @@ defmodule Hermes.ClientTest do
       assert :pong = Task.await(task)
     end
 
+    @tag server_capabilities: %{"prompts" => %{}}
     test "tools/list fails since this capability isn't supported", %{client: client} do
       task = Task.async(fn -> Hermes.Client.list_tools(client) end)
 
@@ -358,7 +359,7 @@ defmodule Hermes.ClientTest do
   end
 
   describe "error handling" do
-    setup :setup_initialized_client
+    setup :initialized_client
 
     test "handles error response", %{client: client} do
       expect(Hermes.MockTransport, :send_message, fn _, message ->
@@ -428,7 +429,7 @@ defmodule Hermes.ClientTest do
   end
 
   describe "server information" do
-    setup :setup_initialized_client
+    setup :initialized_client
 
     test "get_server_capabilities returns server capabilities", %{client: client} do
       capabilities = Hermes.Client.get_server_capabilities(client)
@@ -441,63 +442,50 @@ defmodule Hermes.ClientTest do
     test "get_server_info returns server info", %{client: client} do
       server_info = Hermes.Client.get_server_info(client)
 
-      assert server_info == %{
-               "name" => "TestServer",
-               "version" => "1.0.0"
-             }
+      assert server_info == %{"name" => "TestServer", "version" => "1.0.0"}
     end
   end
 
   describe "progress tracking" do
-    setup :setup_initialized_client
+    setup :initialized_client
 
     test "registers and calls progress callback when notification is received", %{client: client} do
-      # Variables for progress tracking
       test_pid = self()
       progress_token = "test_progress_token"
       progress_value = 50
       total_value = 100
 
-      # Register a callback
       :ok =
         Hermes.Client.register_progress_callback(client, progress_token, fn token, progress, total ->
           send(test_pid, {:progress_callback, token, progress, total})
         end)
 
-      # Simulate receiving a progress notification
       progress_notification = progress_notification(progress_token, progress_value, total_value)
       send_notification(client, progress_notification)
 
-      # Verify callback was triggered with correct parameters
       assert_receive {:progress_callback, ^progress_token, ^progress_value, ^total_value}, 1000
     end
 
     test "unregisters progress callback", %{client: client} do
-      # Variables for progress tracking
       test_pid = self()
       progress_token = "unregister_test_token"
 
-      # Register callback
       :ok =
         Hermes.Client.register_progress_callback(client, progress_token, fn _, _, _ ->
           send(test_pid, :should_not_be_called)
         end)
 
-      # Unregister callback
       :ok = Hermes.Client.unregister_progress_callback(client, progress_token)
 
-      # Simulate receiving a progress notification
       progress_notification = progress_notification(progress_token)
       send_notification(client, progress_notification)
 
-      # Verify callback was NOT triggered
       refute_receive :should_not_be_called, 500
     end
 
     test "request with progress token includes it in params", %{client: client} do
       progress_token = "request_token_test"
 
-      # Set expectation for the message
       expect(Hermes.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
@@ -505,7 +493,6 @@ defmodule Hermes.ClientTest do
         :ok
       end)
 
-      # Make the request with progress token
       task =
         Task.async(fn ->
           Hermes.Client.list_resources(client, progress: [token: progress_token])
@@ -513,14 +500,12 @@ defmodule Hermes.ClientTest do
 
       Process.sleep(50)
 
-      # Simulate a response to complete the request
       request_id = get_request_id(client, "resources/list")
       assert request_id
 
       response = resources_list_response(request_id, [])
       send_response(client, response)
 
-      # Ensure the task completes
       assert {:ok, _} = Task.await(task)
     end
 
@@ -537,7 +522,7 @@ defmodule Hermes.ClientTest do
   end
 
   describe "logging" do
-    setup :setup_initialized_client
+    setup :initialized_client
 
     test "set_log_level sends the correct request", %{client: client} do
       expect(Hermes.MockTransport, :send_message, fn _, message ->
@@ -649,17 +634,14 @@ defmodule Hermes.ClientTest do
     test "handles log notifications and triggers callbacks", %{client: client} do
       test_pid = self()
 
-      # Register a callback
       :ok =
         Hermes.Client.register_log_callback(client, fn level, data, logger ->
           send(test_pid, {:log_callback, level, data, logger})
         end)
 
-      # Create a log notification
       log_notification = log_notification("error", "Test error message", "test-logger")
       send_notification(client, log_notification)
 
-      # Verify the callback was triggered
       assert_receive {:log_callback, "error", "Test error message", "test-logger"}, 1000
     end
   end
@@ -704,7 +686,7 @@ defmodule Hermes.ClientTest do
   end
 
   describe "cancellation" do
-    setup :setup_initialized_client
+    setup :initialized_client
 
     test "handles cancelled notification from server", %{client: client} do
       expect(Hermes.MockTransport, :send_message, fn _, message ->
@@ -775,7 +757,6 @@ defmodule Hermes.ClientTest do
         :ok
       end)
 
-      # Start both requests
       task1 = Task.async(fn -> Hermes.Client.list_resources(client) end)
       task2 = Task.async(fn -> Hermes.Client.list_tools(client) end)
 
@@ -884,6 +865,161 @@ defmodule Hermes.ClientTest do
       operation = Operation.new(%{method: "resources/list"})
 
       assert_receive {:EXIT, ^pid, {:normal, {GenServer, :call, [_, {:operation, ^operation}, _]}}}
+    end
+  end
+
+  describe "roots management" do
+    setup :initialized_client
+
+    test "add_root adds a root directory", %{client: client} do
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project", "My Project")
+
+      roots = Hermes.Client.list_roots(client)
+      assert length(roots) == 1
+
+      [root] = roots
+      assert root.uri == "file:///home/user/project"
+      assert root.name == "My Project"
+    end
+
+    test "list_roots returns all roots", %{client: client} do
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project1", "Project 1")
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project2", "Project 2")
+
+      roots = Hermes.Client.list_roots(client)
+      assert length(roots) == 2
+
+      uris = Enum.map(roots, & &1.uri)
+      assert "file:///home/user/project1" in uris
+      assert "file:///home/user/project2" in uris
+    end
+
+    test "remove_root removes a specific root", %{client: client} do
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project1", "Project 1")
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project2", "Project 2")
+
+      :ok = Hermes.Client.remove_root(client, "file:///home/user/project1")
+
+      roots = Hermes.Client.list_roots(client)
+      assert length(roots) == 1
+      assert hd(roots).uri == "file:///home/user/project2"
+    end
+
+    test "clear_roots removes all roots", %{client: client} do
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project1", "Project 1")
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project2", "Project 2")
+
+      :ok = Hermes.Client.clear_roots(client)
+
+      roots = Hermes.Client.list_roots(client)
+      assert Enum.empty?(roots)
+    end
+
+    test "add_root doesn't add duplicates", %{client: client} do
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project", "My Project")
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project", "Duplicate Project")
+
+      roots = Hermes.Client.list_roots(client)
+      assert length(roots) == 1
+      assert hd(roots).name == "My Project"
+    end
+  end
+
+  describe "server requests" do
+    setup :initialized_client
+
+    test "server can request roots list", %{client: client} do
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project1", "Project 1")
+      :ok = Hermes.Client.add_root(client, "file:///home/user/project2", "Project 2")
+
+      request_id = "server_req_123"
+
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["id"] == request_id
+        assert Map.has_key?(decoded, "result")
+
+        roots = decoded["result"]["roots"]
+        assert is_list(roots)
+        assert length(roots) == 2
+
+        uris = Enum.map(roots, & &1["uri"])
+        assert "file:///home/user/project1" in uris
+        assert "file:///home/user/project2" in uris
+
+        :ok
+      end)
+
+      assert {:ok, encoded} = Message.encode_request(%{"method" => "roots/list"}, request_id)
+      GenServer.cast(client, {:response, encoded})
+
+      Process.sleep(50)
+    end
+  end
+
+  describe "automatic roots notification" do
+    setup :initialized_client
+
+    @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
+    test "sends notification when adding a root", %{client: client} do
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["method"] == "notifications/roots/list_changed"
+        assert is_map(decoded["params"])
+        :ok
+      end)
+
+      assert :ok = Hermes.Client.add_root(client, "file:///test/root", "Test Root")
+      _ = :sys.get_state(client)
+
+      Process.sleep(50)
+    end
+
+    @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
+    test "sends notification when removing a root", %{client: client} do
+      assert :ok = Hermes.Client.add_root(client, "file:///test/root", "Test Root")
+      Process.sleep(50)
+
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["method"] == "notifications/roots/list_changed"
+        assert is_map(decoded["params"])
+        :ok
+      end)
+
+      assert :ok = Hermes.Client.remove_root(client, "file:///test/root")
+      _ = :sys.get_state(client)
+
+      Process.sleep(50)
+    end
+
+    @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
+    test "sends notification when clearing roots", %{client: client} do
+      assert :ok = Hermes.Client.add_root(client, "file:///test/root1", "Test Root 1")
+      assert :ok = Hermes.Client.add_root(client, "file:///test/root2", "Test Root 2")
+      Process.sleep(50)
+
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["method"] == "notifications/roots/list_changed"
+        assert is_map(decoded["params"])
+        :ok
+      end)
+
+      assert :ok = Hermes.Client.clear_roots(client)
+
+      _ = :sys.get_state(client)
+      Process.sleep(50)
+    end
+
+    @tag client_capabilities: %{"roots" => %{"listChanged" => false}}
+    test "doesn't send notification when doesn't support listChanged", %{client: client} do
+      assert :ok = Hermes.Client.add_root(client, "file:///test/root", "Test Root")
+      _ = :sys.get_state(client)
     end
   end
 end
