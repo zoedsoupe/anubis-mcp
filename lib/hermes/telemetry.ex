@@ -59,6 +59,17 @@ defmodule Hermes.Telemetry do
   def event_client_terminate, do: [:client, :terminate]
   def event_client_error, do: [:client, :error]
 
+  # Server events
+  def event_server_init, do: [:server, :init]
+  def event_server_request, do: [:server, :request]
+  def event_server_response, do: [:server, :response]
+  def event_server_notification, do: [:server, :notification]
+  def event_server_error, do: [:server, :error]
+  def event_server_terminate, do: [:server, :terminate]
+  def event_server_tool_call, do: [:server, :tool_call]
+  def event_server_resource_read, do: [:server, :resource_read]
+  def event_server_prompt_get, do: [:server, :prompt_get]
+
   # Transport events
   def event_transport_init, do: [:transport, :init]
   def event_transport_connect, do: [:transport, :connect]
@@ -77,4 +88,9 @@ defmodule Hermes.Telemetry do
 
   # Roots events
   def event_client_roots, do: [:client, :roots]
+
+  # Session events (for StreamableHTTP transport)
+  def event_server_session_created, do: [:server, :session, :created]
+  def event_server_session_terminated, do: [:server, :session, :terminated]
+  def event_server_session_cleanup, do: [:server, :session, :cleanup]
 end
