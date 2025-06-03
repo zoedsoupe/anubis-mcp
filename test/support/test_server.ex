@@ -14,10 +14,43 @@ defmodule TestServer do
 
   @impl true
   def handle_request(request, state) do
-    case request["method"] do
-      "tools/list" -> {:reply, "test_success", state}
-      "ping" -> {:reply, %{}, state}
-      _ -> {:error, Error.method_not_found(%{method: request["method"]}), state}
+    method = request["method"]
+    handle_method(method, request, state)
+  end
+
+  defp handle_method("tools/list", _request, state), do: {:reply, %{"tools" => []}, state}
+  defp handle_method("ping", _request, state), do: {:reply, %{}, state}
+  defp handle_method("tools/call", request, state), do: handle_tools_call(request, state)
+  defp handle_method("resources/list", _request, state), do: {:reply, %{"resources" => []}, state}
+  defp handle_method("prompts/list", _request, state), do: {:reply, %{"prompts" => []}, state}
+
+  defp handle_method("resources/read", request, state) do
+    params = request["params"] || %{}
+    {:error, Error.invalid_params(%{param: "uri", message: "Resource not found: #{params["uri"]}"}), state}
+  end
+
+  defp handle_method("prompts/get", request, state) do
+    params = request["params"] || %{}
+    {:error, Error.invalid_params(%{param: "name", message: "Prompt not found: #{params["name"]}"}), state}
+  end
+
+  defp handle_method(method, _request, state) do
+    {:error, Error.method_not_found(%{method: method}), state}
+  end
+
+  defp handle_tools_call(request, state) do
+    params = request["params"] || %{}
+
+    case Map.get(params, "name") do
+      nil ->
+        {:error, Error.invalid_params(%{param: "name", message: "name parameter is required"}), state}
+
+      name ->
+        {:reply,
+         %{
+           "content" => [%{"type" => "text", "text" => "Tool '#{name}' executed successfully"}],
+           "isError" => false
+         }, state}
     end
   end
 
@@ -35,4 +68,9 @@ defmodule TestServer do
 
   @impl true
   def server_capabilities, do: %{"tools" => %{"listChanged" => true}}
+
+  @impl true
+  def supported_protocol_versions do
+    ["2024-11-05", "2025-03-26"]
+  end
 end

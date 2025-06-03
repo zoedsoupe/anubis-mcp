@@ -1,27 +1,25 @@
-defmodule Mix.Tasks.Hermes.Sse.Interactive do
-  @shortdoc "Test the SSE transport implementation interactively."
+defmodule Mix.Tasks.Hermes.StreamableHttp.Interactive do
+  @shortdoc "Test the Streamable HTTP transport implementation interactively."
 
   @moduledoc """
-  Mix task to test the SSE transport implementation, interactively sending commands.
+  Mix task to test the Streamable HTTP transport implementation, interactively sending commands.
 
   ## Options
 
-  * `--base-url` - Base URL for the SSE server (default: http://localhost:8000)
-  * `--base-path` - Base path to append to the base URL
-  * `--sse-path` - Specific SSE endpoint path
+  * `--base-url` - Base URL for the MCP server (default: http://localhost:8000)
+  * `--mcp-path` - MCP endpoint path (default: /mcp)
   """
 
   use Mix.Task
 
   alias Hermes.Client
-  alias Hermes.Transport.SSE
+  alias Hermes.Transport.StreamableHTTP
   alias Mix.Interactive.Shell
   alias Mix.Interactive.UI
 
   @switches [
     base_url: :string,
-    base_path: :string,
-    sse_path: :string,
+    mcp_path: :string,
     verbose: :count
   ]
 
@@ -40,31 +38,35 @@ defmodule Mix.Tasks.Hermes.Sse.Interactive do
     log_level = get_log_level(verbose_count)
     configure_logger(log_level)
 
-    server_options = Keyword.put_new(parsed, :base_url, "http://localhost:8000")
-    server_url = Path.join(server_options[:base_url], server_options[:base_path] || "")
+    base_url = parsed[:base_url] || "http://localhost:8000"
+    mcp_path = parsed[:mcp_path] || "/mcp"
+    server_url = Path.join(base_url, mcp_path)
 
-    header = UI.header("HERMES MCP SSE INTERACTIVE")
+    header = UI.header("HERMES MCP STREAMABLE HTTP INTERACTIVE")
     IO.puts(header)
-    IO.puts("#{UI.colors().info}Connecting to SSE server at: #{server_url}#{UI.colors().reset}\n")
+    IO.puts("#{UI.colors().info}Connecting to Streamable HTTP server at: #{server_url}#{UI.colors().reset}\n")
 
     {:ok, _} =
-      SSE.start_link(
-        client: :sse_test,
-        server: server_options
+      StreamableHTTP.start_link(
+        client: :streamable_http_test,
+        base_url: base_url,
+        mcp_path: mcp_path
       )
 
-    IO.puts("#{UI.colors().success}✓ SSE transport started#{UI.colors().reset}")
+    IO.puts("#{UI.colors().success}✓ Streamable HTTP transport started#{UI.colors().reset}")
 
     {:ok, client} =
       Client.start_link(
-        name: :sse_test,
-        transport: [layer: SSE],
-        protocol_version: "2024-11-05",
+        name: :streamable_http_test,
+        transport: [layer: StreamableHTTP],
         client_info: %{
-          "name" => "Mix.Tasks.SSE",
+          "name" => "Mix.Tasks.StreamableHTTP",
           "version" => "1.0.0"
         },
         capabilities: %{
+          "roots" => %{
+            "listChanged" => true
+          },
           "tools" => %{},
           "sampling" => %{}
         }
