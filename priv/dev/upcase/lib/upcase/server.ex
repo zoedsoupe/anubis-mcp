@@ -3,27 +3,17 @@ defmodule Upcase.Server do
   A simple MCP server that upcases input text.
   """
 
-  @behaviour Hermes.Server.Behaviour
+  use Hermes.Server, name: "Upcase MCP Server", version: "1.0.0", capabilities: [:tools]
 
   alias Hermes.MCP.Error
 
+  def start_link(opts \\ []) do
+    Hermes.Server.start_link(__MODULE__, :ok, opts)
+  end
+
   @impl true
-  def init(_args) do
+  def init(:ok) do
     {:ok, %{}}
-  end
-
-  @impl true
-  def server_info do
-    %{"name" => "Upcase MCP Server", "version" => "1.0.0"}
-  end
-
-  @impl true
-  def server_capabilities do
-    %{
-      "tools" => %{
-        "listChanged" => false
-      }
-    }
   end
 
   @impl true
@@ -52,7 +42,8 @@ defmodule Upcase.Server do
 
   @impl true
   def handle_request(
-        %{"method" => "tools/call", "params" => %{"name" => "upcase", "arguments" => args}} = _request,
+        %{"method" => "tools/call", "params" => %{"name" => "upcase", "arguments" => args}} =
+          _request,
         state
       ) do
     case Map.get(args, "text") do
