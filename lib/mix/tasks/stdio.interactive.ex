@@ -12,9 +12,8 @@ defmodule Mix.Tasks.Hermes.Stdio.Interactive do
 
   use Mix.Task
 
-  alias Hermes.Client
   alias Hermes.Transport.STDIO
-  alias Mix.Interactive.Shell
+  alias Mix.Interactive.SupervisedShell
   alias Mix.Interactive.UI
 
   @switches [
@@ -53,19 +52,17 @@ defmodule Mix.Tasks.Hermes.Stdio.Interactive do
       System.halt(1)
     end
 
-    {:ok, _} =
-      STDIO.start_link(
+    SupervisedShell.start(
+      transport_module: STDIO,
+      transport_opts: [
+        name: STDIO,
         command: cmd,
         args: args,
         client: :stdio_test
-      )
-
-    IO.puts("#{UI.colors().success}✓ STDIO transport started#{UI.colors().reset}")
-
-    {:ok, client} =
-      Client.start_link(
+      ],
+      client_opts: [
         name: :stdio_test,
-        transport: [layer: STDIO],
+        transport: [layer: STDIO, name: STDIO],
         client_info: %{
           "name" => "Mix.Tasks.STDIO",
           "version" => "1.0.0"
@@ -76,12 +73,8 @@ defmodule Mix.Tasks.Hermes.Stdio.Interactive do
           },
           "sampling" => %{}
         }
-      )
-
-    IO.puts("#{UI.colors().success}✓ Client connected successfully#{UI.colors().reset}")
-    IO.puts("\nType #{UI.colors().command}help#{UI.colors().reset} for available commands\n")
-
-    Shell.loop(client)
+      ]
+    )
   end
 
   # Helper functions

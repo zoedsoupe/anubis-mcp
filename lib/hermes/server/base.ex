@@ -3,7 +3,51 @@ defmodule Hermes.Server.Base do
   Base implementation of an MCP server.
 
   This module provides the core functionality for handling MCP messages,
-  without any higher-level abstractions.
+  managing the protocol lifecycle, and coordinating with transport layers.
+  It implements the JSON-RPC message handling, session management, and
+  protocol negotiation required by the MCP specification.
+
+  ## Architecture
+
+  The Base server acts as the central message processor in the server stack:
+  - Receives messages from transport layers (STDIO, StreamableHTTP)
+  - Manages protocol initialization and version negotiation
+  - Delegates business logic to the implementation module
+  - Maintains session state via Session agents
+  - Handles errors and protocol violations
+
+  ## Session Management
+
+  For transports that support multiple sessions (like StreamableHTTP), the Base
+  server maintains a registry of Session agents. Each session tracks:
+  - Protocol version negotiated with that client
+  - Client information and capabilities
+  - Initialization state
+  - Log level preferences
+
+  ## Message Flow
+
+  1. Transport receives raw message from client
+  2. Transport calls Base with `{:message, data, session_id}`
+  3. Base decodes and validates the message
+  4. Base retrieves or creates session state
+  5. Base delegates to implementation module callbacks
+  6. Base encodes response and sends back through transport
+
+  ## Example Implementation
+
+      defmodule MyServer do
+        use Hermes.Server
+
+        def server_info do
+          %{"name" => "My MCP Server", "version" => "1.0.0"}
+        end
+
+        def handle_request(%{"method" => "my_method"} = request, frame) do
+          result = process_request(request["params"])
+          {:reply, result, frame}
+        end
+      end
   """
 
   use GenServer
@@ -14,13 +58,27 @@ defmodule Hermes.Server.Base do
   alias Hermes.Logging
   alias Hermes.MCP.Error
   alias Hermes.MCP.Message
+  alias Hermes.Server
+  alias Hermes.Server.Frame
+  alias Hermes.Server.Registry
+  alias Hermes.Server.Session
+  alias Hermes.Server.Session.Supervisor, as: SessionSupervisor
   alias Hermes.Telemetry
 
   require Message
+  require Server
+  require Session
 
-  @type t :: GenServer.server()
-
-  @protocol_version "2025-03-26"
+  @type t :: %{
+          module: module,
+          server_info: map,
+          capabilities: map,
+          frame: Frame.t(),
+          supported_versions: list(String.t()),
+          transport: [layer: module, name: GenServer.name()],
+          init_arg: term,
+          sessions: %{required(String.t()) => GenServer.name()}
+        }
 
   @typedoc """
   MCP server options
@@ -32,21 +90,15 @@ defmodule Hermes.Server.Base do
   @type option ::
           {:module, GenServer.name()}
           | {:init_arg, keyword}
-          | {:protocol_version, String.t()}
           | {:name, GenServer.name()}
           | GenServer.option()
 
-  defschema(:parse_options, [
+  defschema :parse_options, [
     {:module, {:required, {:custom, &Hermes.genserver_name/1}}},
-    {:init_arg, {:any, {:default, []}}},
-    {:protocol_version, {:string, {:default, @protocol_version}}},
-    {:name, {{:custom, &Hermes.genserver_name/1}, {:default, __MODULE__}}},
-    {:transport,
-     [
-       layer: {:required, :atom},
-       name: {:oneof, [{:custom, &Hermes.genserver_name/1}, :pid, {:tuple, [:atom, :any]}]}
-     ]}
-  ])
+    {:init_arg, {:required, :any}},
+    {:name, {:required, {:custom, &Hermes.genserver_name/1}}},
+    {:transport, {:required, {:custom, &Hermes.server_transport/1}}}
+  ]
 
   @doc """
   Starts a new MCP server process.
@@ -54,17 +106,27 @@ defmodule Hermes.Server.Base do
   ## Parameters
     * `opts` - Keyword list of options:
       * `:module` - (required) The module implementing the `Hermes.Server.Behaviour`
-      * `:init_arg` - Argument to pass to the module's `init/1` callback
-      * `:protocol_version` - The protocol version to use
-      * `:name` - Required name for the GenServer process
-      * `:transport` - Transport configuration
-        * `:layer` - The transport layer to be used (e.g. Hermes.Server.Transport.STDIO or Hermes.Server.Transport.StreamableHTTP)
-        * `:name` - Optional transport layer process name for customization
+      * `:init_arg` - Argument to pass to the module's `init/2` callback
+      * `:name` - (required) Name for the GenServer process
+      * `:transport` - (required) Transport configuration
+        * `:layer` - The transport module (e.g., `Hermes.Server.Transport.STDIO`)
+        * `:name` - The registered name of the transport process
 
   ## Examples
 
-      iex> Hermes.Server.Base.start_link(module: MyServer, name: MyServer)
-      {:ok, pid}
+      # Start with explicit transport configuration
+      Hermes.Server.Base.start_link(
+        module: MyServer,
+        init_arg: [],
+        name: {:via, Registry, {MyRegistry, :my_server}},
+        transport: [
+          layer: Hermes.Server.Transport.STDIO,
+          name: {:via, Registry, {MyRegistry, :my_transport}}
+        ]
+      )
+
+      # Typical usage through Hermes.Server.Supervisor
+      Hermes.Server.Supervisor.start_link(MyServer, [], transport: :stdio)
   """
   @spec start_link(Enumerable.t(option())) :: GenServer.on_start()
   def start_link(opts) do
@@ -77,16 +139,36 @@ defmodule Hermes.Server.Base do
   @doc """
   Sends a notification to the client.
 
+  Notifications are fire-and-forget messages that don't expect a response.
+  This function is useful for server-initiated communication like progress
+  updates or status changes.
+
   ## Parameters
-    * `server` - The server process
-    * `method` - The notification method
-    * `params` - Optional parameters for the notification
+    * `server` - The server process name or PID
+    * `method` - The notification method (e.g., "notifications/message")
+    * `params` - Optional parameters for the notification (defaults to `%{}`)
 
   ## Returns
     * `:ok` if notification was sent successfully
-    * `{:error, reason}` otherwise
+    * `{:error, reason}` if transport fails
+
+  ## Examples
+
+      # Send a log message notification
+      Hermes.Server.Base.send_notification(
+        server,
+        "notifications/message",
+        %{"level" => "info", "data" => "Processing started"}
+      )
+
+      # Send a custom notification
+      Hermes.Server.Base.send_notification(
+        server,
+        "custom/status_changed",
+        %{"status" => "active"}
+      )
   """
-  @spec send_notification(t(), String.t(), map()) :: :ok | {:error, term()}
+  @spec send_notification(GenServer.name(), String.t(), map()) :: :ok | {:error, term()}
   def send_notification(server, method, params \\ %{}) do
     GenServer.call(server, {:send_notification, method, params})
   end
@@ -100,64 +182,54 @@ defmodule Hermes.Server.Base do
     end
 
     server_info = module.server_info()
-
-    capabilities =
-      if function_exported?(module, :server_capabilities, 0) do
-        module.server_capabilities()
-      else
-        %{}
-      end
+    capabilities = module.server_capabilities()
+    protocol_versions = module.supported_protocol_versions()
 
     state = %{
-      mod: module,
-      init_arg: opts.init_arg,
-      server_info: server_info,
-      capabilities: capabilities,
-      protocol_version: opts.protocol_version,
-      transport: Map.new(opts.transport),
-      custom_state: nil,
-      initialized: false
-    }
-
-    Logging.server_event("starting", %{
       module: module,
       server_info: server_info,
       capabilities: capabilities,
-      protocol_version: opts.protocol_version
-    })
+      supported_versions: protocol_versions,
+      transport: Map.new(opts.transport),
+      init_arg: opts.init_arg,
+      sessions: %{},
+      frame: Frame.new()
+    }
+
+    Logging.server_event("starting", %{module: module, server_info: server_info, capabilities: capabilities})
 
     Telemetry.execute(
       Telemetry.event_server_init(),
       %{system_time: System.system_time()},
-      %{
-        module: module,
-        server_info: server_info,
-        capabilities: capabilities,
-        protocol_version: opts.protocol_version
-      }
+      %{module: module, server_info: server_info, capabilities: capabilities}
     )
 
-    case module.init(opts.init_arg) do
-      {:ok, custom_state} ->
-        {:ok, %{state | custom_state: custom_state}, :hibernate}
-
-      {:error, reason} ->
-        Logging.server_event("starting_failed", %{reason: reason}, level: :error)
-        {:stop, reason}
-    end
+    server_init(state)
   end
 
   @impl GenServer
-  def handle_call({:message, message}, from, state) do
-    case Message.decode(message) do
-      {:ok, [decoded]} when Message.is_request(decoded) ->
-        handle_request(decoded, state)
+  def handle_call({:request, decoded, session_id}, _from, state) when is_map(decoded) do
+    with {:ok, {%Session{} = session, state}} <- maybe_attach_session(session_id, state) do
+      cond do
+        Message.is_ping(decoded) ->
+          handle_server_ping(decoded, state)
 
-      {:ok, [decoded]} when Message.is_notification(decoded) ->
-        handle_notification(decoded, from, state)
+        not (Message.is_initialize_lifecycle(decoded) or Session.is_initialized(session)) ->
+          Logging.server_event("session_not_initialized_check", %{
+            session_id: session.id,
+            initialized: session.initialized,
+            method: decoded["method"]
+          })
 
-      {:error, reason} ->
-        handle_decode_error(reason, state)
+          handle_server_not_initialized(state)
+
+        Message.is_request(decoded) ->
+          handle_request(decoded, session, state)
+
+        true ->
+          error = Error.invalid_request(%{data: %{message: "Expected request but got different message type"}})
+          {:reply, {:error, error}, state}
+      end
     end
   end
 
@@ -173,29 +245,58 @@ defmodule Hermes.Server.Base do
   end
 
   @impl GenServer
-  def terminate(reason, state) do
-    Logging.server_event("terminating", %{
-      reason: reason,
-      server_info: state.server_info
-    })
+  def handle_cast({:notification, decoded, session_id}, state) when is_map(decoded) do
+    with {:ok, {%Session{} = session, state}} <- maybe_attach_session(session_id, state) do
+      if Message.is_initialize_lifecycle(decoded) or Session.is_initialized(session) do
+        handle_notification(decoded, session, state)
+      else
+        Logging.server_event("session_not_initialized_check", %{
+          session_id: session.id,
+          initialized: session.initialized,
+          method: decoded["method"]
+        })
+
+        {:noreply, state}
+      end
+    end
+  end
+
+  @impl GenServer
+  def terminate(reason, %{server_info: server_info}) do
+    Logging.server_event("terminating", %{reason: reason, server_info: server_info})
 
     Telemetry.execute(
       Telemetry.event_server_terminate(),
       %{system_time: System.system_time()},
-      %{
-        reason: reason,
-        server_info: state.server_info
-      }
+      %{reason: reason, server_info: server_info}
     )
 
     :ok
   end
 
-  # Message handling implementation
+  defp handle_server_ping(%{"id" => request_id}, state) do
+    {:reply, encode_response(%{}, request_id), state}
+  end
 
-  defp handle_request(%{"method" => "initialize"} = request, %{initialized: false} = state) do
-    params = request["params"] || %{}
-    protocol_version = params["protocolVersion"] || state.protocol_version
+  defp handle_server_not_initialized(state) do
+    error = Error.invalid_request(%{data: %{message: "Server not initialized"}})
+
+    Logging.server_event(
+      "request_error",
+      %{error: error, reason: "not_initialized"},
+      level: :warning
+    )
+
+    {:reply, {:ok, Error.to_json_rpc!(error)}, state}
+  end
+
+  # Request handling
+
+  defp handle_request(%{"params" => params} = request, session, state) when Message.is_initialize(request) do
+    %{"clientInfo" => client_info, "capabilities" => client_capabilities, "protocolVersion" => requested_version} = params
+
+    protocol_version = negotiate_protocol_version(state.supported_versions, requested_version)
+    :ok = Session.update_from_initialization(session.name, protocol_version, client_info, client_capabilities)
 
     response = %{
       "protocolVersion" => protocol_version,
@@ -218,44 +319,91 @@ defmodule Hermes.Server.Base do
     {:reply, encode_response(response, request["id"]), state}
   end
 
-  defp handle_request(request, %{initialized: true, mod: module} = state) do
-    request_id = request["id"]
-    method = request["method"]
+  defp handle_request(%{"id" => request_id, "method" => "logging/setLevel"} = request, session, state)
+       when Server.is_supported_capability(state.capabilities, "logging") do
+    level = request["params"]["level"]
+    :ok = Session.set_log_level(session.name, level)
+    {:reply, encode_response(%{}, request_id), state}
+  end
 
-    Logging.server_event("handling_request", %{
-      id: request_id,
-      method: method
-    })
+  defp handle_request(%{"id" => request_id, "method" => method} = request, _session, state) do
+    Logging.server_event("handling_request", %{id: request_id, method: method})
 
     Telemetry.execute(
       Telemetry.event_server_request(),
       %{system_time: System.system_time()},
-      %{
-        id: request_id,
-        method: method
-      }
+      %{id: request_id, method: method}
     )
 
-    case module.handle_request(request, state.custom_state) do
-      {:reply, response, new_custom_state} ->
+    server_request(request, state)
+  end
+
+  # Notification handling
+
+  defp handle_notification(%{"method" => "notifications/initialized"}, session, state) do
+    Logging.server_event("client_initialized", %{session_id: session.id})
+    :ok = Session.mark_initialized(session.name)
+    Logging.server_event("session_marked_initialized", %{session_id: session.id, initialized: true})
+    {:noreply, state}
+  end
+
+  defp handle_notification(%{"method" => "notifications/cancelled"} = notification, _session, state) do
+    # TODO(zoedsoupe): we need to actually keep track of running requests...
+    Logging.server_event("handling_notiifcation_cancellation", %{params: notification["params"]})
+    {:noreply, state}
+  end
+
+  defp handle_notification(notification, _session, state) do
+    method = notification["method"]
+
+    Logging.server_event("handling_notification", %{method: method})
+
+    Telemetry.execute(
+      Telemetry.event_server_notification(),
+      %{system_time: System.system_time()},
+      %{method: method}
+    )
+
+    server_notification(notification, state)
+  end
+
+  # Helper functions
+
+  defp server_init(%{module: module, init_arg: init_arg} = state) do
+    case module.init(init_arg, state.frame) do
+      {:ok, %Frame{} = frame} ->
+        {:ok, %{state | frame: frame}, :hibernate}
+
+      :ignore ->
+        :ignore
+
+      {:stop, reason} ->
+        Logging.server_event("starting_failed", %{reason: reason}, level: :error)
+        {:stop, reason}
+    end
+  end
+
+  defp server_request(%{"id" => request_id, "method" => method} = request, %{module: module} = state) do
+    case module.handle_request(request, state.frame) do
+      {:reply, response, %Frame{} = frame} ->
         Telemetry.execute(
           Telemetry.event_server_response(),
           %{system_time: System.system_time()},
           %{id: request_id, method: method, status: :success}
         )
 
-        {:reply, encode_response(response, request_id), %{state | custom_state: new_custom_state}}
+        {:reply, encode_response(response, request_id), %{state | frame: frame}}
 
-      {:noreply, new_custom_state} ->
+      {:noreply, %Frame{} = frame} ->
         Telemetry.execute(
           Telemetry.event_server_response(),
           %{system_time: System.system_time()},
           %{id: request_id, method: method, status: :noreply}
         )
 
-        {:reply, {:ok, nil}, %{state | custom_state: new_custom_state}}
+        {:reply, {:ok, nil}, %{state | frame: frame}}
 
-      {:error, %Error{} = error, new_custom_state} ->
+      {:error, %Error{} = error, %Frame{} = frame} ->
         Logging.server_event(
           "request_error",
           %{id: request_id, method: method, error: error},
@@ -268,89 +416,56 @@ defmodule Hermes.Server.Base do
           %{id: request_id, method: method, error: error}
         )
 
-        {:reply, {:ok, Error.to_json_rpc!(error)}, %{state | custom_state: new_custom_state}}
+        {:reply, {:ok, Error.to_json_rpc!(error, request_id)}, %{state | frame: frame}}
     end
   end
 
-  defp handle_request(_request, %{initialized: false} = state) do
-    error = Error.invalid_request(%{data: %{message: "Server not initialized"}})
+  defp server_notification(%{"method" => method} = notification, %{module: module} = state) do
+    case module.handle_notification(notification, state.frame) do
+      {:noreply, %Frame{} = frame} ->
+        {:noreply, %{state | frame: frame}}
 
-    Logging.server_event(
-      "request_error",
-      %{error: error, reason: "not_initialized"},
-      level: :warning
-    )
-
-    {:reply, {:ok, Error.to_json_rpc!(error)}, state}
-  end
-
-  defp handle_notification(%{"method" => "notifications/initialized"}, from, state) do
-    GenServer.reply(from, {:ok, nil})
-    Logging.server_event("client_initialized", nil)
-    {:noreply, %{state | initialized: true}}
-  end
-
-  defp handle_notification(notification, from, %{initialized: true, mod: module} = state) do
-    GenServer.reply(from, {:ok, nil})
-    method = notification["method"]
-
-    Logging.server_event("handling_notification", %{method: method})
-
-    Telemetry.execute(
-      Telemetry.event_server_notification(),
-      %{system_time: System.system_time()},
-      %{method: method}
-    )
-
-    case module.handle_notification(notification, state.custom_state) do
-      {:noreply, new_custom_state} ->
-        {:noreply, %{state | custom_state: new_custom_state}}
-
-      {:error, _error, new_custom_state} ->
+      {:error, _error, %Frame{} = frame} ->
         Logging.server_event(
           "notification_handler_error",
           %{method: method},
           level: :warning
         )
 
-        {:noreply, %{state | custom_state: new_custom_state}}
+        {:noreply, %{state | frame: frame}}
     end
   end
 
-  defp handle_notification(_notification, from, state) do
-    GenServer.reply(from, {:ok, nil})
-    {:noreply, state}
+  @spec maybe_attach_session(session_id :: String.t(), t) :: {:ok, {session :: Session.t(), t}}
+  defp maybe_attach_session(session_id, %{sessions: sessions} = state) when is_map_key(sessions, session_id) do
+    {:ok, {Session.get(sessions[session_id]), state}}
   end
 
-  defp handle_decode_error(:invalid_message, state) do
-    error = Error.parse_error(%{data: %{message: "Invalid message format"}})
+  defp maybe_attach_session(session_id, %{sessions: sessions} = state) do
+    session = Registry.server_session(state.module, session_id)
 
-    Logging.server_event(
-      "message_decode_error",
-      %{reason: :invalid_message, error: error},
-      level: :error
-    )
+    case SessionSupervisor.create_session(state.module, session_id) do
+      {:ok, _} ->
+        state = %{state | sessions: Map.put(sessions, session_id, session)}
+        {:ok, {Session.get(session), state}}
 
-    error_response = Error.to_json_rpc!(error)
-    send_to_transport(state.transport, error_response)
+      {:error, {:already_started, _}} ->
+        # Session already exists, just use it
+        state = %{state | sessions: Map.put(sessions, session_id, session)}
+        {:ok, {Session.get(session), state}}
 
-    {:reply, {:error, error}, state}
+      error ->
+        error
+    end
   end
 
-  defp handle_decode_error(errors, state) when is_list(errors) do
-    errors = Enum.map(errors, &Peri.Error.error_to_map/1)
-    error = Error.parse_error(%{data: %{errors: errors, message: "Failed to parse message"}})
-
-    Logging.server_event(
-      "message_decode_error",
-      %{reason: errors, error: error},
-      level: :error
-    )
-
-    {:reply, {:ok, Error.to_json_rpc!(error)}, state}
+  defp negotiate_protocol_version([latest | _] = supported_versions, requested_version) do
+    if requested_version in supported_versions do
+      requested_version
+    else
+      latest
+    end
   end
-
-  # Helper functions
 
   defp encode_notification(method, params) do
     notification = %{"method" => method, "params" => params}

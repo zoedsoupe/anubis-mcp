@@ -45,6 +45,19 @@ defmodule Hermes.Server.Registry do
   end
 
   @doc """
+  Returns a via tuple for naming a server session process.
+
+  ## Examples
+
+      iex> Hermes.Server.Registry.server_session(Calculator, "session_123")
+      {:via, Registry, {Hermes.Server.Registry, {:session, Calculator, "session_123"}}}
+  """
+  @spec server_session(module(), String.t()) :: GenServer.name()
+  def server_session(server, id) when is_binary(id) do
+    {:via, Registry, {@registry_name, {:session, server, id}}}
+  end
+
+  @doc """
   Returns a via tuple for naming a transport process.
 
   ## Examples
@@ -60,14 +73,22 @@ defmodule Hermes.Server.Registry do
   @doc """
   Returns a via tuple for naming a supervisor process.
 
+  ## Parameters
+
+    * `kind` - The supervisor type (`:supervisor` or `:session_supervisor`)
+    * `module` - The server module name
+
   ## Examples
 
       iex> Hermes.Server.Registry.supervisor(MyApp.Calculator)
       {:via, Registry, {Hermes.Server.Registry, {:supervisor, MyApp.Calculator}}}
+
+      iex> Hermes.Server.Registry.supervisor(:session_supervisor, MyApp.Calculator)
+      {:via, Registry, {Hermes.Server.Registry, {:session_supervisor, MyApp.Calculator}}}
   """
-  @spec supervisor(module()) :: GenServer.name()
-  def supervisor(module) when is_atom(module) do
-    {:via, Registry, {@registry_name, {:supervisor, module}}}
+  @spec supervisor(atom(), module()) :: GenServer.name()
+  def supervisor(kind \\ :supervisor, module) when is_atom(module) do
+    {:via, Registry, {@registry_name, {kind, module}}}
   end
 
   @doc """
@@ -105,6 +126,67 @@ defmodule Hermes.Server.Registry do
   end
 
   @doc """
+  Lists all server sessions for a given module.
+
+  ## Examples
+
+      iex> Hermes.Server.Registry.list_server_sessions(MyApp.Calculator)
+      ["session-abc123", "session-def456"]
+  """
+  @spec list_server_sessions(module()) :: [String.t()]
+  def list_server_sessions(module) when is_atom(module) do
+    @registry_name
+    |> Registry.select([
+      {{:"$1", :_, :_}, [{:andalso, {:==, {:element, 1, :"$1"}, :session}, {:==, {:element, 2, :"$1"}, module}}], [:"$1"]}
+    ])
+    |> Enum.map(fn {:session, ^module, id} -> id end)
+  end
+
+  @doc """
+  Gets the PID of a session-specific server.
+
+  ## Examples
+
+      iex> Hermes.Server.Registry.whereis_server_session("session-abc123", MyApp.Calculator)
+      {:ok, #PID<0.125.0>}
+  """
+  @spec whereis_server_session(module(), String.t()) :: pid | nil
+  def whereis_server_session(module, session_id) when is_binary(session_id) and is_atom(module) do
+    case Registry.lookup(@registry_name, {:session, module, session_id}) do
+      [{pid, _}] -> pid
+      [] -> nil
+    end
+  end
+
+  @doc """
+  Gets the PID of a supervisor process.
+
+  ## Parameters
+
+    * `kind` - The supervisor type (`:supervisor` or `:session_supervisor`)
+    * `server` - The server module name
+
+  ## Returns
+
+  The PID of the supervisor if registered, `nil` otherwise.
+
+  ## Examples
+
+      iex> Hermes.Server.Registry.whereis_supervisor(MyApp.Calculator)
+      #PID<0.123.0>
+
+      iex> Hermes.Server.Registry.whereis_supervisor(:session_supervisor, MyApp.Calculator)
+      #PID<0.124.0>
+  """
+  @spec whereis_supervisor(atom(), module()) :: pid() | nil
+  def whereis_supervisor(kind \\ :supervisor, server) when is_atom(server) do
+    case Registry.lookup(@registry_name, {kind, server}) do
+      [{pid, _}] -> pid
+      [] -> nil
+    end
+  end
+
+  @doc """
   Checks if a server is registered.
 
   ## Examples
@@ -131,11 +213,11 @@ defmodule Hermes.Server.Registry do
       iex> Hermes.Server.Registry.whereis_server(NotRegistered)
       :error
   """
-  @spec whereis_server(module()) :: {:ok, pid()} | :error
+  @spec whereis_server(module()) :: pid | nil
   def whereis_server(module) when is_atom(module) do
     case Registry.lookup(@registry_name, {:server, module}) do
-      [{pid, _}] -> {:ok, pid}
-      [] -> :error
+      [{pid, _}] -> pid
+      [] -> nil
     end
   end
 
@@ -147,11 +229,11 @@ defmodule Hermes.Server.Registry do
       iex> Hermes.Server.Registry.whereis_transport(MyApp.Calculator, :stdio)
       {:ok, #PID<0.124.0>}
   """
-  @spec whereis_transport(module(), atom()) :: {:ok, pid()} | :error
+  @spec whereis_transport(module(), atom()) :: pid | nil
   def whereis_transport(module, type) when is_atom(module) and is_atom(type) do
     case Registry.lookup(@registry_name, {:transport, module, type}) do
-      [{pid, _}] -> {:ok, pid}
-      [] -> :error
+      [{pid, _}] -> pid
+      [] -> nil
     end
   end
 end
