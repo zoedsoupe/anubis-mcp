@@ -781,7 +781,7 @@ defmodule Hermes.Client do
       {request, updated_state} = State.remove_request(state, request_id)
 
       error =
-        Error.client_error(:request_cancelled, %{
+        Error.transport(:request_cancelled, %{
           message: "Request cancelled by client",
           reason: reason
         })
@@ -789,7 +789,7 @@ defmodule Hermes.Client do
       GenServer.reply(request.from, {:error, error})
       {:reply, :ok, updated_state}
     else
-      false -> {:reply, Error.client_error(:request_not_found), state}
+      false -> {:reply, Error.transport(:request_not_found), state}
       error -> {:reply, error, state}
     end
   end
@@ -805,7 +805,7 @@ defmodule Hermes.Client do
           _ = send_cancellation(state, request.id, reason)
 
           error =
-            Error.client_error(:request_cancelled, %{
+            Error.transport(:request_cancelled, %{
               message: "Request cancelled by client",
               reason: reason
             })
@@ -882,7 +882,6 @@ defmodule Hermes.Client do
 
       {:error, error} ->
         Logging.client_event("decode_failed", %{error: error}, level: :warning)
-
         {:noreply, state}
     end
   rescue
@@ -953,7 +952,7 @@ defmodule Hermes.Client do
         elapsed_ms = Request.elapsed_time(request)
 
         error =
-          Error.client_error(:request_timeout, %{
+          Error.transport(:request_timeout, %{
             message: "Request timed out after #{elapsed_ms}ms"
           })
 
@@ -995,7 +994,7 @@ defmodule Hermes.Client do
     for request <- pending_requests do
       # Reply to the pending request with an error
       error =
-        Error.client_error(:request_cancelled, %{
+        Error.transport(:request_cancelled, %{
           message: "Request cancelled by client",
           reason: "client closed"
         })
@@ -1058,23 +1057,12 @@ defmodule Hermes.Client do
       {nil, state} ->
         state
 
-      {_request, updated_state} ->
-        # Update server info in state
-        updated_state =
-          State.update_server_info(
-            updated_state,
-            result["capabilities"],
-            result["serverInfo"]
-          )
+      {_request, state} ->
+        state = State.update_server_info(state, result["capabilities"], result["serverInfo"])
+        Logging.client_event("initialized", %{server_info: result["serverInfo"], capabilities: result["capabilities"]})
+        :ok = send_notification(state, "notifications/initialized")
 
-        Logging.client_event("initialized", %{
-          server_info: result["serverInfo"],
-          capabilities: result["capabilities"]
-        })
-
-        :ok = send_notification(updated_state, "notifications/initialized")
-
-        updated_state
+        state
     end
   end
 
@@ -1145,7 +1133,7 @@ defmodule Hermes.Client do
       })
 
       error =
-        Error.client_error(:request_cancelled, %{
+        Error.transport(:request_cancelled, %{
           message: "Request cancelled by server",
           reason: reason
         })
@@ -1220,7 +1208,7 @@ defmodule Hermes.Client do
 
   defp send_to_transport(transport, data) do
     with {:error, reason} <- transport.layer.send_message(transport.name, data) do
-      {:error, Error.transport_error(:send_failure, %{original_reason: reason})}
+      {:error, Error.transport(:send_failure, %{original_reason: reason})}
     end
   end
 

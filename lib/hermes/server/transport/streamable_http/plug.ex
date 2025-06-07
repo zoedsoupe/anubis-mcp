@@ -22,7 +22,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
 
       scope "/mcp" do
         pipe_through :mcp
-        forward "/", to: Hermes.Server.Transport.StreamableHTTP.Plug, init_opts: [server: :your_server_name]
+        forward "/", to: Hermes.Server.Transport.StreamableHTTP.Plug, server: :your_server_name
       end
 
   ## Usage in Plug Router
@@ -114,13 +114,14 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
 
   defp handle_post(conn, %{transport: transport, session_header: session_header} = opts) do
     with {:ok, body, conn} <- maybe_read_request_body(conn, opts),
-         {:ok, messages} <- maybe_parse_messages(body) do
+         {:ok, [messages]} <- maybe_parse_messages(body) do
       session_id = determine_session_id(conn, session_header, messages)
 
-      if Enum.any?(messages, &Message.is_request/1) do
-        handle_request_with_possible_sse(conn, transport, session_id, body, session_header)
+      # if Enum.any?(messages, &Message.is_request/1) do
+      if Message.is_request(messages) do
+        handle_request_with_possible_sse(conn, transport, session_id, messages, session_header)
       else
-        case StreamableHTTP.handle_message(transport, session_id, body) do
+        case StreamableHTTP.handle_message(transport, session_id, messages) do
           {:ok, _} ->
             conn
             |> put_resp_content_type("application/json")
@@ -131,16 +132,16 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
 
           {:error, reason} ->
             Logging.transport_event("notification_handling_failed", %{reason: reason}, level: :error)
-            send_jsonrpc_error(conn, Error.internal_error(%{data: %{reason: reason}}), nil)
+            send_jsonrpc_error(conn, Error.protocol(:internal_error, %{reason: reason}), nil)
         end
       end
     else
       {:error, :invalid_json} ->
-        send_jsonrpc_error(conn, Error.parse_error(%{data: %{message: "Invalid JSON"}}), nil)
+        send_jsonrpc_error(conn, Error.protocol(:parse_error, %{message: "Invalid JSON"}), nil)
 
       {:error, reason} ->
         Logging.transport_event("request_error", %{reason: reason}, level: :error)
-        send_jsonrpc_error(conn, Error.parse_error(%{data: %{reason: reason}}), nil)
+        send_jsonrpc_error(conn, Error.protocol(:parse_error, %{reason: reason}), nil)
     end
   end
 
@@ -188,15 +189,14 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
   end
 
   defp handle_json_request(conn, transport, session_id, body, session_header) do
-    case StreamableHTTP.handle_message(transport, session_id, body) do
-      {:ok, response} when is_binary(response) ->
-        conn
-        |> put_resp_content_type("application/json")
-        |> maybe_add_session_header(session_header, session_id)
-        |> send_resp(200, response)
-
-      {:error, error} ->
-        handle_request_error(conn, error, body)
+    with {:ok, [messages]} <- maybe_parse_messages(body),
+         {:ok, response} <- StreamableHTTP.handle_message(transport, session_id, messages) do
+      conn
+      |> put_resp_content_type("application/json")
+      |> maybe_add_session_header(session_header, session_id)
+      |> send_resp(200, response)
+    else
+      {:error, error} -> handle_request_error(conn, error, body)
     end
   end
 
@@ -218,7 +218,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
 
   defp handle_request_error(conn, reason, body) do
     Logging.transport_event("request_error", %{reason: reason}, level: :error)
-    send_jsonrpc_error(conn, Error.internal_error(%{data: %{reason: reason}}), extract_request_id(body))
+    send_jsonrpc_error(conn, Error.protocol(:internal_error, %{reason: reason}), extract_request_id(body))
   end
 
   defp establish_sse_for_request(conn, transport, session_id, body, session_header) do
@@ -229,7 +229,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
 
       {:error, reason} ->
         Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
-        send_jsonrpc_error(conn, Error.internal_error(%{data: %{reason: reason}}), extract_request_id(body))
+        send_jsonrpc_error(conn, Error.protocol(:internal_error, %{reason: reason}), extract_request_id(body))
     end
   end
 
@@ -331,12 +331,12 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
 
     mcp_error =
       case status do
-        405 -> Error.method_not_found(data)
-        406 -> Error.invalid_request(data)
-        _ -> Error.internal_error(data)
+        405 -> Error.protocol(:method_not_found, data)
+        406 -> Error.protocol(:invalid_request, data)
+        _ -> Error.protocol(:internal_error, data)
       end
 
-    error_response = Error.to_json_rpc!(mcp_error, ID.generate_error_id())
+    {:ok, error_response} = Error.to_json_rpc(mcp_error, ID.generate_error_id())
 
     conn
     |> put_resp_content_type("application/json")
@@ -345,12 +345,15 @@ defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
 
   defp send_jsonrpc_error(conn, %Error{} = error, id) do
     error_id = id || ID.generate_error_id()
-    encoded_error = Error.to_json_rpc!(error, error_id)
+    {:ok, encoded_error} = Error.to_json_rpc(error, error_id)
 
     conn
     |> put_resp_content_type("application/json")
     |> send_resp(400, encoded_error)
   end
+
+  defp extract_request_id(%{"id" => request_id}), do: request_id
+  defp extract_request_id(request) when is_map(request), do: nil
 
   defp extract_request_id(body) when is_binary(body) do
     case Message.decode(body) do
