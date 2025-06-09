@@ -1,7 +1,6 @@
-Mox.defmock(Hermes.MockTransport, for: Hermes.Transport.Behaviour)
-
 Application.ensure_all_started(:mimic)
-Mimic.copy(Hermes.MockTransport)
+
+Mox.defmock(Hermes.MockTransport, for: Hermes.Transport.Behaviour)
 
 if Code.ensure_loaded?(:gun), do: Mimic.copy(:gun)
 

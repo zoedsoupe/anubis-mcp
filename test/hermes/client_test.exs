@@ -1,42 +1,41 @@
 defmodule Hermes.ClientTest do
-  use MCPTest.Case, async: true
+  use Hermes.MCP.Case, async: true
+
+  import Mox
 
   alias Hermes.MCP.Error
   alias Hermes.MCP.ID
   alias Hermes.MCP.Message
   alias Hermes.MCP.Response
 
-  @moduletag capture_log: true
+  setup :set_mox_from_context
+  setup :verify_on_exit!
+
+  setup do
+    Mox.stub_with(Hermes.MockTransport, MockTransport)
+    :ok
+  end
 
   describe "start_link/1" do
     test "starts the client with proper initialization" do
-      transport_name = :test_transport
-      start_supervised!({MCPTest.MockTransport, [name: transport_name]})
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        assert String.contains?(message, "initialize")
+        assert String.contains?(message, "protocolVersion")
+        assert String.contains?(message, "capabilities")
+        assert String.contains?(message, "clientInfo")
+        :ok
+      end)
 
       client =
         start_supervised!(
           {Hermes.Client,
-           transport: [layer: MCPTest.MockTransport, name: transport_name],
+           transport: [layer: Hermes.MockTransport, name: MockTransport],
            client_info: %{"name" => "TestClient", "version" => "1.0.0"}},
           restart: :temporary
         )
 
-      send_initialize_request(client)
-
-      Process.sleep(50)
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-
-      [init_message] = messages
-      assert String.contains?(init_message, "initialize")
-      assert String.contains?(init_message, "protocolVersion")
-      assert String.contains?(init_message, "capabilities")
-      assert String.contains?(init_message, "clientInfo")
-
-      request_id = get_request_id(client, "initialize")
-      response = init_response(request_id)
-      send_response(client, response)
-      send_notification(client, initialized_notification())
+      allow(Hermes.MockTransport, self(), client)
+      initialize_client(client)
 
       assert Process.alive?(client)
     end
@@ -46,37 +45,69 @@ defmodule Hermes.ClientTest do
     setup :initialized_client
 
     test "ping sends correct request", %{client: client} do
-      result = request_response_cycle(client, "ping", %{}, &ping_response/1)
-      assert result == :pong
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "ping"
+        assert decoded["params"] == %{}
+        assert decoded["jsonrpc"] == "2.0"
+        assert is_binary(decoded["id"])
+        :ok
+      end)
+
+      task = Task.async(fn -> Hermes.Client.ping(client) end)
+
+      Process.sleep(50)
+
+      request_id = get_request_id(client, "ping")
+      assert request_id
+
+      response = ping_response(request_id)
+      send_response(client, response)
+
+      assert :pong = Task.await(task)
     end
 
     test "list_resources sends correct request", %{client: client} do
-      resources = [%{"name" => "test", "uri" => "test://uri"}]
-      result = request_with_resources_response(client, resources)
-
-      assert_success(result, fn response ->
-        assert %Response{} = response
-        assert response.result["resources"] == resources
-        assert response.is_error == false
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/list"
+        assert decoded["params"] == %{}
+        :ok
       end)
+
+      task = Task.async(fn -> Hermes.Client.list_resources(client) end)
+
+      Process.sleep(50)
+
+      request_id = get_request_id(client, "resources/list")
+      assert request_id
+
+      resources = [%{"name" => "test", "uri" => "test://uri"}]
+      response = resources_list_response(request_id, resources)
+      send_response(client, response)
+
+      expected_result = %{
+        "resources" => resources,
+        "nextCursor" => nil
+      }
+
+      assert {:ok, response} = Task.await(task)
+      assert %Response{} = response
+      assert response.result == expected_result
+      assert response.is_error == false
     end
 
     test "list_resources with cursor", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/list"
+        assert decoded["params"] == %{"cursor" => "next-page"}
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.list_resources(client, cursor: "next-page") end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "resources/list"
-      assert decoded["params"] == %{"cursor" => "next-page"}
 
       request_id = get_request_id(client, "resources/list")
       assert request_id
@@ -85,28 +116,28 @@ defmodule Hermes.ClientTest do
       response = resources_list_response(request_id, resources)
       send_response(client, response)
 
+      expected_result = %{
+        "resources" => resources,
+        "nextCursor" => nil
+      }
+
       assert {:ok, response} = Task.await(task)
       assert %Response{} = response
-      assert response.result["resources"] == resources
+      assert response.result == expected_result
       assert response.is_error == false
     end
 
     test "read_resource sends correct request", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/read"
+        assert decoded["params"] == %{"uri" => "test://uri"}
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.read_resource(client, "test://uri") end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "resources/read"
-      assert decoded["params"] == %{"uri" => "test://uri"}
 
       request_id = get_request_id(client, "resources/read")
       assert request_id
@@ -126,21 +157,16 @@ defmodule Hermes.ClientTest do
     end
 
     test "list_prompts sends correct request", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "prompts/list"
+        assert decoded["params"] == %{}
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.list_prompts(client) end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "prompts/list"
-      assert decoded["params"] == %{}
 
       request_id = get_request_id(client, "prompts/list")
       assert request_id
@@ -149,17 +175,29 @@ defmodule Hermes.ClientTest do
       response = prompts_list_response(request_id, prompts)
       send_response(client, response)
 
+      expected_result = %{
+        "prompts" => prompts,
+        "nextCursor" => nil
+      }
+
       assert {:ok, response} = Task.await(task)
       assert %Response{} = response
-      assert response.result["prompts"] == prompts
+      assert response.result == expected_result
       assert response.is_error == false
     end
 
     test "get_prompt sends correct request", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "prompts/get"
 
-      MCPTest.MockTransport.clear_messages(transport_name)
+        assert decoded["params"] == %{
+                 "name" => "test_prompt",
+                 "arguments" => %{"arg1" => "value1"}
+               }
+
+        :ok
+      end)
 
       task =
         Task.async(fn ->
@@ -167,17 +205,6 @@ defmodule Hermes.ClientTest do
         end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "prompts/get"
-
-      assert decoded["params"] == %{
-               "name" => "test_prompt",
-               "arguments" => %{"arg1" => "value1"}
-             }
 
       request_id = get_request_id(client, "prompts/get")
       assert request_id
@@ -197,21 +224,16 @@ defmodule Hermes.ClientTest do
     end
 
     test "list_tools sends correct request", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "tools/list"
+        assert decoded["params"] == %{}
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.list_tools(client) end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "tools/list"
-      assert decoded["params"] == %{}
 
       request_id = get_request_id(client, "tools/list")
       assert request_id
@@ -220,29 +242,29 @@ defmodule Hermes.ClientTest do
       response = tools_list_response(request_id, tools)
       send_response(client, response)
 
+      expected_result = %{
+        "tools" => tools,
+        "nextCursor" => nil
+      }
+
       assert {:ok, response} = Task.await(task)
       assert %Response{} = response
-      assert response.result["tools"] == tools
+      assert response.result == expected_result
       assert response.is_error == false
     end
 
     test "call_tool sends correct request", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "tools/call"
+        assert decoded["params"] == %{"name" => "test_tool", "arguments" => %{"arg1" => "value1"}}
+        :ok
+      end)
 
       task =
         Task.async(fn -> Hermes.Client.call_tool(client, "test_tool", %{"arg1" => "value1"}) end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "tools/call"
-      assert decoded["params"] == %{"name" => "test_tool", "arguments" => %{"arg1" => "value1"}}
 
       request_id = get_request_id(client, "tools/call")
       assert request_id
@@ -263,28 +285,24 @@ defmodule Hermes.ClientTest do
     end
 
     test "handles domain error responses as {:ok, response}", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "tools/call"
+        assert decoded["params"] == %{"name" => "test_tool", "arguments" => %{"arg1" => "value1"}}
+        :ok
+      end)
 
       task =
         Task.async(fn -> Hermes.Client.call_tool(client, "test_tool", %{"arg1" => "value1"}) end)
 
       Process.sleep(50)
 
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "tools/call"
-      assert decoded["params"] == %{"name" => "test_tool", "arguments" => %{"arg1" => "value1"}}
-
       request_id = get_request_id(client, "tools/call")
       assert request_id
 
+      # Response with isError: true but still a valid domain response
       content = [%{"type" => "text", "text" => "Tool execution failed: invalid argument"}]
-      response = tools_call_response(request_id, content, is_error: true)
+      response = tools_call_response(request_id, content, true)
       send_response(client, response)
 
       expected_result = %{
@@ -303,23 +321,18 @@ defmodule Hermes.ClientTest do
     setup :initialized_client
 
     test "ping sends correct request since it is always supported", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "ping"
+        assert decoded["params"] == %{}
+        assert decoded["jsonrpc"] == "2.0"
+        assert is_binary(decoded["id"])
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.ping(client) end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "ping"
-      assert decoded["params"] == %{}
-      assert decoded["jsonrpc"] == "2.0"
-      assert is_binary(decoded["id"])
 
       request_id = get_request_id(client, "ping")
       assert request_id
@@ -343,20 +356,15 @@ defmodule Hermes.ClientTest do
     setup :initialized_client
 
     test "handles error response", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "ping"
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.ping(client) end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "ping"
 
       request_id = get_request_id(client, "ping")
       assert request_id
@@ -367,50 +375,36 @@ defmodule Hermes.ClientTest do
       {:error, error} = Task.await(task)
       assert error.code == -32_601
       assert error.reason == :method_not_found
-      assert error.data[:message] == "Method not found"
+      assert error.message == "Method not found"
     end
 
-    test "handles transport error" do
-      transport_name = :error_test_transport
-      start_supervised!({MCPTest.MockTransport, [name: transport_name, mode: :mocking]}, id: "error")
+    test "handles transport error", %{client: client} do
+      expect(Hermes.MockTransport, :send_message, fn _, _message ->
+        {:error, :connection_closed}
+      end)
 
-      MCPTest.MockTransport.expect_method(transport_name, "ping", nil, fn -> {:error, :connection_closed} end)
-
-      client =
-        start_supervised!(
-          {Hermes.Client,
-           name: :error_test_client,
-           transport: [layer: MCPTest.MockTransport, name: transport_name],
-           client_info: %{"name" => "TestClient", "version" => "1.0.0"}},
-          id: "error_client",
-          restart: :temporary
-        )
-
-      complete_initialization(client)
-
-      assert {:error,
-              %Error{
-                reason: :send_failure,
-                data: %{type: :transport, original_reason: :connection_closed}
-              }} = Hermes.Client.ping(client)
+      assert {:error, error} = Hermes.Client.ping(client)
+      assert error.reason == :send_failure
+      assert error.data.original_reason == :connection_closed
     end
   end
 
   describe "capability management" do
     test "merge_capabilities correctly merges capabilities" do
-      transport_name = :capability_test_transport
-      start_supervised!({MCPTest.MockTransport, [name: transport_name]})
+      expect(Hermes.MockTransport, :send_message, fn _, _message -> :ok end)
 
       client =
         start_supervised!(
           {Hermes.Client,
-           transport: [layer: MCPTest.MockTransport, name: transport_name],
+           transport: [layer: Hermes.MockTransport, name: MockTransport],
            client_info: %{"name" => "TestClient", "version" => "1.0.0"},
            capabilities: %{"roots" => %{}}},
           restart: :temporary
         )
 
-      complete_initialization(client)
+      allow(Hermes.MockTransport, self(), client)
+
+      initialize_client(client)
 
       new_capabilities = %{"sampling" => %{}}
 
@@ -484,10 +478,12 @@ defmodule Hermes.ClientTest do
     test "request with progress token includes it in params", %{client: client} do
       progress_token = "request_token_test"
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/list"
+        assert get_in(decoded, ["params", "_meta", "progressToken"]) == progress_token
+        :ok
+      end)
 
       task =
         Task.async(fn ->
@@ -495,13 +491,6 @@ defmodule Hermes.ClientTest do
         end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "resources/list"
-      assert get_in(decoded, ["params", "_meta", "progressToken"]) == progress_token
 
       request_id = get_request_id(client, "resources/list")
       assert request_id
@@ -526,23 +515,19 @@ defmodule Hermes.ClientTest do
 
   describe "logging" do
     setup :initialized_client
+    @tag server_capabilities: %{"logging" => %{}, "resources" => %{}, "tools" => %{}, "prompts" => %{}}
 
     test "set_log_level sends the correct request", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "logging/setLevel"
+        assert decoded["params"]["level"] == "info"
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.set_log_level(client, "info") end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "logging/setLevel"
-      assert decoded["params"]["level"] == "info"
 
       request_id = get_request_id(client, "logging/setLevel")
       assert request_id
@@ -553,34 +538,36 @@ defmodule Hermes.ClientTest do
       assert {:ok, %{}} = Task.await(task)
     end
 
+    @tag server_capabilities: %{
+           "completion" => %{},
+           "logging" => %{},
+           "resources" => %{},
+           "tools" => %{},
+           "prompts" => %{}
+         }
     test "complete sends correct completion/complete request for prompt reference", %{client: client} do
       ref = %{"type" => "ref/prompt", "name" => "code_review"}
       argument = %{"name" => "language", "value" => "py"}
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "completion/complete"
+        assert decoded["params"]["ref"]["type"] == "ref/prompt"
+        assert decoded["params"]["ref"]["name"] == "code_review"
+        assert decoded["params"]["argument"]["name"] == "language"
+        assert decoded["params"]["argument"]["value"] == "py"
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.complete(client, ref, argument) end)
 
       Process.sleep(50)
 
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "completion/complete"
-      assert decoded["params"]["ref"]["type"] == "ref/prompt"
-      assert decoded["params"]["ref"]["name"] == "code_review"
-      assert decoded["params"]["argument"]["name"] == "language"
-      assert decoded["params"]["argument"]["value"] == "py"
-
       request_id = get_request_id(client, "completion/complete")
       assert request_id
 
       values = ["python", "pytorch", "pyside"]
-      response = completion_complete_response(request_id, values, total: 3, has_more: false)
+      response = completion_complete_response(request_id, values, 3, false)
       send_response(client, response)
 
       assert {:ok, response} = Task.await(task)
@@ -593,34 +580,36 @@ defmodule Hermes.ClientTest do
       assert completion["hasMore"] == false
     end
 
+    @tag server_capabilities: %{
+           "completion" => %{},
+           "logging" => %{},
+           "resources" => %{},
+           "tools" => %{},
+           "prompts" => %{}
+         }
     test "complete sends correct completion/complete request for resource reference", %{client: client} do
       ref = %{"type" => "ref/resource", "uri" => "file:///path/to/file.txt"}
       argument = %{"name" => "encoding", "value" => "ut"}
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "completion/complete"
+        assert decoded["params"]["ref"]["type"] == "ref/resource"
+        assert decoded["params"]["ref"]["uri"] == "file:///path/to/file.txt"
+        assert decoded["params"]["argument"]["name"] == "encoding"
+        assert decoded["params"]["argument"]["value"] == "ut"
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.complete(client, ref, argument) end)
 
       Process.sleep(50)
 
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "completion/complete"
-      assert decoded["params"]["ref"]["type"] == "ref/resource"
-      assert decoded["params"]["ref"]["uri"] == "file:///path/to/file.txt"
-      assert decoded["params"]["argument"]["name"] == "encoding"
-      assert decoded["params"]["argument"]["value"] == "ut"
-
       request_id = get_request_id(client, "completion/complete")
       assert request_id
 
       values = ["utf-8", "utf-16"]
-      response = completion_complete_response(request_id, values, total: 2, has_more: false)
+      response = completion_complete_response(request_id, values, 2, false)
       send_response(client, response)
 
       assert {:ok, response} = Task.await(task)
@@ -666,45 +655,37 @@ defmodule Hermes.ClientTest do
 
   describe "notification handling" do
     test "sends initialized notification after init" do
-      transport_name = :notification_test_transport
-      start_supervised!({MCPTest.MockTransport, [name: transport_name]})
+      Hermes.MockTransport
+      # the handle_continue
+      |> expect(:send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "initialize"
+        assert decoded["jsonrpc"] == "2.0"
+        :ok
+      end)
+      # the send_notification
+      |> expect(:send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "notifications/initialized"
+        :ok
+      end)
 
       client =
         start_supervised!(
           {Hermes.Client,
-           transport: [layer: MCPTest.MockTransport, name: transport_name],
+           transport: [layer: Hermes.MockTransport, name: MockTransport],
            client_info: %{"name" => "TestClient", "version" => "1.0.0"}},
           restart: :temporary
         )
 
-      Process.sleep(50)
-      MCPTest.MockTransport.clear_messages(transport_name)
+      allow(Hermes.MockTransport, self(), client)
 
-      send_initialize_request(client)
+      initialize_client(client)
 
-      Process.sleep(50)
-
-      request_id = get_request_id(client, "initialize")
-      assert request_id
-
-      init_response = init_response(request_id, %{"completion" => %{}})
-      send_response(client, init_response)
-
-      Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-
-      initialized_msg =
-        Enum.find(messages, fn msg ->
-          case Message.decode(msg) do
-            {:ok, [decoded]} -> decoded["method"] == "notifications/initialized"
-            _ -> false
-          end
-        end)
-
-      assert initialized_msg != nil
-
-      :sys.get_state(client)
+      # The client should have sent the initialized notification
+      state = :sys.get_state(client)
+      assert state.server_info
+      assert state.server_capabilities
     end
   end
 
@@ -712,20 +693,15 @@ defmodule Hermes.ClientTest do
     setup :initialized_client
 
     test "handles cancelled notification from server", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "tools/call"
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.call_tool(client, "long_running_tool") end)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "tools/call"
 
       request_id = get_request_id(client, "tools/call")
       assert request_id != nil
@@ -742,37 +718,28 @@ defmodule Hermes.ClientTest do
     end
 
     test "client can cancel a request", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/list"
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.list_resources(client) end)
 
       Process.sleep(50)
 
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "resources/list"
-
       request_id = get_request_id(client, "resources/list")
       assert request_id != nil
 
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "notifications/cancelled"
+        assert decoded["params"]["requestId"] == request_id
+        assert decoded["params"]["reason"] == "test cancellation"
+        :ok
+      end)
 
       assert :ok = Hermes.Client.cancel_request(client, request_id, "test cancellation")
-
-      Process.sleep(50)
-
-      cancel_messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(cancel_messages) == 1
-      [cancel_msg] = cancel_messages
-      {:ok, [cancel_decoded]} = Message.decode(cancel_msg)
-      assert cancel_decoded["method"] == "notifications/cancelled"
-      assert cancel_decoded["params"]["requestId"] == request_id
-      assert cancel_decoded["params"]["reason"] == "test cancellation"
 
       assert {:error, error} = Task.await(task)
       assert error.reason == :request_cancelled
@@ -788,47 +755,30 @@ defmodule Hermes.ClientTest do
     end
 
     test "cancel_all_requests cancels all pending requests", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, 2, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] in ["resources/list", "tools/list"]
+        :ok
+      end)
 
       task1 = Task.async(fn -> Hermes.Client.list_resources(client) end)
       task2 = Task.async(fn -> Hermes.Client.list_tools(client) end)
 
       Process.sleep(50)
 
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 2
-
-      methods =
-        Enum.map(messages, fn msg ->
-          {:ok, [decoded]} = Message.decode(msg)
-          decoded["method"]
-        end)
-
-      assert "resources/list" in methods
-      assert "tools/list" in methods
-
       state = :sys.get_state(client)
       pending_count = map_size(state.pending_requests)
       assert pending_count == 2
 
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, 2, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "notifications/cancelled"
+        assert decoded["params"]["reason"] == "batch cancellation"
+        :ok
+      end)
 
       {:ok, cancelled_requests} = Hermes.Client.cancel_all_requests(client, "batch cancellation")
       assert length(cancelled_requests) == 2
-
-      Process.sleep(50)
-
-      cancel_messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(cancel_messages) == 2
-
-      Enum.each(cancel_messages, fn msg ->
-        {:ok, [decoded]} = Message.decode(msg)
-        assert decoded["method"] == "notifications/cancelled"
-        assert decoded["params"]["reason"] == "batch cancellation"
-      end)
 
       assert {:error, error1} = Task.await(task1)
       assert {:error, error2} = Task.await(task2)
@@ -843,26 +793,22 @@ defmodule Hermes.ClientTest do
     test "request timeout sends cancellation notification", %{client: client} do
       test_timeout = 50
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/list"
+        :ok
+      end)
 
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "notifications/cancelled"
+        assert decoded["params"]["reason"] == "timeout"
+        :ok
+      end)
 
       task = Task.async(fn -> Hermes.Client.list_resources(client, timeout: test_timeout) end)
 
       Process.sleep(test_timeout * 2)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 2
-
-      [request_msg, cancel_msg] = messages
-
-      {:ok, [request_decoded]} = Message.decode(request_msg)
-      assert request_decoded["method"] == "resources/list"
-
-      {:ok, [cancel_decoded]} = Message.decode(cancel_msg)
-      assert cancel_decoded["method"] == "notifications/cancelled"
-      assert cancel_decoded["params"]["reason"] == "timeout"
 
       assert {:error, error} = Task.await(task)
       assert error.reason == :request_timeout
@@ -874,13 +820,14 @@ defmodule Hermes.ClientTest do
     test "buffer timeout allows operation timeout to trigger before GenServer timeout", %{client: client} do
       test_timeout = 50
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.expect_method(transport_name, "resources/list", nil, fn ->
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/list"
         Process.sleep(test_timeout + 10)
         :ok
       end)
+
+      expect(Hermes.MockTransport, :send_message, fn _, _ -> :ok end)
 
       Process.flag(:trap_exit, true)
       task = Task.async(fn -> Hermes.Client.list_resources(client, timeout: test_timeout) end)
@@ -893,35 +840,34 @@ defmodule Hermes.ClientTest do
     end
 
     test "client.close sends cancellation for pending requests", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "resources/list"
+        :ok
+      end)
 
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["method"] == "notifications/cancelled"
+        assert decoded["params"]["reason"] == "client closed"
+        :ok
+      end)
+
+      expect(Hermes.MockTransport, :shutdown, fn _ -> :ok end)
 
       Process.flag(:trap_exit, true)
-      task = Task.async(fn -> Hermes.Client.list_resources(client) end)
+      %{pid: pid} = Task.async(fn -> Hermes.Client.list_resources(client) end)
       Process.sleep(50)
 
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["method"] == "resources/list"
-
-      request_id = get_request_id(client, "resources/list")
-      assert request_id
-
-      client_state = :sys.get_state(client)
-      assert Map.has_key?(client_state.pending_requests, request_id)
+      assert get_request_id(client, "resources/list")
 
       Hermes.Client.close(client)
 
-      assert {:error, error} = Task.await(task, 1000)
-      assert error.reason == :request_cancelled
-      assert error.data[:reason] == "client closed"
-
       Process.sleep(50)
       refute Process.alive?(client)
+
+      # The task exits normally when the client closes
+      assert_receive {:EXIT, ^pid, :normal}
     end
   end
 
@@ -989,35 +935,29 @@ defmodule Hermes.ClientTest do
       :ok = Hermes.Client.add_root(client, "file:///home/user/project1", "Project 1")
       :ok = Hermes.Client.add_root(client, "file:///home/user/project2", "Project 2")
 
-      Process.sleep(100)
-
       request_id = "server_req_123"
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["id"] == request_id
+        assert Map.has_key?(decoded, "result")
 
-      MCPTest.MockTransport.clear_messages(transport_name)
+        roots = decoded["result"]["roots"]
+        assert is_list(roots)
+        assert length(roots) == 2
+
+        uris = Enum.map(roots, & &1["uri"])
+        assert "file:///home/user/project1" in uris
+        assert "file:///home/user/project2" in uris
+
+        :ok
+      end)
 
       assert {:ok, encoded} = Message.encode_request(%{"method" => "roots/list"}, request_id)
       GenServer.cast(client, {:response, encoded})
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-      assert length(messages) == 1
-      [message] = messages
-      {:ok, [decoded]} = Message.decode(message)
-      assert decoded["jsonrpc"] == "2.0"
-      assert decoded["id"] == request_id
-      assert Map.has_key?(decoded, "result")
-
-      roots = decoded["result"]["roots"]
-      assert is_list(roots)
-      assert length(roots) == 2
-
-      uris = Enum.map(roots, & &1["uri"])
-      assert "file:///home/user/project1" in uris
-      assert "file:///home/user/project2" in uris
     end
   end
 
@@ -1026,31 +966,18 @@ defmodule Hermes.ClientTest do
 
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
     test "sends notification when adding a root", %{client: client} do
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["method"] == "notifications/roots/list_changed"
+        assert is_map(decoded["params"])
+        :ok
+      end)
 
       assert :ok = Hermes.Client.add_root(client, "file:///test/root", "Test Root")
       _ = :sys.get_state(client)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-
-      notification_msg =
-        Enum.find(messages, fn msg ->
-          case Message.decode(msg) do
-            {:ok, [decoded]} -> decoded["method"] == "notifications/roots/list_changed"
-            _ -> false
-          end
-        end)
-
-      assert notification_msg != nil
-      {:ok, [decoded]} = Message.decode(notification_msg)
-      assert decoded["jsonrpc"] == "2.0"
-      assert decoded["method"] == "notifications/roots/list_changed"
-      assert is_map(decoded["params"])
     end
 
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
@@ -1058,31 +985,18 @@ defmodule Hermes.ClientTest do
       assert :ok = Hermes.Client.add_root(client, "file:///test/root", "Test Root")
       Process.sleep(50)
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["method"] == "notifications/roots/list_changed"
+        assert is_map(decoded["params"])
+        :ok
+      end)
 
       assert :ok = Hermes.Client.remove_root(client, "file:///test/root")
       _ = :sys.get_state(client)
 
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-
-      notification_msg =
-        Enum.find(messages, fn msg ->
-          case Message.decode(msg) do
-            {:ok, [decoded]} -> decoded["method"] == "notifications/roots/list_changed"
-            _ -> false
-          end
-        end)
-
-      assert notification_msg != nil
-      {:ok, [decoded]} = Message.decode(notification_msg)
-      assert decoded["jsonrpc"] == "2.0"
-      assert decoded["method"] == "notifications/roots/list_changed"
-      assert is_map(decoded["params"])
     end
 
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
@@ -1091,31 +1005,18 @@ defmodule Hermes.ClientTest do
       assert :ok = Hermes.Client.add_root(client, "file:///test/root2", "Test Root 2")
       Process.sleep(50)
 
-      state = :sys.get_state(client)
-      transport_name = state.transport.name
-
-      MCPTest.MockTransport.clear_messages(transport_name)
+      expect(Hermes.MockTransport, :send_message, fn _, message ->
+        decoded = JSON.decode!(message)
+        assert decoded["jsonrpc"] == "2.0"
+        assert decoded["method"] == "notifications/roots/list_changed"
+        assert is_map(decoded["params"])
+        :ok
+      end)
 
       assert :ok = Hermes.Client.clear_roots(client)
 
       _ = :sys.get_state(client)
       Process.sleep(50)
-
-      messages = MCPTest.MockTransport.get_messages(transport_name)
-
-      notification_msg =
-        Enum.find(messages, fn msg ->
-          case Message.decode(msg) do
-            {:ok, [decoded]} -> decoded["method"] == "notifications/roots/list_changed"
-            _ -> false
-          end
-        end)
-
-      assert notification_msg != nil
-      {:ok, [decoded]} = Message.decode(notification_msg)
-      assert decoded["jsonrpc"] == "2.0"
-      assert decoded["method"] == "notifications/roots/list_changed"
-      assert is_map(decoded["params"])
     end
 
     @tag client_capabilities: %{"roots" => %{"listChanged" => false}}

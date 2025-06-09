@@ -264,7 +264,7 @@ defmodule Hermes.Server.Response do
   """
   def error(%{type: :tool} = r, message) when is_binary(message) do
     r
-    |> text("Error: #{message}")
+    |> text(message)
     |> Map.put(:isError, true)
   end
 
@@ -409,8 +409,11 @@ defmodule Hermes.Server.Response do
   end
 
   def to_protocol(%{type: :resource} = r, uri, mime_type) do
+    string_metadata =
+      Map.new(r.metadata, fn {k, v} -> {to_string(k), v} end)
+
     r.contents
-    |> Map.merge(r.metadata)
+    |> Map.merge(string_metadata)
     |> Map.put("uri", uri)
     |> Map.put("mimeType", mime_type)
   end
