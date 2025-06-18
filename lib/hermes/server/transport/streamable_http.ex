@@ -51,6 +51,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
   import Peri
 
   alias Hermes.Logging
+  alias Hermes.MCP.Error
   alias Hermes.MCP.Message
   alias Hermes.Telemetry
   alias Hermes.Transport.Behaviour, as: Transport
@@ -153,7 +154,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
 
   Called by the Plug when a message is received via HTTP POST.
   """
-  @spec handle_message(GenServer.server(), String.t(), map(), map()) ::
+  @spec handle_message(GenServer.server(), String.t(), map() | list(map), map()) ::
           {:ok, binary() | nil} | {:error, term()}
   def handle_message(transport, session_id, message, context) do
     GenServer.call(transport, {:handle_message, session_id, message, context})
@@ -232,7 +233,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def handle_call({:handle_message, session_id, message, context}, _from, state) do
+  def handle_call({:handle_message, session_id, message, context}, _from, state) when is_map(message) do
     server = state.registry.whereis_server(state.server)
 
     if Message.is_notification(message) do
@@ -243,8 +244,17 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
     end
   end
 
+  def handle_call({:handle_message, session_id, messages, context}, _from, state) when is_list(messages) do
+    server = state.registry.whereis_server(state.server)
+
+    case messages do
+      [message] -> handle_single_message(server, message, session_id, context, state)
+      messages -> handle_batch(server, messages, session_id, context, state)
+    end
+  end
+
   @impl GenServer
-  def handle_call({:handle_message_for_sse, session_id, message, context}, _from, state) do
+  def handle_call({:handle_message_for_sse, session_id, message, context}, _from, state) when is_map(message) do
     server = state.registry.whereis_server(state.server)
 
     if Message.is_notification(message) do
@@ -253,6 +263,15 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
     else
       sse_handler? = Map.has_key?(state.sse_handlers, session_id)
       {:reply, forward_request_to_server(server, message, session_id, context, sse_handler?), state}
+    end
+  end
+
+  def handle_call({:handle_message_for_sse, session_id, messages, context}, _from, state) when is_list(messages) do
+    server = state.registry.whereis_server(state.server)
+
+    case messages do
+      [message] -> handle_single_message(server, message, session_id, context, state)
+      messages -> handle_batch(server, messages, session_id, context, state)
     end
   end
 
@@ -288,6 +307,28 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
     end
 
     {:reply, :ok, state}
+  end
+
+  defp handle_single_message(server, message, session_id, context, state) do
+    if Message.is_notification(message) do
+      GenServer.cast(server, {:notification, message, session_id, context})
+      {:reply, {:ok, nil}, state}
+    else
+      sse_handler? = Map.has_key?(state.sse_handlers, session_id)
+      {:reply, forward_request_to_server(server, message, session_id, context, sse_handler?), state}
+    end
+  end
+
+  defp handle_batch(server, messages, session_id, context, state) do
+    sse_handler? = Map.has_key?(state.sse_handlers, session_id)
+
+    with {:batch, responses} <- GenServer.call(server, {:batch_request, messages, session_id, context}),
+         {:ok, batch_response} <- Message.encode_batch(responses) do
+      if sse_handler?, do: {:reply, {:sse, batch_response}, state}, else: {:reply, {:ok, batch_response}, state}
+    else
+      {:error, %Error{} = error} -> {:reply, Error.to_json_rpc(error), state}
+      {:error, reason} -> {:reply, {:error, Error.protocol(:internal_error, %{reason: reason})}, state}
+    end
   end
 
   defp forward_request_to_server(server, message, session_id, context, has_sse_handler \\ false) do

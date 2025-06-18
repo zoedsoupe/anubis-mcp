@@ -1,9 +1,11 @@
 defmodule Hermes.Server.Transport.StreamableHTTPTest do
-  use Hermes.MCP.Case, async: true
+  use Hermes.MCP.Case, async: false
+
+  import ExUnit.CaptureLog
 
   alias Hermes.Server.Transport.StreamableHTTP
 
-  @moduletag skip: true
+  setup :with_default_registry
 
   describe "start_link/1" do
     test "starts with valid options" do
@@ -48,6 +50,12 @@ defmodule Hermes.Server.Transport.StreamableHTTPTest do
       message = build_request("ping", %{})
 
       StreamableHTTP.handle_message_for_sse(transport, session_id, message, %{})
+
+      # Clean up to avoid logs after test ends
+      capture_log(fn ->
+        StreamableHTTP.unregister_sse_handler(transport, session_id)
+        Process.sleep(10)
+      end)
     end
 
     test "routes messages to sessions", %{transport: transport} do
@@ -59,31 +67,39 @@ defmodule Hermes.Server.Transport.StreamableHTTPTest do
       assert :ok = StreamableHTTP.route_to_session(transport, session_id, message)
 
       assert_receive {:sse_message, ^message}
+
+      # Clean up to avoid logs after test ends
+      capture_log(fn ->
+        StreamableHTTP.unregister_sse_handler(transport, session_id)
+        Process.sleep(10)
+      end)
     end
 
     test "cleans up handlers when they crash", %{transport: transport} do
       session_id = "test-session-crash"
       test_pid = self()
 
-      handler_pid =
-        spawn(fn ->
-          StreamableHTTP.register_sse_handler(transport, session_id)
-          send(test_pid, :registered)
+      capture_log(fn ->
+        handler_pid =
+          spawn(fn ->
+            StreamableHTTP.register_sse_handler(transport, session_id)
+            send(test_pid, :registered)
 
-          receive do
-            :crash -> exit(:boom)
-          end
-        end)
+            receive do
+              :crash -> exit(:boom)
+            end
+          end)
 
-      assert_receive :registered, 1000
+        assert_receive :registered, 1000
 
-      handler = StreamableHTTP.get_sse_handler(transport, session_id)
-      assert is_pid(handler)
+        handler = StreamableHTTP.get_sse_handler(transport, session_id)
+        assert is_pid(handler)
 
-      send(handler_pid, :crash)
-      Process.sleep(100)
+        send(handler_pid, :crash)
+        Process.sleep(100)
 
-      refute StreamableHTTP.get_sse_handler(transport, session_id)
+        refute StreamableHTTP.get_sse_handler(transport, session_id)
+      end)
     end
 
     test "send_message/2 works", %{transport: transport} do
