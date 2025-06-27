@@ -75,8 +75,8 @@ defmodule Hermes.Server.Supervisor do
 
   ## Parameters
 
-    * `server` - The module implementing `Hermes.Server.Behaviour`
-    * `init_arg` - Argument passed to the server's `init/1` callback
+    * `server` - The module implementing `Hermes.Server`
+    * `init_arg` - Argument passed to the server's `init/2` callback
     * `opts` - Options including:
       * `:transport` - Transport configuration (required)
       * `:name` - Supervisor name (optional, defaults to registered name)
@@ -197,6 +197,8 @@ defmodule Hermes.Server.Supervisor do
   end
 
   defp check_phoenix_config do
-    Application.get_env(:phoenix, :serve_endpoints, false)
+    phoenix_start? = Application.get_env(:phoenix, :serve_endpoints)
+
+    if is_nil(phoenix_start?), do: true, else: phoenix_start?
   end
 end
