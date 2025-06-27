@@ -86,6 +86,16 @@ defmodule Hermes.Server.Component.Prompt do
           optional(String.t()) => boolean()
         }
 
+  @type t :: %__MODULE__{
+          name: String.t(),
+          description: String.t() | nil,
+          arguments: map | nil,
+          handler: module | nil,
+          validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
+        }
+
+  defstruct [:name, description: nil, arguments: nil, handler: nil, validate_input: nil]
+
   @doc """
   Returns the list of arguments this prompt accepts.
 
@@ -144,29 +154,13 @@ defmodule Hermes.Server.Component.Prompt do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @doc """
-  Converts a prompt module into the MCP protocol format.
-  """
-  @spec to_protocol(module()) :: map()
-  def to_protocol(prompt_module) do
-    %{
-      "name" => prompt_module.name(),
-      "description" => prompt_module.description(),
-      "arguments" => prompt_module.arguments()
-    }
-  end
+  defimpl JSON.Encoder, for: __MODULE__ do
+    alias Hermes.Server.Component.Prompt
 
-  @doc """
-  Validates that a module implements the Prompt behaviour.
-  """
-  @spec implements?(module()) :: boolean()
-  def implements?(module) do
-    behaviours =
-      :attributes
-      |> module.__info__()
-      |> Keyword.get(:behaviour, [])
-      |> List.flatten()
-
-    __MODULE__ in behaviours
+    def encode(%Prompt{} = prompt, _) do
+      prompt
+      |> Map.from_struct()
+      |> JSON.encode!()
+    end
   end
 end

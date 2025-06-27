@@ -46,15 +46,6 @@ defmodule StubServer do
     }
   ]
 
-  def start_link(opts) do
-    Hermes.Server.start_link(__MODULE__, :ok, opts)
-  end
-
-  @impl true
-  def init(:ok, frame) do
-    {:ok, frame}
-  end
-
   @impl true
   def handle_request(%{"method" => "ping"}, frame) do
     {:reply, %{}, frame}
@@ -77,7 +68,7 @@ defmodule StubServer do
   def handle_request(%{"method" => "resources/" <> action, "params" => params}, frame) do
     case action do
       "list" -> {:reply, %{"resources" => @resources}, frame}
-      "read" -> handle_resource_read(params, frame)
+      "read" -> handle_read_resource(params, frame)
     end
   end
 
@@ -101,7 +92,7 @@ defmodule StubServer do
     {:error, Error.protocol(:invalid_request, %{message: "tool #{name} not found"}), frame}
   end
 
-  defp handle_resource_read(%{"uri" => uri}, frame) do
+  defp handle_read_resource(%{"uri" => uri}, frame) do
     Response.resource()
     |> Response.text("some teste config")
     |> Response.to_protocol(uri, "text/plain")
