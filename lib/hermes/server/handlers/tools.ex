@@ -44,11 +44,16 @@ defmodule Hermes.Server.Handlers.Tools do
   """
   @spec handle_call(map(), Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
-  def handle_call(%{"params" => %{"name" => tool_name, "arguments" => params}}, frame, server) do
+  def handle_call(
+        %{"params" => %{"name" => tool_name, "arguments" => params}},
+        frame,
+        server
+      ) do
     registered_tools = server.__components__(:tool) ++ Frame.get_tools(frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with {:ok, params} <- validate_params(params, tool, frame), do: forward_to(server, tool, params, frame)
+      with {:ok, params} <- validate_params(params, tool, frame),
+           do: forward_to(server, tool, params, frame)
     else
       payload = %{message: "Tool not found: #{tool_name}"}
       {:error, Error.protocol(:invalid_params, payload), frame}
@@ -67,7 +72,7 @@ defmodule Hermes.Server.Handlers.Tools do
   end
 
   defp forward_to(server, %Tool{handler: nil} = tool, params, frame) do
-    case server.handle_tool(tool.name, params, frame) do
+    case server.handle_tool_call(tool.name, params, frame) do
       {:reply, %Response{} = response, frame} ->
         {:reply, Response.to_protocol(response), frame}
 
