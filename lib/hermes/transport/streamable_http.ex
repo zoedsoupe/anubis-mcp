@@ -42,11 +42,11 @@ defmodule Hermes.Transport.StreamableHTTP do
   @behaviour Hermes.Transport.Behaviour
 
   use GenServer
+  use Hermes.Logging
 
   import Peri
 
   alias Hermes.HTTP
-  alias Hermes.Logging
   alias Hermes.SSE
   alias Hermes.SSE.Event
   alias Hermes.Telemetry

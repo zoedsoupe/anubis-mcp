@@ -11,14 +11,12 @@ defmodule Hermes.Transport.STDIO do
   @behaviour Hermes.Transport.Behaviour
 
   use GenServer
+  use Hermes.Logging
 
   import Peri
 
-  alias Hermes.Logging
   alias Hermes.Telemetry
   alias Hermes.Transport.Behaviour, as: Transport
-
-  require Logger
 
   @type t :: GenServer.server()
 

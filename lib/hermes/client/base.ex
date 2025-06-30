@@ -13,13 +13,13 @@ defmodule Hermes.Client.Base do
   """
 
   use GenServer
+  use Hermes.Logging
 
   import Peri
 
   alias Hermes.Client.Operation
   alias Hermes.Client.Request
   alias Hermes.Client.State
-  alias Hermes.Logging
   alias Hermes.MCP.Error
   alias Hermes.MCP.ID
   alias Hermes.MCP.Message
