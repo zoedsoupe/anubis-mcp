@@ -144,6 +144,7 @@ defmodule Hermes.Server.Component do
       @behaviour unquote(behaviour_module)
 
       import Hermes.Server.Component, only: [schema: 1, field: 3, field: 2]
+      import Hermes.Server.Frame
 
       @doc false
       def __mcp_component_type__, do: unquote(type)
