@@ -397,6 +397,12 @@ defmodule Hermes.Server.Component do
 
   def __clean_schema_for_peri__(schema), do: __inject_transforms__(schema)
 
+  defp __inject_transforms__({type, {:default, default}})
+       when type in ~w(date datetime naive_datetime time)a do
+    base = __inject_transforms__(type)
+    {base, {:default, default}}
+  end
+
   defp __inject_transforms__(:date) do
     {:custom, &__validate_date__/1}
   end
