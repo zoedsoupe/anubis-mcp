@@ -16,10 +16,6 @@ defmodule Hermes.Client.State do
           protocol_version: String.t(),
           transport: map(),
           pending_requests: %{String.t() => Request.t()},
-          progress_callbacks: %{String.t() => Base.progress_callback()},
-          log_callback: Base.log_callback() | nil,
-          sampling_callback: (map() -> {:ok, map()} | {:error, String.t()}) | nil,
-          # Use a map with URI as key for faster access
           roots: %{String.t() => Base.root()}
         }
 
@@ -31,9 +27,6 @@ defmodule Hermes.Client.State do
     :protocol_version,
     :transport,
     pending_requests: %{},
-    progress_callbacks: %{},
-    log_callback: nil,
-    sampling_callback: nil,
     roots: %{}
   ]
 
@@ -299,61 +292,6 @@ defmodule Hermes.Client.State do
   def unregister_progress_callback(state, token) do
     progress_callbacks = Map.delete(state.progress_callbacks, token)
     %{state | progress_callbacks: progress_callbacks}
-  end
-
-  @doc """
-  Sets the log callback.
-
-  ## Parameters
-
-    * `state` - The current client state
-    * `callback` - The callback function to call when log messages are received
-
-  ## Examples
-
-      iex> updated_state = Hermes.Client.State.set_log_callback(state, fn level, data, logger -> IO.inspect({level, data, logger}) end)
-      iex> is_function(updated_state.log_callback, 3)
-      true
-  """
-  @spec set_log_callback(t(), Base.log_callback()) :: t()
-  def set_log_callback(state, callback) when is_function(callback, 3) do
-    %{state | log_callback: callback}
-  end
-
-  @doc """
-  Clears the log callback.
-
-  ## Parameters
-
-    * `state` - The current client state
-
-  ## Examples
-
-      iex> updated_state = Hermes.Client.State.clear_log_callback(state)
-      iex> is_nil(updated_state.log_callback)
-      true
-  """
-  @spec clear_log_callback(t()) :: t()
-  def clear_log_callback(state) do
-    %{state | log_callback: nil}
-  end
-
-  @doc """
-  Gets the log callback.
-
-  ## Parameters
-
-    * `state` - The current client state
-
-  ## Examples
-
-      iex> callback = Hermes.Client.State.get_log_callback(state)
-      iex> is_function(callback, 3) or is_nil(callback)
-      true
-  """
-  @spec get_log_callback(t()) :: Base.log_callback() | nil
-  def get_log_callback(state) do
-    state.log_callback
   end
 
   @doc """
@@ -654,63 +592,6 @@ defmodule Hermes.Client.State do
   @spec batch_complete?(t(), String.t()) :: boolean()
   def batch_complete?(state, batch_id) do
     get_batch_requests(state, batch_id) == []
-  end
-
-  @doc """
-  Sets the sampling callback function.
-
-  ## Parameters
-
-    * `state` - The current client state
-    * `callback` - The callback function to handle sampling requests
-
-  ## Examples
-
-      iex> callback = fn params -> {:ok, %{role: "assistant", content: %{type: "text", text: "Hello"}}} end
-      iex> updated_state = Hermes.Client.State.set_sampling_callback(state, callback)
-      iex> is_function(updated_state.sampling_callback, 1)
-      true
-  """
-  @spec set_sampling_callback(t(), (map() -> {:ok, map()} | {:error, String.t()})) ::
-          t()
-  def set_sampling_callback(state, callback) when is_function(callback, 1) do
-    %{state | sampling_callback: callback}
-  end
-
-  @doc """
-  Gets the sampling callback function.
-
-  ## Parameters
-
-    * `state` - The current client state
-
-  ## Examples
-
-      iex> Hermes.Client.State.get_sampling_callback(state)
-      nil
-  """
-  @spec get_sampling_callback(t()) ::
-          (map() -> {:ok, map()} | {:error, String.t()}) | nil
-  def get_sampling_callback(state) do
-    state.sampling_callback
-  end
-
-  @doc """
-  Clears the sampling callback function.
-
-  ## Parameters
-
-    * `state` - The current client state
-
-  ## Examples
-
-      iex> updated_state = Hermes.Client.State.clear_sampling_callback(state)
-      iex> updated_state.sampling_callback
-      nil
-  """
-  @spec clear_sampling_callback(t()) :: t()
-  def clear_sampling_callback(state) do
-    %{state | sampling_callback: nil}
   end
 
   # Helper functions
