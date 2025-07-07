@@ -911,9 +911,7 @@ defmodule Hermes.Client.Base do
       {:noreply, state}
     else
       err ->
-        Logging.client_event("roots_list_error", %{id: id, error: err},
-          level: :error
-        )
+        Logging.client_event("roots_list_error", %{id: id, error: err}, level: :error)
 
         Telemetry.execute(
           Telemetry.event_client_error(),
@@ -931,9 +929,7 @@ defmodule Hermes.Client.Base do
       {:noreply, state}
     else
       err ->
-        Logging.client_event("ping_response_error", %{id: id, error: err},
-          level: :error
-        )
+        Logging.client_event("ping_response_error", %{id: id, error: err}, level: :error)
 
         Telemetry.execute(
           Telemetry.event_client_error(),
@@ -1225,7 +1221,11 @@ defmodule Hermes.Client.Base do
 
         :ok = send_notification(state, "notifications/initialized")
 
-        state
+        {:ok, session} =
+          if Hermes.exported?(state.module, :init, 2),
+            do: state.module.init(result["serverInfo"], state.session)
+
+        %{state | session: session}
     end
   end
 
