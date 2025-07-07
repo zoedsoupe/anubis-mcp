@@ -95,8 +95,9 @@ defmodule Hermes.Server do
   alias Hermes.Server.ConfigurationError
   alias Hermes.Server.Frame
   alias Hermes.Server.Handlers
+  alias Hermes.Server.Response
 
-  @server_capabilities ~w(prompts tools resources logging)a
+  @server_capabilities ~w(prompts tools resources logging completion)a
   @protocol_versions ~w(2025-03-26 2024-05-11 2024-10-07)
 
   @type request :: map()
@@ -269,8 +270,7 @@ defmodule Hermes.Server do
   """
   @callback handle_info(event :: term, Frame.t()) ::
               {:noreply, Frame.t()}
-              | {:noreply, Frame.t(),
-                 timeout() | :hibernate | {:continue, arg :: term}}
+              | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, Frame.t()}
 
   @doc """
@@ -290,8 +290,7 @@ defmodule Hermes.Server do
               | {:reply, reply :: term, Frame.t(),
                  timeout() | :hibernate | {:continue, arg :: term}}
               | {:noreply, Frame.t()}
-              | {:noreply, Frame.t(),
-                 timeout() | :hibernate | {:continue, arg :: term}}
+              | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, reply :: term, Frame.t()}
               | {:stop, reason :: term, Frame.t()}
 
@@ -308,8 +307,7 @@ defmodule Hermes.Server do
   """
   @callback handle_cast(request :: term, Frame.t()) ::
               {:noreply, Frame.t()}
-              | {:noreply, Frame.t(),
-                 timeout() | :hibernate | {:continue, arg :: term}}
+              | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, Frame.t()}
 
   @doc """
@@ -348,14 +346,41 @@ defmodule Hermes.Server do
 
   ## Examples
 
-      def handle_sampling_response(response, request_id, frame) do
+      def handle_sampling(response, request_id, frame) do
         %{"content" => %{"text" => text}} = response
         # Process the generated text...
         {:noreply, frame}
       end
   """
-  @callback handle_sampling_response(
+  @callback handle_sampling(
               response :: map(),
+              request_id :: String.t(),
+              Frame.t()
+            ) ::
+              {:noreply, Frame.t()}
+              | {:stop, reason :: term(), Frame.t()}
+
+  @doc """
+  Handles completion requests from the client.
+
+  This callback is invoked when a client requests completions for a reference.
+  The reference indicates what type of completion is being requested.
+
+  Note: This callback will only be invoked if user declared the `completion` capability
+  on server definition
+  """
+  @callback handle_completion(ref :: String.t(), argument :: map(), Frame.t()) ::
+              {:reply, Response.t() | map(), Frame.t()}
+              | {:error, mcp_error(), Frame.t()}
+
+  @doc """
+  Handles the response from a roots/list request sent to the client.
+
+  This callback is invoked when the client responds to a roots list request
+  initiated by the server. The response contains the available root URIs.
+  """
+  @callback handle_roots(
+              roots :: list(map()),
               request_id :: String.t(),
               Frame.t()
             ) ::
@@ -372,7 +397,9 @@ defmodule Hermes.Server do
                       handle_prompt_get: 3,
                       handle_request: 2,
                       init: 2,
-                      handle_sampling_response: 3
+                      handle_sampling: 3,
+                      handle_completion: 3,
+                      handle_roots: 3
 
   @doc """
   Checks if the MCP session has been initialized.
@@ -455,8 +482,7 @@ defmodule Hermes.Server do
       end
 
       @components {Component.get_type(module),
-                   opts[:name] || Hermes.Server.__derive_component_name__(module),
-                   module}
+                   opts[:name] || Hermes.Server.__derive_component_name__(module), module}
     end
   end
 
@@ -477,8 +503,7 @@ defmodule Hermes.Server do
       def __components__,
         do: Hermes.Server.parse_components(unquote(Macro.escape(components)))
 
-      def __components__(:tool),
-        do: Enum.filter(__components__(), &match?(%Tool{}, &1))
+      def __components__(:tool), do: Enum.filter(__components__(), &match?(%Tool{}, &1))
 
       def __components__(:prompt),
         do: Enum.filter(__components__(), &match?(%Prompt{}, &1))
@@ -501,7 +526,9 @@ defmodule Hermes.Server do
 
   @doc false
   def parse_components(components) when is_list(components) do
-    Enum.flat_map(components, &parse_components/1)
+    components
+    |> Enum.flat_map(&parse_components/1)
+    |> Enum.sort_by(& &1.name)
   end
 
   def parse_components({:tool, name, mod}) do
@@ -620,9 +647,7 @@ defmodule Hermes.Server do
 
     capabilities
     |> Map.put("resources", %{})
-    |> then(
-      &if(is_nil(subscribe?), do: &1, else: Map.put(&1, :subscribe, subscribe?))
-    )
+    |> then(&if(is_nil(subscribe?), do: &1, else: Map.put(&1, :subscribe, subscribe?)))
     |> then(
       &if(is_nil(list_changed?),
         do: &1,
@@ -677,8 +702,8 @@ defmodule Hermes.Server do
     raise ConfigurationError, module: module, missing_key: :version
   end
 
-  def validate_server_info!(_, name, version)
-      when is_binary(name) and is_binary(version), do: :ok
+  def validate_server_info!(_, name, version) when is_binary(name) and is_binary(version),
+    do: :ok
 
   # Notification Functions
 
@@ -688,9 +713,9 @@ defmodule Hermes.Server do
   Use this when the available resources have changed (added, removed, or modified).
   The client will typically re-fetch the resource list in response.
   """
-  @spec send_resources_list_changed(server :: GenServer.server()) :: :ok
-  def send_resources_list_changed(server) do
-    queue_notification(server, "notifications/resources/list_changed", %{})
+  @spec send_resources_list_changed(Frame.t()) :: :ok
+  def send_resources_list_changed(%Frame{} = frame) do
+    queue_notification(frame, "notifications/resources/list_changed", %{})
   end
 
   @doc """
@@ -700,15 +725,15 @@ defmodule Hermes.Server do
   Clients that have subscribed to this resource will be notified.
   """
   @spec send_resource_updated(
-          server :: GenServer.server(),
+          Frame.t(),
           uri :: String.t(),
           timestamp :: DateTime.t() | nil
         ) ::
           :ok
-  def send_resource_updated(server, uri, timestamp \\ nil) do
+  def send_resource_updated(%Frame{} = frame, uri, timestamp \\ nil) do
     params = %{"uri" => uri}
     params = if timestamp, do: Map.put(params, "timestamp", timestamp), else: params
-    queue_notification(server, "notifications/resources/updated", params)
+    queue_notification(frame, "notifications/resources/updated", params)
   end
 
   @doc """
@@ -717,9 +742,9 @@ defmodule Hermes.Server do
   Use this when the available prompts have changed (added, removed, or modified).
   The client will typically re-fetch the prompt list in response.
   """
-  @spec send_prompts_list_changed(server :: GenServer.server()) :: :ok
-  def send_prompts_list_changed(server) do
-    queue_notification(server, "notifications/prompts/list_changed", %{})
+  @spec send_prompts_list_changed(Frame.t()) :: :ok
+  def send_prompts_list_changed(%Frame{} = frame) do
+    queue_notification(frame, "notifications/prompts/list_changed", %{})
   end
 
   @doc """
@@ -728,9 +753,9 @@ defmodule Hermes.Server do
   Use this when the available tools have changed (added, removed, or modified).
   The client will typically re-fetch the tool list in response.
   """
-  @spec send_tools_list_changed(server :: GenServer.server()) :: :ok
-  def send_tools_list_changed(server) do
-    queue_notification(server, "notifications/tools/list_changed", %{})
+  @spec send_tools_list_changed(Frame.t()) :: :ok
+  def send_tools_list_changed(%Frame{} = frame) do
+    queue_notification(frame, "notifications/tools/list_changed", %{})
   end
 
   @doc """
@@ -739,16 +764,16 @@ defmodule Hermes.Server do
   Use this to send diagnostic or informational messages to the client's logging system.
   """
   @spec send_log_message(
-          server :: GenServer.server(),
+          Frame.t(),
           level :: Logger.level(),
           message :: String.t(),
           metadata :: map() | nil
         ) :: :ok
-  def send_log_message(server, level, message, data \\ nil) do
+  def send_log_message(%Frame{} = frame, level, message, data \\ nil) do
     params = %{"level" => level, "message" => message}
     params = if data, do: Map.put(params, "data", data), else: params
 
-    queue_notification(server, "notifications/log/message", params)
+    queue_notification(frame, "notifications/log/message", params)
   end
 
   @type progress_token :: String.t() | non_neg_integer
@@ -760,25 +785,23 @@ defmodule Hermes.Server do
 
   Use this to update the client on the progress of long-running operations.
   """
-  @spec send_progress(
-          server :: GenServer.server(),
-          progress_token,
-          progress_step,
-          opts
-        ) :: :ok
+  @spec send_progress(Frame.t(), progress_token, progress_step, opts) :: :ok
         when opts: list({:total, progress_total} | {:message, String.t()})
-  def send_progress(server, progress_token, progress, opts \\ []) do
+  def send_progress(%Frame{} = frame, progress_token, progress, opts \\ []) do
     total = opts[:total]
     message = opts[:message]
     params = %{"progressToken" => progress_token, "progress" => progress}
     params = if total, do: Map.put(params, "total", total), else: params
     params = if message, do: Map.put(params, "message", message), else: params
 
-    queue_notification(server, "notifications/progress", params)
+    queue_notification(frame, "notifications/progress", params)
   end
 
-  defp queue_notification(server, method, params) do
-    send(server, {:send_notification, method, params})
+  defp queue_notification(frame, method, params) do
+    registry = frame.private.server_registry
+    server = frame.private.server_module
+    pid = registry.whereis_server(server)
+    send(pid, {:send_notification, method, params})
     :ok
   end
 
@@ -792,36 +815,34 @@ defmodule Hermes.Server do
   during initialization.
 
   Note: This is an asynchronous operation. The response will be delivered to your
-  `handle_sampling_response/3` callback.
+  `handle_sampling/3` callback.
 
-  ## Parameters
-
-    * `server` - The server process
-    * `messages` - List of message objects with role and content
-    * `opts` - Optional parameters:
-      * `:model_preferences` - Hints about model selection
-      * `:system_prompt` - System prompt to guide generation
-      * `:max_tokens` - Maximum tokens to generate
-      * `:metadata` - Any metadata to attach for correlation in the callback
-
-  ## Returns
-
-    * `:ok` - Request queued for sending
+  Check https://modelcontextprotocol.io/specification/2025-06-18/client/sampling for more information
 
   ## Examples
 
       messages = [
         %{"role" => "user", "content" => %{"type" => "text", "text" => "Hello"}}
       ]
+
+      model_preferences = %{"costPriority" => 1.0, "speedPriority" => 0.1, "hints" => [%{"name" => "claude"}]}
       
-      :ok = Hermes.Server.send_sampling_request(self(), messages,
+      :ok = Hermes.Server.send_sampling_request(frame, messages,
+        model_preferences: model_preferences,
         system_prompt: "You are a helpful assistant",
-        max_tokens: 100,
-        metadata: %{request_type: :greeting}
+        max_tokens: 100
       )
   """
-  @spec send_sampling_request(GenServer.server(), list(map()), keyword()) :: :ok
-  def send_sampling_request(server, messages, opts \\ []) when is_list(messages) do
+  @spec send_sampling_request(Frame.t(), list(map()), configuration) :: :ok
+        when configuration:
+               list(
+                 {:model_preferences, map | nil}
+                 | {:system_prompt, String.t() | nil}
+                 | {:max_token, non_neg_integer | nil}
+                 | {:timeout, non_neg_integer | nil}
+               )
+  def send_sampling_request(%Frame{} = frame, messages, opts \\ [])
+      when is_list(messages) do
     params = %{"messages" => messages}
 
     params =
@@ -833,8 +854,28 @@ defmodule Hermes.Server do
         {:max_tokens, max}, acc -> Map.put(acc, "maxTokens", max)
       end)
 
-    metadata = Keyword.get(opts, :metadata, %{})
-    send(server, {:send_sampling_request, params, metadata})
+    timeout = Keyword.get(opts, :timeout, 30_000)
+    registry = frame.private.server_registry
+    server = frame.private.server_module
+    pid = registry.whereis_server(server)
+    send(pid, {:send_sampling_request, params, timeout})
+    :ok
+  end
+
+  @doc """
+  Sends a roots/list request to the client.
+
+  This function queries the client for available root URIs. The client must have
+  declared the roots capability during initialization.
+  """
+  @spec send_roots_request(Frame.t(), list({:timeout, non_neg_integer | nil})) :: :ok
+  def send_roots_request(%Frame{} = frame, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 30_000)
+
+    registry = frame.private.server_registry
+    server = frame.private.server_module
+    pid = registry.whereis_server(server)
+    send(pid, {:send_roots_request, timeout})
     :ok
   end
 end

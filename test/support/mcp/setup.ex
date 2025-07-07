@@ -144,7 +144,13 @@ defmodule Hermes.MCP.Setup do
 
     :ok = StubTransport.clear(transport)
 
-    Map.merge(ctx, %{transport: transport, server: server, session_id: session_id})
+    Map.merge(ctx, %{
+      transport: transport,
+      server: server,
+      session_id: session_id,
+      server_registry: Hermes.Server.Registry,
+      server_module: StubServer
+    })
   end
 
   def initialized_base_server(ctx) do
@@ -158,9 +164,7 @@ defmodule Hermes.MCP.Setup do
     # session supervisor
     %{registry: registry} = ctx = with_default_registry(ctx)
 
-    start_supervised!(
-      {Session.Supervisor, server: server_module, registry: ctx.registry}
-    )
+    start_supervised!({Session.Supervisor, server: server_module, registry: ctx.registry})
 
     assert registry.supervisor(server_module, :session_supervisor)
 

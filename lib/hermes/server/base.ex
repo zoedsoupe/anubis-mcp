@@ -166,8 +166,7 @@ defmodule Hermes.Server.Base do
           request_id = response["id"]
           if request_id, do: Session.complete_request(session.name, request_id)
 
-          {:reply, Message.encode_error(%{"error" => error}, response["id"]),
-           new_state}
+          {:reply, Message.encode_error(%{"error" => error}, response["id"]), new_state}
 
         {:reply, {:error, error}, new_state} ->
           request_id = decoded["id"]
@@ -314,13 +313,22 @@ defmodule Hermes.Server.Base do
     end
   end
 
-  def handle_info({:send_sampling_request, params, metadata}, state) do
+  def handle_info({:send_sampling_request, params, timeout}, state) do
     request_id = ID.generate_request_id()
-    handle_sampling_request_send(request_id, params, metadata, state)
+    handle_sampling_request_send(request_id, params, timeout, state)
   end
 
   def handle_info({:sampling_request_timeout, request_id}, state) do
     handle_sampling_timeout(request_id, state)
+  end
+
+  def handle_info({:send_roots_request, timeout}, state) do
+    request_id = ID.generate_request_id()
+    handle_roots_request_send(request_id, timeout, state)
+  end
+
+  def handle_info({:roots_request_timeout, request_id}, state) do
+    handle_roots_timeout(request_id, state)
   end
 
   def handle_info(event, %{module: module} = state) do
@@ -531,11 +539,7 @@ defmodule Hermes.Server.Base do
     {:reply, {:ok, Message.build_response(%{}, request_id)}, state}
   end
 
-  defp handle_request(
-         %{"id" => request_id, "method" => method} = request,
-         session,
-         state
-       ) do
+  defp handle_request(%{"id" => request_id, "method" => method} = request, session, state) do
     Logging.server_event("handling_request", %{id: request_id, method: method})
 
     :ok = Session.track_request(session.name, request_id, method)
@@ -720,8 +724,7 @@ defmodule Hermes.Server.Base do
 
         frame = Frame.clear_request(frame)
 
-        {:reply, {:ok, Error.build_json_rpc(error, request_id)},
-         %{state | frame: frame}}
+        {:reply, {:ok, Error.build_json_rpc(error, request_id)}, %{state | frame: frame}}
     end
   end
 
@@ -752,7 +755,8 @@ defmodule Hermes.Server.Base do
     session = Session.get(session_name)
     state = reset_session_expiry(session_id, state)
 
-    {:ok, {session, %{state | frame: populate_frame(state.frame, session, context)}}}
+    {:ok,
+     {session, %{state | frame: populate_frame(state.frame, session, context, state)}}}
   end
 
   defp maybe_attach_session(
@@ -776,7 +780,7 @@ defmodule Hermes.Server.Base do
         session = Session.get(session_name)
 
         {:ok,
-         {session, %{state | frame: populate_frame(state.frame, session, context)}}}
+         {session, %{state | frame: populate_frame(state.frame, session, context, state)}}}
 
       {:error, {:already_started, pid}} ->
         ref = Process.monitor(pid)
@@ -791,14 +795,14 @@ defmodule Hermes.Server.Base do
         session = Session.get(session_name)
 
         {:ok,
-         {session, %{state | frame: populate_frame(state.frame, session, context)}}}
+         {session, %{state | frame: populate_frame(state.frame, session, context, state)}}}
 
       error ->
         error
     end
   end
 
-  defp populate_frame(frame, %Session{} = session, context) do
+  defp populate_frame(frame, %Session{} = session, context, state) do
     {assigns, context} = Map.pop(context, :assigns, %{})
     assigns = Map.merge(frame.assigns, assigns)
 
@@ -809,14 +813,13 @@ defmodule Hermes.Server.Base do
       session_id: session.id,
       client_info: session.client_info,
       client_capabilities: session.client_capabilities,
-      protocol_version: session.protocol_version
+      protocol_version: session.protocol_version,
+      server_registry: state.registry,
+      server_module: state.module
     })
   end
 
-  defp negotiate_protocol_version(
-         [latest | _] = supported_versions,
-         requested_version
-       ) do
+  defp negotiate_protocol_version([latest | _] = supported_versions, requested_version) do
     if requested_version in supported_versions do
       requested_version
     else
@@ -867,14 +870,13 @@ defmodule Hermes.Server.Base do
 
   # Sampling request helpers
 
-  defp handle_sampling_request_send(request_id, params, metadata, state) do
+  defp handle_sampling_request_send(request_id, params, timeout, state) do
     timer_ref =
-      Process.send_after(self(), {:sampling_request_timeout, request_id}, 30_000)
+      Process.send_after(self(), {:sampling_request_timeout, request_id}, timeout)
 
     request_info = %{
       method: "sampling/createMessage",
-      session_id: nil,
-      metadata: metadata,
+      session_id: state.frame.private.session_id,
       timer_ref: timer_ref
     }
 
@@ -960,19 +962,21 @@ defmodule Hermes.Server.Base do
 
   defp server_request?(_, _), do: false
 
-  defp handle_server_request_response(
-         %{"id" => request_id, "result" => result},
-         state
-       ) do
+  defp handle_server_request_response(%{"id" => request_id, "result" => result}, state) do
     {request_info, updated_requests} = Map.pop(state.server_requests, request_id)
     Process.cancel_timer(request_info.timer_ref)
 
     state = %{state | server_requests: updated_requests}
 
-    if request_info.method == "sampling/createMessage" do
-      handle_sampling_response(result, request_id, request_info.metadata, state)
-    else
-      {:noreply, state}
+    case request_info.method do
+      "sampling/createMessage" ->
+        handle_sampling(result, request_id, state)
+
+      "roots/list" ->
+        handle_roots(result["roots"] || [], request_id, state)
+
+      _ ->
+        {:noreply, state}
     end
   end
 
@@ -996,32 +1000,94 @@ defmodule Hermes.Server.Base do
     {:noreply, state}
   end
 
-  defp handle_sampling_response(
-         result,
-         request_id,
-         metadata,
-         %{module: module} = state
-       ) do
-    if Hermes.exported?(module, :handle_sampling_response, 3) do
-      frame = Frame.assign(state.frame, :sampling_metadata, metadata)
+  defp handle_sampling(result, request_id, %{module: module, frame: frame} = state) do
+    case module.handle_sampling(result, request_id, frame) do
+      {:noreply, new_frame} ->
+        {:noreply, %{state | frame: new_frame}}
 
-      case module.handle_sampling_response(result, request_id, frame) do
-        {:noreply, new_frame} ->
-          {:noreply, %{state | frame: new_frame}}
+      {:stop, reason, new_frame} ->
+        {:stop, reason, %{state | frame: new_frame}}
+    end
+  end
 
-        {:stop, reason, new_frame} ->
-          {:stop, reason, %{state | frame: new_frame}}
-      end
-    else
-      Logging.server_event(
-        "sampling_response_no_handler",
-        %{
-          request_id: request_id
-        },
-        level: :warning
-      )
+  # Roots request helpers
 
+  defp handle_roots_request_send(request_id, timeout, state) do
+    timer_ref =
+      Process.send_after(self(), {:roots_request_timeout, request_id}, timeout)
+
+    request_info = %{
+      method: "roots/list",
+      session_id: state.frame.private.session_id,
+      timer_ref: timer_ref
+    }
+
+    state = put_in(state.server_requests[request_id], request_info)
+
+    with :ok <- validate_client_capability(state, "roots"),
+         {:ok, request_data} <- encode_request("roots/list", %{}, request_id),
+         :ok <- send_to_transport(state.transport, request_data) do
+      Logging.server_event("sent_roots_request", %{request_id: request_id})
       {:noreply, state}
+    else
+      {:error, error} ->
+        Process.cancel_timer(timer_ref)
+
+        state = %{
+          state
+          | server_requests: Map.delete(state.server_requests, request_id)
+        }
+
+        Logging.server_event(
+          "failed_send_roots_request",
+          %{
+            request_id: request_id,
+            error: error
+          },
+          level: :error
+        )
+
+        {:noreply, state}
+    end
+  end
+
+  defp handle_roots_timeout(request_id, state) do
+    case Map.pop(state.server_requests, request_id) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {_request_info, updated_requests} ->
+        with {:ok, notification} <-
+               encode_notification("notifications/cancelled", %{
+                 "requestId" => request_id,
+                 "reason" => "timeout"
+               }),
+             :ok <- send_to_transport(state.transport, notification) do
+          Logging.server_event(
+            "roots_request_timeout_cancelled",
+            %{request_id: request_id}
+          )
+        end
+
+        Logging.server_event(
+          "roots_request_timeout",
+          %{
+            request_id: request_id
+          },
+          level: :warning
+        )
+
+        {:noreply, %{state | server_requests: updated_requests}}
+    end
+  end
+
+  defp handle_roots(roots, request_id, %{module: module} = state) do
+    case module.handle_roots(roots, request_id, state.frame) do
+      {:noreply, new_frame} ->
+        {:noreply, %{state | frame: new_frame}}
+
+      {:stop, reason, new_frame} ->
+        {:stop, reason, %{state | frame: new_frame}}
     end
   end
 end
