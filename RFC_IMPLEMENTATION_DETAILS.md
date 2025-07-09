@@ -1,297 +1,261 @@
-# RFC Implementation Details: Three-Module Architecture
+# RFC Implementation Details: Practical Refactoring
 
-## Core Module Specifications
+## Actual Code Analysis
 
-### 1. Session Manager
+Based on the real codebase structure, here's what we actually need to refactor:
 
-**Purpose**: Manages the client's connection lifecycle and server relationship.
+### Current Code Distribution
 
 ```elixir
-defmodule Hermes.Client.SessionManager do
+# Hermes.Client.Base (1,443 lines) contains:
+- init/1 (lines 176-213): GenServer initialization
+- handle_call for requests (lines 215-370): Request handling
+- handle_call for batch (lines 372-430): Batch processing  
+- handle_info for responses (lines 487-597): Response processing
+- handle_info for notifications (lines 599-700): Notification handling
+- Request helpers (lines 872-1039): Request creation and sending
+- Timer management (lines 1200-1250): Timeout handling
+
+# Hermes.Client.State (723 lines) already handles:
+- Request tracking with Map storage
+- Capability validation
+- Progress callback management
+- Well-designed and focused
+```
+
+### Proposed Extraction: Request Handler
+
+**Purpose**: Extract request handling logic from Client.Base
+
+```elixir
+defmodule Hermes.Client.RequestHandler do
   @moduledoc """
-  Manages client session state and server negotiation.
-  
-  This module encapsulates all session-related concerns, providing
-  a clean interface for initialization, capability management, and
-  server information.
+  Handles request lifecycle management for the MCP client.
+  Extracted from Client.Base to reduce complexity.
   """
   
-  defstruct [
-    :client_info,
-    :server_info,
-    :server_capabilities,
-    :protocol_version,
-    :initialized?,
-    :roots  # Moved from separate RootsManager for simplicity
-  ]
+  alias Hermes.Client.{State, Operation, Request}
+  alias Hermes.MCP.{Message, Error, ID}
   
-  # Core functions (no complex implementation details)
-  def new(client_info, protocol_version)
-  def initialize(session, server_response) 
-  def add_capability(session, capability)
-  def validate_server_capability(session, method)
-  def add_root(session, uri, name)
-  def list_roots(session)
+  # Extract these functions from Client.Base:
+  
+  @doc "Creates and sends a request through the transport"
+  def execute_request(state, operation, transport) do
+    # Currently in handle_call at lines 215-370
+    # Move request creation, validation, and sending
+  end
+  
+  @doc "Handles batch requests"
+  def execute_batch(state, operations, transport) do
+    # Currently at lines 372-430
+    # Move batch validation and processing
+  end
+  
+  @doc "Processes incoming response"
+  def handle_response(state, response) do
+    # Currently in handle_info at lines 487-597
+    # Move response correlation and callback execution
+  end
+  
+  @doc "Handles request timeout"
+  def handle_timeout(state, request_id) do
+    # Currently at lines 1200-1250
+    # Move timeout processing
+  end
 end
 ```
 
-**Key Design Decisions**:
-- Immutable state updates
-- No direct transport knowledge
-- Simple data structure operations
-- Roots management included (simpler than separate module)
+**Benefits**:
+- Reduces Client.Base by ~600 lines
+- Focused testing of request logic
+- Clear interface with State module
 
-### 2. Request Pipeline
+### Existing Module: Client.State
 
-**Purpose**: Handles the complete lifecycle of requests from creation to completion.
+**Current Status**: Already well-designed and focused
 
 ```elixir
-defmodule Hermes.Client.RequestPipeline do
-  @moduledoc """
-  Manages request lifecycle: creation, tracking, timeouts, and correlation.
-  
-  This module implements a pipeline pattern for request processing,
-  ensuring proper timeout handling and response correlation.
-  """
-  
-  defstruct [
-    :pending_requests,  # Map of request_id -> request_info
-    :batch_requests,    # Map of batch_id -> batch_info
-    :timeout_refs       # Map of request_id -> timer_ref
-  ]
-  
-  # Request lifecycle
-  def create_request(pipeline, method, params, opts)
-  def send_request(pipeline, request, transport)
-  def handle_response(pipeline, response_id, response_data)
-  def handle_timeout(pipeline, request_id)
-  def cancel_request(pipeline, request_id)
-  
-  # Batch operations (kept simple)
-  def create_batch(pipeline, requests)
-  def handle_batch_response(pipeline, batch_id, responses)
-end
+# Current Hermes.Client.State already handles:
+- Request tracking (add_request, remove_request, get_request)
+- Progress callbacks (register_progress_callback, etc.)
+- Capability validation (validate_capability)
+- Log callback management
+
+# Only minor adjustments needed:
+1. Ensure clean interface with new RequestHandler
+2. Maybe extract callback execution to RequestHandler
+3. Keep state management pure (no side effects)
 ```
 
-**Key Design Decisions**:
-- Stateless pipeline operations
-- Clear separation of request creation and sending
-- Timeout handling as first-class concern
-- Batch as extension of single request pattern
+**Why not change it?**
+- Already follows single responsibility
+- Clean functional interface
+- Well-tested
+- No significant issues
 
-### 3. Callback Registry
-
-**Purpose**: Centralized management of all callback functions.
+## Simplified Client.Base After Refactoring
 
 ```elixir
-defmodule Hermes.Client.CallbackRegistry do
+defmodule Hermes.Client.Base do
   @moduledoc """
-  Type-safe callback registration and execution.
-  
-  This module provides a centralized place for all callback management,
-  ensuring proper error handling and isolation.
-  """
-  
-  defstruct [
-    :log_callback,      # Single log callback
-    :progress_callbacks # Map of token -> callback
-  ]
-  
-  # Registration
-  def register_log_callback(registry, callback)
-  def register_progress_callback(registry, token, callback)
-  def unregister_progress_callback(registry, token)
-  
-  # Execution (with error handling)
-  def notify_log(registry, level, message, data)
-  def notify_progress(registry, token, progress, total)
-end
-```
-
-**Key Design Decisions**:
-- Callbacks never crash the client
-- Simple registration/execution model
-- Type checking at registration time
-- Async execution in separate process
-
-## Simplified Core GenServer
-
-```elixir
-defmodule Hermes.Client.Core do
-  @moduledoc """
-  Orchestrates between the three core modules.
-  
-  This GenServer is now just a thin coordinator, delegating all
-  real work to the specialized modules.
+  Simplified orchestrator after extracting request handling.
+  Now ~400 lines instead of 1,443.
   """
   
   use GenServer
   
-  defstruct [
-    :session,
-    :pipeline,
-    :callbacks,
-    :transport
-  ]
+  alias Hermes.Client.{State, RequestHandler}
+  alias Hermes.MCP.Message
   
-  # Public API (called by generated client modules)
-  def execute_request(server, method, params, opts) do
-    GenServer.call(server, {:execute, method, params, opts})
+  require Message  # For guards
+  
+  # GenServer callbacks remain but delegate work
+  
+  def init(config) do
+    # Same initialization, using existing State module
+    state = State.new(config)
+    # ... transport setup ...
+    {:ok, state}
   end
   
-  # GenServer callbacks (~200 lines total)
-  def init(opts) do
-    state = %__MODULE__{
-      session: SessionManager.new(opts.client_info, opts.protocol_version),
-      pipeline: RequestPipeline.new(),
-      callbacks: CallbackRegistry.new(),
-      transport: opts.transport
-    }
-    
-    {:ok, state, {:continue, :initialize}}
-  end
-  
-  def handle_call({:execute, method, params, opts}, from, state) do
-    # Validate capability
-    case SessionManager.validate_server_capability(state.session, method) do
-      :ok ->
-        # Create and send request
-        {request, pipeline} = RequestPipeline.create_request(
-          state.pipeline, method, params, opts
-        )
-        
-        :ok = Transport.send(state.transport, request)
-        {:noreply, %{state | pipeline: pipeline}}
-        
-      {:error, _} = error ->
-        {:reply, error, state}
+  def handle_call({:request, operation}, from, state) do
+    # Delegate to RequestHandler
+    case RequestHandler.execute_request(state, operation, state.transport) do
+      {:ok, new_state} ->
+        {:noreply, new_state}
+      {:error, error} ->
+        {:reply, {:error, error}, state}
     end
   end
   
-  def handle_info({:transport_message, data}, state) do
-    # Decode and route message
-    case Protocol.decode(data) do
-      {:response, response} ->
-        handle_response(response, state)
+  def handle_info({:mcp_message, encoded}, state) do
+    # Use existing Message.decode/1
+    case Message.decode(encoded) do
+      {:ok, [message | _]} when Message.is_response(message) ->
+        {:noreply, RequestHandler.handle_response(state, message)}
         
-      {:notification, notification} ->
-        handle_notification(notification, state)
+      {:ok, [message | _]} when Message.is_notification(message) ->
+        # Existing notification handling
+        {:noreply, handle_notification(state, message)}
         
       {:error, error} ->
-        handle_error(error, state)
+        {:noreply, state}
     end
   end
-end
-```
-
-## Shared Protocol Benefits
-
-The shared protocol layer eliminates duplication between client and server:
-
-```elixir
-# Before: Client and Server have separate implementations
-# Client: ~300 LOC for message encoding/decoding
-# Server: ~300 LOC for message encoding/decoding (duplicated)
-
-# After: Shared protocol layer
-# Shared: ~350 LOC used by both
-# Savings: ~250 LOC eliminated
-
-defmodule Hermes.MCP.Protocol do
-  # Shared structs
-  defmodule Request, do: defstruct [:id, :method, :params]
-  defmodule Response, do: defstruct [:id, :result]
-  defmodule Notification, do: defstruct [:method, :params]
   
-  # Shared encoding/decoding
-  def encode(struct), do: # ... JSON-RPC encoding
-  def decode(data), do: # ... JSON-RPC decoding
+  # Transport management and other orchestration stays here
 end
 ```
 
-## Testing Benefits
-
-The modular architecture enables focused unit tests:
+## Using Existing MCP.Message Module
 
 ```elixir
-# Before: Testing requires full GenServer setup
-test "handles timeout" do
-  {:ok, client} = start_supervised(Client)
-  # Complex setup with mocked transport
-  # Send request, wait for timeout
-  # Assert on GenServer state
+# Hermes.MCP.Message already provides everything:
+- encode_request/2 - Build and encode requests
+- encode_response/2 - Build and encode responses
+- encode_notification/1 - Build and encode notifications
+- encode_error/2 - Build and encode errors
+- decode/1 - Parse incoming messages
+- encode_batch/1 - Batch message support
+- Guards: is_request/1, is_response/1, is_notification/1, is_error/1
+- Even specialized encoders like encode_progress_notification/2
+
+# Client.Base currently:
+1. Uses Message.encode_request at line 1110
+2. Uses Message.decode at line 540
+3. But has custom message building in some places
+
+# Simple fix:
+Replace any custom JSON encoding with Message.* functions
+No new module needed!
+```
+
+## Testing Improvements
+
+```elixir
+# Current: Testing requires full GenServer + MockTransport
+test "handles request timeout" do
+  {:ok, client} = TestHelper.start_client()
+  # Mock transport setup
+  # Complex assertion on GenServer state
 end
 
-# After: Direct module testing
-test "pipeline handles timeout" do
-  pipeline = RequestPipeline.new()
-  {request, pipeline} = RequestPipeline.create_request(pipeline, "ping", %{})
+# After refactoring: Test RequestHandler directly
+test "handles request timeout" do
+  state = State.new(client_info: %{"name" => "test"})
+  operation = Operation.new("test/method", %{}, timeout: 100)
   
-  {response, pipeline} = RequestPipeline.handle_timeout(pipeline, request.id)
+  # Test timeout handling without GenServer
+  {state, request_id} = RequestHandler.create_request(state, operation)
+  new_state = RequestHandler.handle_timeout(state, request_id)
   
-  assert {:error, :timeout} = response
-  assert RequestPipeline.pending_count(pipeline) == 0
+  assert State.get_request(new_state, request_id) == nil
 end
+
+# Can still do integration tests with full client
+# But now also have focused unit tests
 ```
 
-## Migration Path
+## Implementation Steps
 
-### Step 1: Add New Modules (Non-breaking)
+### Step 1: Clean up Message Usage (No API changes)
 ```elixir
-# New files added alongside existing code
-lib/hermes/client/session_manager.ex
-lib/hermes/client/request_pipeline.ex  
-lib/hermes/client/callback_registry.ex
-lib/hermes/mcp/protocol.ex
+# 1. In Client.Base, find all JSON.encode!/decode calls
+# 2. Replace with appropriate Message.encode_*/decode calls
+# 3. Example changes:
+   # Before:
+   JSON.encode!(%{"jsonrpc" => "2.0", "method" => method, ...})
+   
+   # After:
+   Message.encode_request(%{"method" => method, "params" => params}, id)
+   
+# 4. Run existing tests - all should pass
 ```
 
-### Step 2: Create Adapter Layer
+### Step 2: Extract RequestHandler (Internal refactoring)
 ```elixir
-# In existing Base module
-def handle_call(request, from, state) do
-  # Route to new modules if feature flag enabled
-  if state.use_new_architecture do
-    Core.handle_call(request, from, adapt_state(state))
-  else
-    # Existing implementation
-  end
-end
+# 1. Create lib/hermes/client/request_handler.ex
+# 2. Move these functions from Client.Base:
+   - handle_request logic (lines 215-370)
+   - handle_batch_request (lines 372-430)
+   - process_response (lines 487-597)
+   - timeout handling (lines 1200-1250)
+   
+# 3. Update Client.Base to delegate to RequestHandler
+# 4. No changes to public API or State module
 ```
 
-### Step 3: Gradual Migration
+### Step 3: Test and Ship
 ```elixir
-# Users opt-in with configuration
-use Hermes.Client,
-  name: "MyClient",
-  version: "1.0.0",
-  architecture: :modular  # New architecture
+# 1. All existing tests must pass unchanged
+# 2. Add focused unit tests for RequestHandler
+# 3. Benchmark key operations (expect <1% difference)
+# 4. Ship as minor version - no breaking changes
 ```
 
-### Step 4: Deprecate Old Code
-```elixir
-# After stabilization period
-@deprecated "Use architecture: :modular instead"
-def old_implementation do
-  # ...
-end
-```
+## Real-World Impact
 
-## Performance Considerations
+### Performance
+- **Message Processing**: No change (same algorithms)
+- **Memory**: Negligible (same data structures)
+- **Module Boundaries**: One extra function call (microseconds)
 
-Based on benchmarks of similar refactorings:
+### Maintenance Benefits
+- **Finding bugs**: Look in RequestHandler for request issues
+- **Adding features**: Clear where to add new functionality  
+- **Understanding flow**: 400-line modules vs 1,400-line module
 
-1. **Message Processing**: No significant change (< 1% difference)
-2. **Memory Usage**: Slight increase (~5%) due to module boundaries
-3. **Startup Time**: Negligible difference
-4. **Benefits**: Easier optimization due to isolated modules
+## Summary
 
-## Conclusion
+This practical refactoring:
 
-This simplified three-module architecture provides:
-- Clear separation of concerns
-- Testable components
-- Shared protocol with server
-- Gradual migration path
-- Maintainable codebase
+1. **Reduces Complexity**: Client.Base from 1,443 to ~400 lines
+2. **No New Shared Module**: MCP.Message already exists and works
+3. **Improves Testing**: RequestHandler can be tested without GenServer
+4. **No Breaking Changes**: Internal refactoring only
+5. **Quick Implementation**: 2 weeks max (simpler without new module)
 
-The reduction from 6+ mixed concerns to 3 focused modules follows established software engineering principles while maintaining the simplicity needed for an open-source library.
+The key insight is that we don't need a new Protocol module - `Hermes.MCP.Message` already provides all the encoding/decoding we need. We just need to:
+- Use it consistently everywhere
+- Extract request handling to a new module
+- Keep the existing, well-designed State module

@@ -2,10 +2,10 @@ defmodule Hermes.Client.Session do
   @moduledoc false
 
   @type private_t :: %{
-          session_id: String.t(),
-          server_info: map,
-          server_capabilities: map,
-          protocol_version: String.t()
+          optional(:session_id) => String.t(),
+          optional(:server_info) => map,
+          optional(:server_capabilities) => map,
+          optional(:protocol_version) => String.t()
         }
 
   @type t :: %__MODULE__{
@@ -18,8 +18,7 @@ defmodule Hermes.Client.Session do
 
   @spec assign(t, Enumerable.t()) :: t
   @spec assign(t, key :: atom, value :: any) :: t
-  def assign(%__MODULE__{} = session, assigns)
-      when is_map(assigns) or is_list(assigns) do
+  def assign(%__MODULE__{} = session, assigns) when is_map(assigns) or is_list(assigns) do
     Enum.reduce(assigns, session, fn {key, value}, session ->
       assign(session, key, value)
     end)

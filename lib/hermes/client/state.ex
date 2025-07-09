@@ -4,6 +4,7 @@ defmodule Hermes.Client.State do
   alias Hermes.Client.Base
   alias Hermes.Client.Operation
   alias Hermes.Client.Request
+  alias Hermes.Client.Session
   alias Hermes.MCP.Error
   alias Hermes.MCP.ID
   alias Hermes.Telemetry
@@ -14,6 +15,7 @@ defmodule Hermes.Client.State do
           server_capabilities: map() | nil,
           server_info: map() | nil,
           protocol_version: String.t(),
+          session: Session.t() | nil,
           transport: map(),
           pending_requests: %{String.t() => Request.t()},
           roots: %{String.t() => Base.root()}
@@ -26,6 +28,7 @@ defmodule Hermes.Client.State do
     :server_info,
     :protocol_version,
     :transport,
+    :session,
     pending_requests: %{},
     roots: %{}
   ]
@@ -66,7 +69,8 @@ defmodule Hermes.Client.State do
       client_info: opts.client_info,
       capabilities: opts.capabilities,
       protocol_version: opts.protocol_version,
-      transport: opts.transport
+      transport: opts.transport,
+      session: opts[:session]
     }
   end
 
@@ -102,8 +106,6 @@ defmodule Hermes.Client.State do
           String.t() | nil
         ) :: {String.t(), t()}
   def add_request_from_operation(state, %Operation{} = operation, from, batch_id \\ nil) do
-    state = register_progress_callback_from_opts(state, operation.progress_opts)
-
     request_id = ID.generate_request_id()
 
     timer_ref =
@@ -140,20 +142,7 @@ defmodule Hermes.Client.State do
     end
   end
 
-  @doc """
-  Helper function to register progress callback from options.
-  """
-  @spec register_progress_callback_from_opts(t(), keyword() | nil) :: t()
-  def register_progress_callback_from_opts(state, progress_opts) do
-    with {:ok, opts} when not is_nil(opts) <- {:ok, progress_opts},
-         {:ok, callback} when is_function(callback, 3) <-
-           {:ok, Keyword.get(opts, :callback)},
-         {:ok, token} when not is_nil(token) <- {:ok, Keyword.get(opts, :token)} do
-      register_progress_callback(state, token, callback)
-    else
-      _ -> state
-    end
-  end
+  # Progress callback registration removed - now handled via module behaviour callbacks
 
   @doc """
   Gets a request by ID.
@@ -227,65 +216,7 @@ defmodule Hermes.Client.State do
     end
   end
 
-  @doc """
-  Registers a progress callback for a token.
-
-  ## Parameters
-
-    * `state` - The current client state
-    * `token` - The progress token to register a callback for
-    * `callback` - The callback function to call when progress updates are received
-
-  ## Examples
-
-      iex> updated_state = Hermes.Client.State.register_progress_callback(state, "token123", fn token, progress, total -> IO.inspect({token, progress, total}) end)
-      iex> Map.has_key?(updated_state.progress_callbacks, "token123")
-      true
-  """
-  @spec register_progress_callback(t(), String.t(), Base.progress_callback()) :: t()
-  def register_progress_callback(state, token, callback) when is_function(callback, 3) do
-    progress_callbacks = Map.put(state.progress_callbacks, token, callback)
-    %{state | progress_callbacks: progress_callbacks}
-  end
-
-  @doc """
-  Gets a progress callback for a token.
-
-  ## Parameters
-
-    * `state` - The current client state
-    * `token` - The progress token to get the callback for
-
-  ## Examples
-
-      iex> callback = Hermes.Client.State.get_progress_callback(state, "token123")
-      iex> is_function(callback, 3)
-      true
-  """
-  @spec get_progress_callback(t(), String.t()) :: Base.progress_callback() | nil
-  def get_progress_callback(state, token) do
-    Map.get(state.progress_callbacks, token)
-  end
-
-  @doc """
-  Unregisters a progress callback for a token.
-
-  ## Parameters
-
-    * `state` - The current client state
-    * `token` - The progress token to unregister the callback for
-
-  ## Examples
-
-      iex> updated_state = Hermes.Client.State.unregister_progress_callback(state, "token123")
-      iex> Map.has_key?(updated_state.progress_callbacks, "token123")
-      false
-  """
-  @spec unregister_progress_callback(t(), String.t()) :: t()
-  def unregister_progress_callback(state, token) do
-    progress_callbacks = Map.delete(state.progress_callbacks, token)
-    %{state | progress_callbacks: progress_callbacks}
-  end
+  # Progress callbacks removed - now handled via module behaviour callbacks
 
   @doc """
   Updates server info and capabilities after initialization.

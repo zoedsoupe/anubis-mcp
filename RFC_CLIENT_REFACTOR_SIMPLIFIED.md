@@ -1,50 +1,55 @@
-# RFC: Hermes MCP Client Architecture Refactor
+# RFC: Hermes MCP Client Architecture Refactor - Practical Approach
 
 ## Executive Summary
 
-This RFC proposes a modular refactoring of the Hermes MCP client to address maintainability issues stemming from its monolithic 1,835-line GenServer implementation. Based on established software architecture principles, we propose decomposing the client into focused modules with clear boundaries, enabling better testability, maintainability, and code reuse with the server implementation.
+This RFC proposes a practical refactoring of the Hermes MCP client to improve maintainability while preserving the existing API. The current implementation has grown organically to 1,443 lines in `Client.Base` and 723 lines in `Client.State`, making it difficult to understand and modify. We propose a focused refactoring that extracts clear responsibilities without over-engineering.
 
-## Problem Statement
+## Current State Analysis
 
-### Current Architecture Analysis
+### Actual Architecture
 
-The `Hermes.Client.Base` module exhibits several anti-patterns identified in software architecture literature:
-
-1. **God Object Anti-pattern** (Riel, 1996): A single module handling transport, protocol, state management, callbacks, and batch operations
-2. **Feature Envy** (Fowler, 1999): Methods manipulating data from multiple unrelated domains
-3. **Violation of Single Responsibility Principle** (Martin, 2003): 1,835 lines handling at least 6 distinct concerns
-4. **High Coupling**: Direct dependencies between unrelated concerns making isolated testing impossible
-
-### Quantitative Analysis
+Based on code analysis:
 
 ```
-Module                    | Lines | Responsibilities              | Cyclomatic Complexity
--------------------------|-------|------------------------------|---------------------
-Hermes.Client.Base       | 1,835 | 6+ (transport, state, etc.)  | ~150
-Hermes.Client.State      |   740 | 4+ (requests, callbacks, etc.)| ~80
-Hermes.Server.Base       | 1,027 | 5+ (similar issues)          | ~120
+Module                    | Actual Lines | Core Responsibilities
+-------------------------|--------------|------------------------
+Hermes.Client.Base       |        1,443 | GenServer, message routing, transport handling
+Hermes.Client.State      |          723 | State management, request tracking, capabilities
+Hermes.Client.Operation  |          100 | Request configuration wrapper
+Hermes.Client.Request    |           44 | Simple request data structure
 ```
 
-### Research Basis
+### Key Issues Identified
 
-According to studies on code maintainability:
-- Functions over 200 lines have 4x more defects (Jones, 2000)
-- Modules with >1000 lines have 2.5x higher maintenance costs (Banker et al., 1993)
-- High coupling increases change propagation by 60% (MacCormack et al., 2006)
+1. **Mixed Concerns in Base**: The Base module handles:
+   - GenServer lifecycle (init, handle_call, handle_info)
+   - Message encoding/decoding
+   - Request timeout management
+   - Progress callback coordination
+   - Batch request processing
+   - Transport interaction
+
+2. **Complex State Management**: The State module manages:
+   - Request tracking with timeouts
+   - Progress callbacks with type checking
+   - Capability validation
+   - Request/response correlation
+
+3. **Duplication with Server**: Both client and server:
+   - Implement similar message encoding/decoding
+   - Handle timeouts independently
+   - Manage capabilities separately
 
 ## Proposed Solution
 
-### Architectural Principles
+### Design Principles
 
-Based on Domain-Driven Design (Evans, 2003) and Hexagonal Architecture (Cockburn, 2005), we propose:
+1. **Incremental Refactoring**: Extract one concern at a time
+2. **Preserve Public API**: No breaking changes to existing clients
+3. **Leverage Existing Patterns**: Follow Elixir/OTP conventions
+4. **Practical Over Perfect**: Ship improvements iteratively
 
-1. **Bounded Contexts**: Clear separation between Protocol, Domain, and Infrastructure
-2. **Dependency Inversion**: Core domain depends on abstractions, not implementations
-3. **Interface Segregation**: Small, focused interfaces for each concern
-
-### Simplified Component Model
-
-Instead of many fine-grained components, we propose three core modules plus a shared protocol layer:
+### Simplified Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -53,143 +58,176 @@ Instead of many fine-grained components, we propose three core modules plus a sh
 └─────────────────────────────────────────┘
                     │
 ┌─────────────────────────────────────────┐
-│       Base Orchestrator (~200 LOC)      │
-│         Hermes.Client.Base              │
+│    Client.Base (~400 lines)             │
+│    - GenServer orchestration            │
+│    - Transport coordination             │
 └─────────────────────────────────────────┘
-                    │
-┌─────────────────────────────────────────┐
-│          Three Core Modules             │
-│ ┌─────────────┐ ┌───────────┐ ┌───────┐│
-│ │   Session   │ │  Request  │ │Callback││
-│ │   Manager   │ │  Pipeline │ │Registry││
-│ └─────────────┘ └───────────┘ └───────┘│
-└─────────────────────────────────────────┘
-                    │
-┌─────────────────────────────────────────┐
-│    Shared Protocol Layer (New)          │
-│  Used by both Client and Server         │
-└─────────────────────────────────────────┘
+         ╱              │              ╲
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ MCP.Message  │ │    State     │ │   Request    │
+│  (existing)  │ │   Manager    │ │   Handler    │
+│              │ │  (existing)  │ │    (new)     │
+└──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-### Core Modules Explained
+### Key Changes
 
-#### 1. Session Manager (~300 LOC)
-**Responsibility**: Client lifecycle and server negotiation
-- Initialization handshake
-- Capability negotiation
-- Server info storage
-- Connection state
+1. **Use MCP.Message Consistently**
+   - Client.Base already imports and uses MCP.Message
+   - Just need to remove any custom encoding/decoding
+   - Ensure all message building uses the existing module
 
-**Research Basis**: Session pattern (Fowler, 2002) for managing conversational state
+2. **Extract Request Handler** (New Module)
+   - Move request lifecycle management from Base
+   - Handle timeouts, retries, and correlation
+   - Simplify Base to ~400 lines
 
-#### 2. Request Pipeline (~400 LOC)
-**Responsibility**: Request lifecycle management
-- Request creation and ID generation
-- Timeout management
-- Response correlation
-- Batch request handling
+3. **Keep Existing Modules**
+   - State module is already well-designed
+   - MCP.Message already handles all protocol needs
+   - No new shared module needed
 
-**Research Basis**: Pipeline pattern (Buschmann et al., 1996) for processing stages
+### Module Specifications
 
-#### 3. Callback Registry (~200 LOC)
-**Responsibility**: Event handling and notifications
-- Progress callbacks
-- Log callbacks
-- Notification routing
-
-**Research Basis**: Observer pattern with type safety
-
-### Shared Protocol Layer
-
-Based on the concept of Protocol Buffers and shared schemas, we create domain objects usable by both client and server:
+#### 1. Consistent Use of MCP.Message (No New Module)
+**Purpose**: Ensure both client and server use the existing module
 
 ```elixir
-# Shared between client and server
-defmodule Hermes.MCP.Protocol do
-  # Request/Response/Notification structs
-  # Encoding/Decoding logic
-  # Validation rules
-end
+# Already exists: Hermes.MCP.Message
+- encode_request/2
+- encode_response/2
+- encode_notification/1
+- encode_error/2
+- decode/1
+- Guards: is_request/1, is_response/1, etc.
+- Batch support: encode_batch/1
+
+# Client.Base changes needed:
+- Remove any custom message building
+- Use Message.encode_* consistently
+- Use Message.decode/1 for all parsing
 ```
 
 **Benefits**:
-- Single source of truth for protocol
-- Reduced duplication (~500 LOC saved)
-- Type safety across boundaries
-- Easier protocol evolution
+- No new module to create
+- Already tested and working
+- Just need to use it consistently
+
+#### 2. Request Handler (New)
+**Purpose**: Extract request lifecycle from Client.Base
+
+```elixir
+defmodule Hermes.Client.RequestHandler do
+  # Extract from Client.Base:
+  - handle_request/3 (lines 872-978)
+  - handle_batch_request/2 (lines 980-1039)
+  - Timer management (lines 1200-1250)
+  - Response correlation logic
+  
+  # Work with existing State module
+  # No new data structures needed
+end
+```
+
+#### 3. Client.Base (Simplified)
+**Purpose**: Pure orchestration and GenServer logic
+
+```elixir
+defmodule Hermes.Client.Base do
+  # Remaining responsibilities:
+  - GenServer callbacks (init, handle_call, handle_info)
+  - Transport coordination
+  - Delegate to RequestHandler for requests
+  - Delegate to State for state management
+  - Delegate to Protocol for encoding/decoding
+end
+```
 
 ## Implementation Strategy
 
-### Phase 1: Extract Protocol Layer (2 weeks)
-- Create shared domain objects
-- Implement encoder/decoder
-- Add comprehensive tests
+### Phase 1: Message Module Cleanup (3 days)
+1. Audit Client.Base for custom message handling
+2. Replace with calls to MCP.Message functions
+3. Remove any duplicate encoding/decoding logic
+4. Run tests to ensure no regressions
 
-### Phase 2: Refactor Client Core (3 weeks)
-- Create new Core module
-- Implement three simplified modules
-- Maintain backward compatibility
+### Phase 2: Extract Request Handler (1 week)
+1. Create `Hermes.Client.RequestHandler` module
+2. Move request-specific functions from Base
+3. Update Base to delegate to RequestHandler
+4. Existing State module remains unchanged
 
-### Phase 3: Update Server (2 weeks)
-- Adopt shared protocol layer
-- Remove duplicate code
-- Ensure compatibility
+### Phase 3: Testing & Validation (1 week)
+1. Ensure all existing tests pass
+2. Add focused tests for new modules
+3. Benchmark performance (expect < 1% difference)
+4. No user-visible changes
 
-### Phase 4: Deprecation (1 week)
-- Mark old modules deprecated
-- Create migration guide
-- Plan removal timeline
+## Practical Benefits
 
-## Measurable Benefits
+### Immediate Improvements
 
-Based on similar refactorings in literature:
+1. **Reduced Complexity**:
+   - Client.Base: 1,443 → ~400 lines
+   - Clear separation of concerns
+   - Easier to find and fix bugs
 
-1. **Maintainability**: 
-   - Reduced cyclomatic complexity by ~70%
-   - Average module size: 300 LOC (from 1,835)
-   - Clear boundaries reduce coupling by ~80%
+2. **Better Protocol Usage**:
+   - Consistent use of MCP.Message
+   - No custom encoding/decoding
+   - Single source of truth for messages
 
-2. **Testability**:
-   - Unit tests possible for each module
-   - Mock dependencies easily
-   - Test execution 3x faster
+3. **Better Testing**:
+   - Can test request handling in isolation
+   - Protocol logic testable without GenServer
+   - Existing tests remain unchanged
 
-3. **Code Reuse**:
-   - ~500 LOC shared between client/server
-   - Protocol changes in one place
-   - Reduced duplication by 30%
+### Long-term Benefits
 
-4. **Developer Experience**:
-   - Onboarding time reduced by 50%
-   - Easier debugging with focused modules
-   - Clear extension points
+1. **Maintainability**:
+   - New contributors understand modules faster
+   - Changes less likely to cause regressions
+   - Clear boundaries for future features
+
+2. **Evolution**:
+   - Easy to add new protocol versions
+   - Transport changes isolated to Base
+   - State management already well-isolated
 
 ## Risk Mitigation
 
-1. **Backward Compatibility**: Use feature flags for opt-in
-2. **Performance**: Benchmark before/after
-3. **Migration Effort**: Provide automated tooling
-4. **Testing**: Comprehensive test suite before release
+1. **No Breaking Changes**: Internal refactoring only
+2. **Incremental Approach**: One module at a time
+3. **Extensive Testing**: All existing tests must pass
+4. **Performance Monitoring**: Benchmark critical paths
 
-## Alternative Approaches Considered
+## Why This Approach?
 
-1. **Microservices Pattern**: Rejected due to overhead for library
-2. **Actor Model**: Rejected as GenServer already provides this
-3. **Complete Rewrite**: Rejected to maintain compatibility
+### What We're NOT Doing
+- No complex architectural patterns
+- No new abstractions to learn
+- No API changes
+- No feature flags needed
+
+### What We ARE Doing
+- Moving code to logical modules
+- Sharing obvious duplications
+- Making the codebase easier to navigate
+- Keeping it simple and Elixir-idiomatic
 
 ## Conclusion
 
-This refactoring addresses fundamental maintainability issues through proven architectural patterns. By decomposing the monolithic client into three focused modules plus a shared protocol layer, we achieve better separation of concerns, improved testability, and significant code reuse with the server implementation.
+This practical refactoring takes the existing 1,443-line Client.Base module and breaks it into manageable pieces:
 
-## References
+1. **Shared Protocol Layer**: Eliminates ~300 lines of duplication
+2. **Request Handler**: Extracts ~600 lines of request management
+3. **Simplified Base**: Reduces to ~400 lines of pure orchestration
 
-- Banker, R. D., et al. (1993). "Software complexity and maintenance costs"
-- Buschmann, F., et al. (1996). "Pattern-Oriented Software Architecture"
-- Cockburn, A. (2005). "Hexagonal architecture"
-- Evans, E. (2003). "Domain-Driven Design"
-- Fowler, M. (1999). "Refactoring: Improving the Design of Existing Code"
-- Fowler, M. (2002). "Patterns of Enterprise Application Architecture"
-- Jones, C. (2000). "Software Assessments, Benchmarks, and Best Practices"
-- MacCormack, A., et al. (2006). "Exploring the Structure of Complex Software Designs"
-- Martin, R. C. (2003). "Agile Software Development, Principles, Patterns, and Practices"
-- Riel, A. J. (1996). "Object-Oriented Design Heuristics"
+The approach is incremental, maintains all existing APIs, and can be completed in 3 weeks. Most importantly, it makes the codebase more maintainable without introducing unnecessary complexity.
+
+## Next Steps
+
+1. Review actual code excerpts identified
+2. Confirm no API breakage
+3. Plan incremental extraction
+4. Begin with protocol consolidation

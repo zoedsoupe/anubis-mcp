@@ -147,8 +147,7 @@ defmodule Hermes.Client do
   """
   @callback handle_info(event :: term, Session.t()) ::
               {:noreply, Session.t()}
-              | {:noreply, Session.t(),
-                 timeout() | :hibernate | {:continue, arg :: term}}
+              | {:noreply, Session.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, Session.t()}
 
   @doc """
@@ -163,8 +162,7 @@ defmodule Hermes.Client do
               | {:reply, reply :: term, Session.t(),
                  timeout() | :hibernate | {:continue, arg :: term}}
               | {:noreply, Session.t()}
-              | {:noreply, Session.t(),
-                 timeout() | :hibernate | {:continue, arg :: term}}
+              | {:noreply, Session.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, reply :: term, Session.t()}
               | {:stop, reason :: term, Session.t()}
 
@@ -176,8 +174,7 @@ defmodule Hermes.Client do
   """
   @callback handle_cast(request :: term, Session.t()) ::
               {:noreply, Session.t()}
-              | {:noreply, Session.t(),
-                 timeout() | :hibernate | {:continue, arg :: term}}
+              | {:noreply, Session.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, Session.t()}
 
   @doc """
@@ -376,40 +373,6 @@ defmodule Hermes.Client do
           :ok = MyClient.set_log_level("debug")
       """
       def set_log_level(level), do: Base.set_log_level(__MODULE__, level)
-
-      @doc """
-      Registers a callback for log messages.
-
-      ## Examples
-          :ok = MyClient.register_log_callback(fn log -> IO.puts(log) end)
-      """
-      def register_log_callback(cb, opts \\ []),
-        do: Base.register_log_callback(__MODULE__, cb, opts)
-
-      @doc """
-      Unregisters the log callback.
-      """
-      def unregister_log_callback(opts \\ []),
-        do: Base.unregister_log_callback(__MODULE__, opts)
-
-      @doc """
-      Registers a callback for progress updates.
-
-      ## Examples
-          :ok = MyClient.register_progress_callback("task-1", fn progress -> 
-            IO.puts("Progress: #\{progress}")
-          end)
-      """
-      def register_progress_callback(token, callback, opts \\ []) do
-        Base.register_progress_callback(__MODULE__, token, callback, opts)
-      end
-
-      @doc """
-      Unregisters a progress callback.
-      """
-      def unregister_progress_callback(token, opts \\ []) do
-        Base.unregister_progress_callback(__MODULE__, token, opts)
-      end
 
       @doc """
       Sends a progress update for a token.
