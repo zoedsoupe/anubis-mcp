@@ -13,6 +13,11 @@ defmodule Hermes.Server.Registry do
     {:via, Registry, {__MODULE__, {:server, module}}}
   end
 
+  @spec task_supervisor(server_module :: module()) :: GenServer.name()
+  def task_supervisor(module) when is_atom(module) do
+    {:via, Registry, {__MODULE__, {:task_supervisor, module}}}
+  end
+
   @doc """
   Returns a via tuple for naming a server session process.
   """
