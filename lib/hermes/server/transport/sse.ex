@@ -2,6 +2,19 @@ defmodule Hermes.Server.Transport.SSE do
   @moduledoc """
   SSE (Server-Sent Events) transport implementation for MCP servers.
 
+  > #### Deprecated {: .warning}
+  >
+  > This transport has been deprecated as of MCP specification 2025-03-26 in favor
+  > of the Streamable HTTP transport (`Hermes.Server.Transport.StreamableHTTP`).
+  >
+  > The HTTP+SSE transport from protocol version 2024-11-05 has been replaced by
+  > the more flexible Streamable HTTP transport which supports optional SSE streaming
+  > on a single endpoint.
+  >
+  > For new implementations, please use `Hermes.Server.Transport.StreamableHTTP` instead.
+  > This module is maintained for backward compatibility with clients using the
+  > 2024-11-05 protocol version.
+
   This module provides backward compatibility with the HTTP+SSE transport
   from MCP protocol version 2024-11-05. It supports multiple concurrent
   client sessions through Server-Sent Events for server-to-client communication
@@ -63,6 +76,8 @@ defmodule Hermes.Server.Transport.SSE do
   alias Hermes.Transport.Behaviour, as: Transport
 
   require Message
+
+  @deprecated "Use Hermes.Server.Transport.StreamableHTTP instead"
 
   @type t :: GenServer.server()
 
