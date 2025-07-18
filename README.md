@@ -3,6 +3,7 @@
 [![hex.pm](https://img.shields.io/hexpm/v/hermes_mcp.svg)](https://hex.pm/packages/hermes_mcp)
 [![docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/hermes_mcp)
 [![ci](https://github.com/cloudwalk/hermes-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudwalk/hermes-mcp/actions/workflows/ci.yml)
+[![Hex Downloads](https://img.shields.io/hexpm/dt/hermes_mcp)](https://hex.pm/packages/hermes_mcp)
 
 A high-performance Model Context Protocol (MCP) implementation in Elixir.
 
