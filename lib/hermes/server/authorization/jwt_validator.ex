@@ -86,8 +86,9 @@ defmodule Hermes.Server.Authorization.JWTValidator do
   def fetch_jwks(_), do: {:error, :no_jwks_uri}
 
   defp fetch_jwks_from_uri(uri) do
-    with {:ok, request} <- Hermes.HTTP.build(:get, uri),
-         {:ok, %Finch.Response{status: 200, body: body}} <- Finch.request(request, Hermes.Finch),
+    request = Hermes.HTTP.build(:get, uri)
+
+    with {:ok, %Finch.Response{status: 200, body: body}} <- Finch.request(request, Hermes.Finch),
          {:ok, %{"keys" => keys}} <- JSON.decode(body) do
       {:ok, keys}
     else
@@ -142,14 +143,14 @@ defmodule Hermes.Server.Authorization.JWTValidator do
 
   defp build_signer(%{"kty" => "RSA"} = jwk) do
     with {:ok, key} <- jwk_to_rsa_key(jwk) do
-      alg = String.to_atom(jwk["alg"] || "RS256")
+      alg = jwk["alg"] || "RS256"
       {:ok, Joken.Signer.create(alg, %{"pem" => key})}
     end
   end
 
   defp build_signer(%{"kty" => "EC"} = jwk) do
     with {:ok, key} <- jwk_to_ec_key(jwk) do
-      alg = String.to_atom(jwk["alg"] || "ES256")
+      alg = jwk["alg"] || "ES256"
       {:ok, Joken.Signer.create(alg, %{"pem" => key})}
     end
   end
@@ -216,7 +217,7 @@ defmodule Hermes.Server.Authorization.JWTValidator do
 
   defp validate_expiration(%{"exp" => exp}) when is_integer(exp) do
     now = System.system_time(:second)
-    if now < exp, do: :ok, else: {:error, :expired}
+    if now < exp, do: :ok, else: {:error, :expired_token}
   end
 
   defp validate_expiration(_), do: :ok

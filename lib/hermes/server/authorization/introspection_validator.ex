@@ -70,9 +70,9 @@ defmodule Hermes.Server.Authorization.IntrospectionValidator do
 
     headers = build_introspection_headers(config)
 
-    with {:ok, request} <- Hermes.HTTP.build(:post, endpoint, headers, body),
-         {:ok, %Finch.Response{status: 200, body: resp_body}} <-
-           Finch.request(request, Hermes.Finch),
+    request = Hermes.HTTP.build(:post, endpoint, headers, body)
+
+    with {:ok, %Finch.Response{status: 200, body: resp_body}} <- Finch.request(request, Hermes.Finch),
          {:ok, json} <- JSON.decode(resp_body) do
       {:ok, json}
     else
