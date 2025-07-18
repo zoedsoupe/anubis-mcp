@@ -54,12 +54,8 @@ defmodule Hermes.Server.Authorization.JWTValidator do
     with {:ok, jwks} <- fetch_jwks(config),
          {:ok, header} <- peek_jwt_header(token),
          {:ok, key} <- find_signing_key(header, jwks),
-         {:ok, claims} <- verify_and_decode(token, key, config),
-         :ok <- validate_claims(claims, config) do
+         {:ok, claims} <- verify_and_decode(token, key, config) do
       {:ok, build_token_info(claims)}
-    else
-      {:error, :expired} -> {:error, :expired_token}
-      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -131,15 +127,56 @@ defmodule Hermes.Server.Authorization.JWTValidator do
   defp find_signing_key(_, _), do: {:error, :no_algorithm}
 
   defp verify_and_decode(token, jwk, config) do
-    # Using Joken for JWT verification
-    with {:ok, signer} <- build_signer(jwk),
-         {:ok, claims} <- Joken.verify_and_validate(token, signer, %{}, config) do
-      {:ok, claims}
-    else
-      {:error, :signature_error} -> {:error, :invalid_signature}
-      {:error, _} = error -> error
+    with {:ok, signer} <- build_signer(jwk) do
+      token_config = build_token_config(config)
+
+      case Joken.verify_and_validate(token_config, token, signer) do
+        {:ok, claims} -> {:ok, claims}
+        {:error, :signature_error} -> {:error, :invalid_signature}
+        {:error, _} = error -> error
+      end
     end
   end
+
+  defp build_token_config(config) do
+    %{}
+    |> add_issuer_validation(config)
+    |> add_audience_validation(config)
+    |> add_expiration_validation()
+  end
+
+  defp add_issuer_validation(token_config, %{issuer: expected_iss}) when is_binary(expected_iss) do
+    Map.put(token_config, "iss", &validate_issuer_claim(&1, expected_iss))
+  end
+
+  defp add_issuer_validation(token_config, _), do: token_config
+
+  defp add_audience_validation(token_config, %{audience: expected_aud}) when is_binary(expected_aud) do
+    Map.put(token_config, "aud", &validate_audience_claim(&1, expected_aud))
+  end
+
+  defp add_audience_validation(token_config, _), do: token_config
+
+  defp add_expiration_validation(token_config) do
+    Map.put(token_config, "exp", &validate_expiration_claim/1)
+  end
+
+  defp validate_issuer_claim(%{"iss" => iss}, expected_iss) when iss == expected_iss, do: :ok
+  defp validate_issuer_claim(_, _), do: {:error, :invalid_issuer}
+
+  defp validate_audience_claim(%{"aud" => aud}, expected_aud) when aud == expected_aud, do: :ok
+
+  defp validate_audience_claim(%{"aud" => auds}, expected_aud) when is_list(auds) do
+    if expected_aud in auds, do: :ok, else: {:error, :invalid_audience}
+  end
+
+  defp validate_audience_claim(_, _), do: {:error, :invalid_audience}
+
+  defp validate_expiration_claim(%{"exp" => exp}) when is_integer(exp) do
+    if System.system_time(:second) < exp, do: :ok, else: {:error, :expired_token}
+  end
+
+  defp validate_expiration_claim(_), do: :ok
 
   defp build_signer(%{"kty" => "RSA"} = jwk) do
     with {:ok, key} <- jwk_to_rsa_key(jwk) do
@@ -191,36 +228,6 @@ defmodule Hermes.Server.Authorization.JWTValidator do
   defp curve_from_crv("P-384"), do: {:ok, :secp384r1}
   defp curve_from_crv("P-521"), do: {:ok, :secp521r1}
   defp curve_from_crv(_), do: {:error, :unsupported_curve}
-
-  defp validate_claims(claims, config) do
-    with :ok <- validate_issuer(claims, config),
-         :ok <- validate_audience(claims, config) do
-      validate_expiration(claims)
-    end
-  end
-
-  defp validate_issuer(%{"iss" => iss}, %{issuer: expected_iss}) when is_binary(expected_iss) do
-    if iss == expected_iss, do: :ok, else: {:error, :invalid_issuer}
-  end
-
-  defp validate_issuer(_, _), do: :ok
-
-  defp validate_audience(%{"aud" => aud}, %{audience: expected_aud}) when is_binary(expected_aud) do
-    cond do
-      is_binary(aud) and aud == expected_aud -> :ok
-      is_list(aud) and expected_aud in aud -> :ok
-      true -> {:error, :invalid_audience}
-    end
-  end
-
-  defp validate_audience(_, _), do: :ok
-
-  defp validate_expiration(%{"exp" => exp}) when is_integer(exp) do
-    now = System.system_time(:second)
-    if now < exp, do: :ok, else: {:error, :expired_token}
-  end
-
-  defp validate_expiration(_), do: :ok
 
   defp build_token_info(claims) do
     %{
