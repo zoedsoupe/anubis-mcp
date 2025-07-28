@@ -15,6 +15,7 @@ defmodule Hermes.Client.Base do
   alias Hermes.MCP.Response
   alias Hermes.Protocol
   alias Hermes.Telemetry
+  alias Hermes.Transport.StreamableHTTP
 
   require Message
 
@@ -81,7 +82,7 @@ defmodule Hermes.Client.Base do
              Hermes.Transport.STDIO
              | Hermes.Transport.SSE
              | Hermes.Transport.WebSocket
-             | Hermes.Transport.StreamableHTTP}
+             | StreamableHTTP}
             | {:name, GenServer.server()}
           )
 
