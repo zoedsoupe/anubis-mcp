@@ -15,6 +15,7 @@ defmodule Hermes.Client.Base do
   alias Hermes.MCP.Response
   alias Hermes.Protocol
   alias Hermes.Telemetry
+  alias Hermes.Transport.StreamableHTTP
 
   require Message
 
@@ -81,7 +82,7 @@ defmodule Hermes.Client.Base do
              Hermes.Transport.STDIO
              | Hermes.Transport.SSE
              | Hermes.Transport.WebSocket
-             | Hermes.Transport.StreamableHTTP}
+             | StreamableHTTP}
             | {:name, GenServer.server()}
           )
 
@@ -325,6 +326,7 @@ defmodule Hermes.Client.Base do
     * `:progress` - Progress tracking options
       * `:token` - A unique token to track progress (string or integer)
       * `:callback` - A function to call when progress updates are received
+    * `:headers` - HTTP headers to send with this request (map, only for StreamableHTTP transport)
   """
   @spec call_tool(t, String.t(), map() | nil, keyword) ::
           {:ok, Response.t()} | {:error, Error.t()}
@@ -337,9 +339,11 @@ defmodule Hermes.Client.Base do
         method: "tools/call",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout),
+        headers: Keyword.get(opts, :headers)
       })
 
+    dbg(operation)
     buffer_timeout = operation.timeout + to_timeout(second: 1)
     GenServer.call(client, {:operation, operation}, buffer_timeout)
   end
@@ -429,7 +433,7 @@ defmodule Hermes.Client.Base do
       ref = %{"type" => "ref/prompt", "name" => "code_review"}
       argument = %{"name" => "language", "value" => "py"}
       {:ok, response} = Hermes.Client.complete(client, ref, argument)
-      
+
       # Access the completion values
       values = get_in(Response.unwrap(response), ["completion", "values"])
   """
@@ -706,14 +710,14 @@ defmodule Hermes.Client.Base do
 
       MyClient.register_sampling_callback(fn params ->
         messages = params["messages"]
-        
+
         # Show UI for user approval
         case MyUI.approve_sampling(messages) do
           {:approved, edited_messages} ->
             # Call LLM with approved/edited messages
             response = MyLLM.generate(edited_messages, params["modelPreferences"])
             {:ok, response}
-            
+
           :rejected ->
             {:error, "User rejected sampling request"}
         end
@@ -799,7 +803,7 @@ defmodule Hermes.Client.Base do
          {request_id, updated_state} =
            State.add_request_from_operation(state, operation, from),
          {:ok, request_data} <- encode_request(method, params_with_token, request_id),
-         :ok <- send_to_transport(state.transport, request_data) do
+         :ok <- send_to_transport_with_headers(state.transport, request_data, operation.headers) do
       Telemetry.execute(
         Telemetry.event_client_request(),
         %{system_time: System.system_time()},
@@ -1464,6 +1468,19 @@ defmodule Hermes.Client.Base do
     }
 
     send_notification(state, "notifications/cancelled", params)
+  end
+
+  defp send_to_transport_with_headers(transport, data, headers) do
+    if is_nil(headers) or transport.layer != StreamableHTTP do
+      # No headers provided or not using StreamableHTTP, use regular send
+      send_to_transport(transport, data)
+    else
+      # Use StreamableHTTP with headers
+      with {:error, reason} <-
+             StreamableHTTP.send_message_with_headers(transport.name, data, headers) do
+        {:error, Error.transport(:send_failure, %{original_reason: reason})}
+      end
+    end
   end
 
   defp send_to_transport(transport, data) do
