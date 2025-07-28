@@ -1472,7 +1472,7 @@ defmodule Hermes.Client.Base do
   # StreamableHTTP with headers
   defp send_to_transport(%{layer: StreamableHTTP} = transport, data, headers) when not is_nil(headers) do
     with {:error, reason} <-
-           Hermes.Transport.StreamableHTTP.send_message_with_headers(transport.name, data, headers) do
+           StreamableHTTP.send_message_with_headers(transport.name, data, headers) do
       {:error, Error.transport(:send_failure, %{original_reason: reason})}
     end
   end
