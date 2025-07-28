@@ -15,7 +15,6 @@ defmodule Hermes.Client.Base do
   alias Hermes.MCP.Response
   alias Hermes.Protocol
   alias Hermes.Telemetry
-  alias Hermes.Transport.StreamableHTTP
 
   require Message
 
@@ -82,7 +81,7 @@ defmodule Hermes.Client.Base do
              Hermes.Transport.STDIO
              | Hermes.Transport.SSE
              | Hermes.Transport.WebSocket
-             | StreamableHTTP}
+             | Hermes.Transport.StreamableHTTP}
             | {:name, GenServer.server()}
           )
 
@@ -343,7 +342,6 @@ defmodule Hermes.Client.Base do
         headers: Keyword.get(opts, :headers)
       })
 
-    dbg(operation)
     buffer_timeout = operation.timeout + to_timeout(second: 1)
     GenServer.call(client, {:operation, operation}, buffer_timeout)
   end

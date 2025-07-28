@@ -171,7 +171,7 @@ defmodule Hermes.Transport.StreamableHTTP do
 
     new_state = %{state | active_request: from}
 
-    case send_http_request_with_headers(new_state, message, additional_headers) do
+    case send_http_request(new_state, message, additional_headers) do
       {:ok, response} ->
         Logging.transport_event("got_http_response", %{status: response.status})
         handle_response(response, new_state)
@@ -197,7 +197,7 @@ defmodule Hermes.Transport.StreamableHTTP do
 
     new_state = %{state | active_request: from}
 
-    case send_http_request(new_state, message) do
+    case send_http_request(new_state, message, nil) do
       {:ok, response} ->
         Logging.transport_event("got_http_response", %{status: response.status})
         handle_response(response, new_state)
@@ -275,7 +275,8 @@ defmodule Hermes.Transport.StreamableHTTP do
 
   # Private functions
 
-  defp send_http_request_with_headers(state, message, additional_headers) do
+  # With additional headers
+  defp send_http_request(state, message, additional_headers) when not is_nil(additional_headers) do
     # Sanitize headers: filter out nil values and convert all to strings
     sanitized_headers =
       additional_headers
@@ -289,41 +290,22 @@ defmodule Hermes.Transport.StreamableHTTP do
       |> put_session_header(state.session_id)
       |> Map.merge(sanitized_headers)
 
-    options = [transport_opts: state.transport_opts] ++ state.http_options
-    url = URI.to_string(state.mcp_url)
-
-    Logging.transport_event("http_request", %{
-      method: :post,
-      url: url,
-      headers: headers
-    })
-
-    request = HTTP.build(:post, url, headers, message, options)
-    dbg(headers)
-    dbg(request)
-
-    request
-    |> HTTP.follow_redirect()
-    |> case do
-      {:ok, %{status: status} = response} when status in 200..299 ->
-        {:ok, response}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, {:http_error, status, body}}
-
-      {:error, reason} = error ->
-        Logging.transport_event("http_request_failed", %{reason: reason}, level: :error)
-        error
-    end
+    do_send_http_request(state, message, headers)
   end
 
-  defp send_http_request(state, message) do
+  # Without additional headers
+  defp send_http_request(state, message, nil) do
     headers =
       state.headers
       |> Map.put("accept", "application/json, text/event-stream")
       |> Map.put("content-type", "application/json")
       |> put_session_header(state.session_id)
 
+    do_send_http_request(state, message, headers)
+  end
+
+  # Common HTTP request logic
+  defp do_send_http_request(state, message, headers) do
     options = [transport_opts: state.transport_opts] ++ state.http_options
     url = URI.to_string(state.mcp_url)
 
@@ -346,7 +328,6 @@ defmodule Hermes.Transport.StreamableHTTP do
 
       {:error, reason} = error ->
         Logging.transport_event("http_request_failed", %{reason: reason}, level: :error)
-
         error
     end
   end
