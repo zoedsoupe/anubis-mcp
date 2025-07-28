@@ -803,7 +803,7 @@ defmodule Hermes.Client.Base do
          {request_id, updated_state} =
            State.add_request_from_operation(state, operation, from),
          {:ok, request_data} <- encode_request(method, params_with_token, request_id),
-         :ok <- send_to_transport_with_headers(state.transport, request_data, operation.headers) do
+         :ok <- send_to_transport(state.transport, request_data, operation.headers) do
       Telemetry.execute(
         Telemetry.event_client_request(),
         %{system_time: System.system_time()},
@@ -1470,17 +1470,17 @@ defmodule Hermes.Client.Base do
     send_notification(state, "notifications/cancelled", params)
   end
 
-  defp send_to_transport_with_headers(transport, data, headers) do
-    if is_nil(headers) or transport.layer != StreamableHTTP do
-      # No headers provided or not using StreamableHTTP, use regular send
-      send_to_transport(transport, data)
-    else
-      # Use StreamableHTTP with headers
-      with {:error, reason} <-
-             StreamableHTTP.send_message_with_headers(transport.name, data, headers) do
-        {:error, Error.transport(:send_failure, %{original_reason: reason})}
-      end
+  # StreamableHTTP with headers
+  defp send_to_transport(%{layer: StreamableHTTP} = transport, data, headers) when not is_nil(headers) do
+    with {:error, reason} <-
+           StreamableHTTP.send_message_with_headers(transport.name, data, headers) do
+      {:error, Error.transport(:send_failure, %{original_reason: reason})}
     end
+  end
+
+  # Default case: no headers or different transport
+  defp send_to_transport(transport, data, _headers) do
+    send_to_transport(transport, data)
   end
 
   defp send_to_transport(transport, data) do
