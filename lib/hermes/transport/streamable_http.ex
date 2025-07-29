@@ -275,20 +275,20 @@ defmodule Hermes.Transport.StreamableHTTP do
 
   # With additional headers
   defp send_http_request(state, message, additional_headers) when not is_nil(additional_headers) do
-    # Sanitize headers: filter out nil values and convert all to strings
-    sanitized_headers =
-      additional_headers
-      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-      |> Map.new(fn {key, value} -> {to_string(key), to_string(value)} end)
+    case validate_headers(additional_headers) do
+      :ok ->
+        headers =
+          state.headers
+          |> Map.put("accept", "application/json, text/event-stream")
+          |> Map.put("content-type", "application/json")
+          |> put_session_header(state.session_id)
+          |> Map.merge(additional_headers)
 
-    headers =
-      state.headers
-      |> Map.put("accept", "application/json, text/event-stream")
-      |> Map.put("content-type", "application/json")
-      |> put_session_header(state.session_id)
-      |> Map.merge(sanitized_headers)
+        do_send_http_request(state, message, headers)
 
-    do_send_http_request(state, message, headers)
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   # Without additional headers
@@ -394,6 +394,23 @@ defmodule Hermes.Transport.StreamableHTTP do
 
   defp handle_sse_event(event, _state) do
     Logging.transport_event("unknown_sse_event", event, level: :warning)
+  end
+
+  # Header validation - fail fast with clear error messages
+  defp validate_headers(headers) when is_map(headers) do
+    case find_invalid_header(headers) do
+      nil ->
+        :ok
+
+      {key, value} ->
+        {:error, "Invalid header value for '#{key}': HTTP headers must be strings, got #{inspect(value)}"}
+    end
+  end
+
+  defp find_invalid_header(headers) do
+    Enum.find(headers, fn {_key, value} ->
+      not is_binary(value) and not is_nil(value)
+    end)
   end
 
   defp put_session_header(headers, nil), do: headers
