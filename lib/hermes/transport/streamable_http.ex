@@ -97,7 +97,7 @@ defmodule Hermes.Transport.StreamableHTTP do
 
   @impl Transport
   def send_message(pid \\ __MODULE__, message) when is_binary(message) do
-    GenServer.call(pid, {:send, message})
+    GenServer.call(pid, {:send, message}, 15_000)
   end
 
   @doc """
@@ -119,7 +119,7 @@ defmodule Hermes.Transport.StreamableHTTP do
   """
   @spec send_message_with_headers(t(), Transport.message(), map()) :: :ok | {:error, term()}
   def send_message_with_headers(pid \\ __MODULE__, message, headers) when is_binary(message) and is_map(headers) do
-    GenServer.call(pid, {:send_with_headers, message, headers})
+    GenServer.call(pid, {:send_with_headers, message, headers}, 15_000)
   end
 
   @impl Transport
