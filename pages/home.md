@@ -1,10 +1,10 @@
-# Welcome to Hermes MCP
+# Welcome to Anubis MCP
 
-Let's explore how Hermes helps you build bridges between AI assistants and your Elixir applications. Have you ever wished your AI could directly interact with your code? That's exactly what we're enabling here.
+Let's explore how Anubis helps you build bridges between AI assistants and your Elixir applications. Have you ever wished your AI could directly interact with your code? That's exactly what we're enabling here.
 
 ## What's This All About?
 
-Hermes implements the Model Context Protocol (MCP) - think of it as a secure conversation channel between AI assistants and your applications. Your AI can discover what your app offers and interact with it safely.
+Anubis implements the Model Context Protocol (MCP) - think of it as a secure conversation channel between AI assistants and your applications. Your AI can discover what your app offers and interact with it safely.
 
 Three minutes. That's all we need to show you something working.
 
@@ -14,14 +14,14 @@ What if we started by connecting to an existing MCP server? Let's see how this f
 
 ```elixir
 # In your mix.exs
-{:hermes_mcp, "~> 0.11.2"} # x-release-please-version
+{:anubis_mcp, "~> 0.11.2"} # x-release-please-version
 ```
 
 Now, let's define a client that can talk to Claude's own MCP server:
 
 ```elixir
 defmodule MyApp.ClaudeClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
     protocol_version: "2024-11-05",
@@ -62,7 +62,7 @@ What if you want to expose your own functionality to AI assistants? Let's create
 
 ```elixir
 defmodule MyApp.Server do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "my-app",
     version: "1.0.0",
     capabilities: [:tools]
@@ -73,7 +73,7 @@ end
 defmodule MyApp.Greeter do
   @moduledoc "Greet someone warmly"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field :name, :string, required: true
@@ -86,7 +86,7 @@ end
 
 # on your application.ex
 children = [
-  Hermes.Server.Registry,
+  Anubis.Server.Registry,
   {MyApp.Greeter, transport: :stdio}
 ]
 ```

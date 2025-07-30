@@ -1,13 +1,13 @@
-defmodule Hermes.Client.Supervisor do
+defmodule Anubis.Client.Supervisor do
   @moduledoc false
 
   use Supervisor
 
-  alias Hermes.Client.Base
-  alias Hermes.Transport.SSE
-  alias Hermes.Transport.STDIO
-  alias Hermes.Transport.StreamableHTTP
-  alias Hermes.Transport.Websocket
+  alias Anubis.Client.Base
+  alias Anubis.Transport.SSE
+  alias Anubis.Transport.STDIO
+  alias Anubis.Transport.StreamableHTTP
+  alias Anubis.Transport.Websocket
 
   @type transport_config ::
           {:stdio, keyword()}
@@ -20,7 +20,7 @@ defmodule Hermes.Client.Supervisor do
 
   ## Arguments
 
-    * `client_module` - The client module using `Hermes.Client`
+    * `client_module` - The client module using `Anubis.Client`
     * `opts` - Supervisor options including:
       * `:name` - Optional custom name for the client process
       * `:transport` - Transport configuration (required)
@@ -32,7 +32,7 @@ defmodule Hermes.Client.Supervisor do
   ## Examples
 
       # Simple usage with module names
-      Hermes.Client.Supervisor.start_link(MyApp.MCPClient, 
+      Anubis.Client.Supervisor.start_link(MyApp.MCPClient, 
         transport: {:stdio, command: "mcp", args: ["server"]},
         client_info: %{"name" => "MyApp", "version" => "1.0.0"},
         capabilities: %{"roots" => %{}},
@@ -40,7 +40,7 @@ defmodule Hermes.Client.Supervisor do
       )
       
       # With custom names (e.g., for distributed systems)
-      Hermes.Client.Supervisor.start_link(MyApp.MCPClient,
+      Anubis.Client.Supervisor.start_link(MyApp.MCPClient,
         name: {:via, Horde.Registry, {MyCluster, "client_1"}},
         transport_name: {:via, Horde.Registry, {MyCluster, "transport_1"}},
         transport: {:stdio, command: "mcp", args: ["server"]},

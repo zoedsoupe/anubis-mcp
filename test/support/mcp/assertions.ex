@@ -1,4 +1,4 @@
-defmodule Hermes.MCP.Assertions do
+defmodule Anubis.MCP.Assertions do
   @moduledoc false
 
   import ExUnit.Assertions, only: [assert: 2, assert: 1]
@@ -13,7 +13,7 @@ defmodule Hermes.MCP.Assertions do
     assert {session_id, _} = state.sessions |> Map.to_list() |> List.first()
 
     assert session =
-             Hermes.Server.Registry.whereis_server_session(StubServer, session_id)
+             Anubis.Server.Registry.whereis_server_session(StubServer, session_id)
 
     state = :sys.get_state(session)
     assert state.initialized, "Expected server to be initialized"

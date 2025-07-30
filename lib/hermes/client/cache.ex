@@ -1,7 +1,7 @@
-defmodule Hermes.Client.Cache do
+defmodule Anubis.Client.Cache do
   @moduledoc false
 
-  alias Hermes.Client.JSONSchemaConverter
+  alias Anubis.Client.JSONSchemaConverter
 
   @tool_validators_suffix "_tool_validators"
 
@@ -98,6 +98,6 @@ defmodule Hermes.Client.Cache do
   end
 
   defp tool_validators_table(client) do
-    String.to_atom("hermes_client_#{client}#{@tool_validators_suffix}")
+    String.to_atom("anubis_client_#{client}#{@tool_validators_suffix}")
   end
 end

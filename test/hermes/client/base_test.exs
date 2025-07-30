@@ -1,24 +1,24 @@
-defmodule Hermes.Client.BaseTest do
-  use Hermes.MCP.Case, async: false
+defmodule Anubis.Client.BaseTest do
+  use Anubis.MCP.Case, async: false
 
   import Mox
 
-  alias Hermes.MCP.Error
-  alias Hermes.MCP.ID
-  alias Hermes.MCP.Message
-  alias Hermes.MCP.Response
+  alias Anubis.MCP.Error
+  alias Anubis.MCP.ID
+  alias Anubis.MCP.Message
+  alias Anubis.MCP.Response
 
   setup :set_mox_from_context
   setup :verify_on_exit!
 
   setup do
-    Mox.stub_with(Hermes.MockTransport, MockTransport)
+    Mox.stub_with(Anubis.MockTransport, MockTransport)
     :ok
   end
 
   describe "start_link/1" do
     test "starts the client with proper initialization" do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         assert String.contains?(message, "initialize")
         assert String.contains?(message, "protocolVersion")
         assert String.contains?(message, "capabilities")
@@ -28,14 +28,14 @@ defmodule Hermes.Client.BaseTest do
 
       client =
         start_supervised!(
-          {Hermes.Client.Base,
-           transport: [layer: Hermes.MockTransport, name: MockTransport],
+          {Anubis.Client.Base,
+           transport: [layer: Anubis.MockTransport, name: MockTransport],
            client_info: %{"name" => "TestClient", "version" => "1.0.0"},
            capabilities: %{}},
           restart: :temporary
         )
 
-      allow(Hermes.MockTransport, self(), client)
+      allow(Anubis.MockTransport, self(), client)
       initialize_client(client)
 
       assert Process.alive?(client)
@@ -46,7 +46,7 @@ defmodule Hermes.Client.BaseTest do
     setup :initialized_client
 
     test "ping sends correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "ping"
         assert decoded["params"] == %{}
@@ -55,7 +55,7 @@ defmodule Hermes.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.ping(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.ping(client) end)
 
       Process.sleep(50)
 
@@ -69,14 +69,14 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "list_resources sends correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         assert decoded["params"] == %{}
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.list_resources(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
 
       Process.sleep(50)
 
@@ -99,7 +99,7 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "list_resources with cursor", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         assert decoded["params"] == %{"cursor" => "next-page"}
@@ -108,7 +108,7 @@ defmodule Hermes.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.list_resources(client, cursor: "next-page")
+          Anubis.Client.Base.list_resources(client, cursor: "next-page")
         end)
 
       Process.sleep(50)
@@ -132,7 +132,7 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "read_resource sends correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/read"
         assert decoded["params"] == %{"uri" => "test://uri"}
@@ -140,7 +140,7 @@ defmodule Hermes.Client.BaseTest do
       end)
 
       task =
-        Task.async(fn -> Hermes.Client.Base.read_resource(client, "test://uri") end)
+        Task.async(fn -> Anubis.Client.Base.read_resource(client, "test://uri") end)
 
       Process.sleep(50)
 
@@ -162,14 +162,14 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "list_prompts sends correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "prompts/list"
         assert decoded["params"] == %{}
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.list_prompts(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.list_prompts(client) end)
 
       Process.sleep(50)
 
@@ -192,7 +192,7 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "get_prompt sends correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "prompts/get"
 
@@ -206,7 +206,7 @@ defmodule Hermes.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.get_prompt(client, "test_prompt", %{"arg1" => "value1"})
+          Anubis.Client.Base.get_prompt(client, "test_prompt", %{"arg1" => "value1"})
         end)
 
       Process.sleep(50)
@@ -232,14 +232,14 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "list_tools sends correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/list"
         assert decoded["params"] == %{}
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.list_tools(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
 
       Process.sleep(50)
 
@@ -262,7 +262,7 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "call_tool sends correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
 
@@ -276,7 +276,7 @@ defmodule Hermes.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.call_tool(client, "test_tool", %{"arg1" => "value1"})
+          Anubis.Client.Base.call_tool(client, "test_tool", %{"arg1" => "value1"})
         end)
 
       Process.sleep(50)
@@ -300,7 +300,7 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "handles domain error responses as {:ok, response}", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
 
@@ -314,7 +314,7 @@ defmodule Hermes.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.call_tool(client, "test_tool", %{"arg1" => "value1"})
+          Anubis.Client.Base.call_tool(client, "test_tool", %{"arg1" => "value1"})
         end)
 
       Process.sleep(50)
@@ -346,7 +346,7 @@ defmodule Hermes.Client.BaseTest do
     setup :initialized_client
 
     test "ping sends correct request since it is always supported", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "ping"
         assert decoded["params"] == %{}
@@ -355,7 +355,7 @@ defmodule Hermes.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.ping(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.ping(client) end)
 
       Process.sleep(50)
 
@@ -370,7 +370,7 @@ defmodule Hermes.Client.BaseTest do
 
     @tag server_capabilities: %{"prompts" => %{}}
     test "tools/list fails since this capability isn't supported", %{client: client} do
-      task = Task.async(fn -> Hermes.Client.Base.list_tools(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
 
       assert {:error, %Error{reason: :method_not_found, data: %{method: "tools/list"}}} =
                Task.await(task)
@@ -381,13 +381,13 @@ defmodule Hermes.Client.BaseTest do
     setup :initialized_client
 
     test "handles error response", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "ping"
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.ping(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.ping(client) end)
 
       Process.sleep(50)
 
@@ -404,11 +404,11 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "handles transport error", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, _message ->
+      expect(Anubis.MockTransport, :send_message, fn _, _message ->
         {:error, :connection_closed}
       end)
 
-      assert {:error, error} = Hermes.Client.Base.ping(client)
+      assert {:error, error} = Anubis.Client.Base.ping(client)
       assert error.reason == :send_failure
       assert error.data.original_reason == :connection_closed
     end
@@ -416,30 +416,30 @@ defmodule Hermes.Client.BaseTest do
 
   describe "capability management" do
     test "merge_capabilities correctly merges capabilities" do
-      expect(Hermes.MockTransport, :send_message, fn _, _message -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _message -> :ok end)
 
       client =
         start_supervised!(
-          {Hermes.Client.Base,
-           transport: [layer: Hermes.MockTransport, name: MockTransport],
+          {Anubis.Client.Base,
+           transport: [layer: Anubis.MockTransport, name: MockTransport],
            client_info: %{"name" => "TestClient", "version" => "1.0.0"},
            capabilities: %{"roots" => %{}}},
           restart: :temporary
         )
 
-      allow(Hermes.MockTransport, self(), client)
+      allow(Anubis.MockTransport, self(), client)
 
       initialize_client(client)
 
       new_capabilities = %{"sampling" => %{}}
 
-      updated = Hermes.Client.Base.merge_capabilities(client, new_capabilities)
+      updated = Anubis.Client.Base.merge_capabilities(client, new_capabilities)
 
       assert updated == %{"roots" => %{}, "sampling" => %{}}
 
       nested_capabilities = %{"roots" => %{"listChanged" => true}}
 
-      final = Hermes.Client.Base.merge_capabilities(client, nested_capabilities)
+      final = Anubis.Client.Base.merge_capabilities(client, nested_capabilities)
 
       assert final == %{"sampling" => %{}, "roots" => %{"listChanged" => true}}
     end
@@ -449,7 +449,7 @@ defmodule Hermes.Client.BaseTest do
     setup :initialized_client
 
     test "get_server_capabilities returns server capabilities", %{client: client} do
-      capabilities = Hermes.Client.Base.get_server_capabilities(client)
+      capabilities = Anubis.Client.Base.get_server_capabilities(client)
 
       assert Map.has_key?(capabilities, "resources")
       assert Map.has_key?(capabilities, "tools")
@@ -457,7 +457,7 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "get_server_info returns server info", %{client: client} do
-      server_info = Hermes.Client.Base.get_server_info(client)
+      server_info = Anubis.Client.Base.get_server_info(client)
 
       assert server_info == %{"name" => "TestServer", "version" => "1.0.0"}
     end
@@ -475,7 +475,7 @@ defmodule Hermes.Client.BaseTest do
       total_value = 100
 
       :ok =
-        Hermes.Client.Base.register_progress_callback(
+        Anubis.Client.Base.register_progress_callback(
           client,
           progress_token,
           fn token, progress, total ->
@@ -497,11 +497,11 @@ defmodule Hermes.Client.BaseTest do
       progress_token = "unregister_test_token"
 
       :ok =
-        Hermes.Client.Base.register_progress_callback(client, progress_token, fn _, _, _ ->
+        Anubis.Client.Base.register_progress_callback(client, progress_token, fn _, _, _ ->
           send(test_pid, :should_not_be_called)
         end)
 
-      :ok = Hermes.Client.Base.unregister_progress_callback(client, progress_token)
+      :ok = Anubis.Client.Base.unregister_progress_callback(client, progress_token)
 
       progress_notification = progress_notification(progress_token)
       send_notification(client, progress_notification)
@@ -512,7 +512,7 @@ defmodule Hermes.Client.BaseTest do
     test "request with progress token includes it in params", %{client: client} do
       progress_token = "request_token_test"
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
 
@@ -525,7 +525,7 @@ defmodule Hermes.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.list_resources(client,
+          Anubis.Client.Base.list_resources(client,
             progress: [token: progress_token]
           )
         end)
@@ -564,14 +564,14 @@ defmodule Hermes.Client.BaseTest do
          }
 
     test "set_log_level sends the correct request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "logging/setLevel"
         assert decoded["params"]["level"] == "info"
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.set_log_level(client, "info") end)
+      task = Task.async(fn -> Anubis.Client.Base.set_log_level(client, "info") end)
 
       Process.sleep(50)
 
@@ -596,7 +596,7 @@ defmodule Hermes.Client.BaseTest do
       ref = %{"type" => "ref/prompt", "name" => "code_review"}
       argument = %{"name" => "language", "value" => "py"}
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "completion/complete"
         assert decoded["params"]["ref"]["type"] == "ref/prompt"
@@ -606,7 +606,7 @@ defmodule Hermes.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.complete(client, ref, argument) end)
+      task = Task.async(fn -> Anubis.Client.Base.complete(client, ref, argument) end)
 
       Process.sleep(50)
 
@@ -639,7 +639,7 @@ defmodule Hermes.Client.BaseTest do
       ref = %{"type" => "ref/resource", "uri" => "file:///path/to/file.txt"}
       argument = %{"name" => "encoding", "value" => "ut"}
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "completion/complete"
         assert decoded["params"]["ref"]["type"] == "ref/resource"
@@ -649,7 +649,7 @@ defmodule Hermes.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.complete(client, ref, argument) end)
+      task = Task.async(fn -> Anubis.Client.Base.complete(client, ref, argument) end)
 
       Process.sleep(50)
 
@@ -670,7 +670,7 @@ defmodule Hermes.Client.BaseTest do
 
     test "register_log_callback sets the callback", %{client: client} do
       callback = fn _, _, _ -> nil end
-      :ok = Hermes.Client.Base.register_log_callback(client, callback)
+      :ok = Anubis.Client.Base.register_log_callback(client, callback)
 
       state = :sys.get_state(client)
       assert state.log_callback == callback
@@ -679,8 +679,8 @@ defmodule Hermes.Client.BaseTest do
     test "unregister_log_callback removes the callback", %{client: client} do
       callback = fn _, _, _ -> nil end
 
-      assert :ok = Hermes.Client.Base.register_log_callback(client, callback)
-      assert :ok = Hermes.Client.Base.unregister_log_callback(client)
+      assert :ok = Anubis.Client.Base.register_log_callback(client, callback)
+      assert :ok = Anubis.Client.Base.unregister_log_callback(client)
 
       state = :sys.get_state(client)
       assert is_nil(state.log_callback)
@@ -690,7 +690,7 @@ defmodule Hermes.Client.BaseTest do
       test_pid = self()
 
       :ok =
-        Hermes.Client.Base.register_log_callback(client, fn level, data, logger ->
+        Anubis.Client.Base.register_log_callback(client, fn level, data, logger ->
           send(test_pid, {:log_callback, level, data, logger})
         end)
 
@@ -706,7 +706,7 @@ defmodule Hermes.Client.BaseTest do
 
   describe "notification handling" do
     test "sends initialized notification after init" do
-      Hermes.MockTransport
+      Anubis.MockTransport
       # the handle_continue
       |> expect(:send_message, fn _, message ->
         decoded = JSON.decode!(message)
@@ -723,14 +723,14 @@ defmodule Hermes.Client.BaseTest do
 
       client =
         start_supervised!(
-          {Hermes.Client.Base,
-           transport: [layer: Hermes.MockTransport, name: MockTransport],
+          {Anubis.Client.Base,
+           transport: [layer: Anubis.MockTransport, name: MockTransport],
            client_info: %{"name" => "TestClient", "version" => "1.0.0"},
            capabilities: %{}},
           restart: :temporary
         )
 
-      allow(Hermes.MockTransport, self(), client)
+      allow(Anubis.MockTransport, self(), client)
 
       initialize_client(client)
 
@@ -745,7 +745,7 @@ defmodule Hermes.Client.BaseTest do
     setup :initialized_client
 
     test "handles cancelled notification from server", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
         :ok
@@ -753,7 +753,7 @@ defmodule Hermes.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.call_tool(client, "long_running_tool")
+          Anubis.Client.Base.call_tool(client, "long_running_tool")
         end)
 
       Process.sleep(50)
@@ -773,20 +773,20 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "client can cancel a request", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         :ok
       end)
 
-      task = Task.async(fn -> Hermes.Client.Base.list_resources(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
 
       Process.sleep(50)
 
       request_id = get_request_id(client, "resources/list")
       assert request_id != nil
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["requestId"] == request_id
@@ -795,7 +795,7 @@ defmodule Hermes.Client.BaseTest do
       end)
 
       assert :ok =
-               Hermes.Client.Base.cancel_request(
+               Anubis.Client.Base.cancel_request(
                  client,
                  request_id,
                  "test cancellation"
@@ -812,19 +812,19 @@ defmodule Hermes.Client.BaseTest do
     test "client returns not_found when cancelling non-existent request", %{
       client: client
     } do
-      result = Hermes.Client.Base.cancel_request(client, "non_existent_id")
+      result = Anubis.Client.Base.cancel_request(client, "non_existent_id")
       assert %Error{reason: :request_not_found} = result
     end
 
     test "cancel_all_requests cancels all pending requests", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, 2, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, 2, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] in ["resources/list", "tools/list"]
         :ok
       end)
 
-      task1 = Task.async(fn -> Hermes.Client.Base.list_resources(client) end)
-      task2 = Task.async(fn -> Hermes.Client.Base.list_tools(client) end)
+      task1 = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
+      task2 = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
 
       Process.sleep(50)
 
@@ -832,7 +832,7 @@ defmodule Hermes.Client.BaseTest do
       pending_count = map_size(state.pending_requests)
       assert pending_count == 2
 
-      expect(Hermes.MockTransport, :send_message, 2, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, 2, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["reason"] == "batch cancellation"
@@ -840,7 +840,7 @@ defmodule Hermes.Client.BaseTest do
       end)
 
       {:ok, cancelled_requests} =
-        Hermes.Client.Base.cancel_all_requests(client, "batch cancellation")
+        Anubis.Client.Base.cancel_all_requests(client, "batch cancellation")
 
       assert length(cancelled_requests) == 2
 
@@ -857,13 +857,13 @@ defmodule Hermes.Client.BaseTest do
     test "request timeout sends cancellation notification", %{client: client} do
       test_timeout = 50
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         :ok
       end)
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["reason"] == "timeout"
@@ -872,7 +872,7 @@ defmodule Hermes.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.list_resources(client, timeout: test_timeout)
+          Anubis.Client.Base.list_resources(client, timeout: test_timeout)
         end)
 
       Process.sleep(test_timeout * 2)
@@ -888,20 +888,20 @@ defmodule Hermes.Client.BaseTest do
          %{client: client} do
       test_timeout = 50
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         Process.sleep(test_timeout + 10)
         :ok
       end)
 
-      expect(Hermes.MockTransport, :send_message, fn _, _ -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _ -> :ok end)
 
       Process.flag(:trap_exit, true)
 
       task =
         Task.async(fn ->
-          Hermes.Client.Base.list_resources(client, timeout: test_timeout)
+          Anubis.Client.Base.list_resources(client, timeout: test_timeout)
         end)
 
       result = Task.await(task)
@@ -912,28 +912,28 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "client.close sends cancellation for pending requests", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         :ok
       end)
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["reason"] == "client closed"
         :ok
       end)
 
-      expect(Hermes.MockTransport, :shutdown, fn _ -> :ok end)
+      expect(Anubis.MockTransport, :shutdown, fn _ -> :ok end)
 
       Process.flag(:trap_exit, true)
-      %{pid: pid} = Task.async(fn -> Hermes.Client.Base.list_resources(client) end)
+      %{pid: pid} = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
       Process.sleep(50)
 
       assert get_request_id(client, "resources/list")
 
-      Hermes.Client.Base.close(client)
+      Anubis.Client.Base.close(client)
 
       Process.sleep(50)
       refute Process.alive?(client)
@@ -948,13 +948,13 @@ defmodule Hermes.Client.BaseTest do
 
     test "add_root adds a root directory", %{client: client} do
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project",
           "My Project"
         )
 
-      roots = Hermes.Client.Base.list_roots(client)
+      roots = Anubis.Client.Base.list_roots(client)
       assert length(roots) == 1
 
       [root] = roots
@@ -964,20 +964,20 @@ defmodule Hermes.Client.BaseTest do
 
     test "list_roots returns all roots", %{client: client} do
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
         )
 
-      roots = Hermes.Client.Base.list_roots(client)
+      roots = Anubis.Client.Base.list_roots(client)
       assert length(roots) == 2
 
       uris = Enum.map(roots, & &1.uri)
@@ -987,63 +987,63 @@ defmodule Hermes.Client.BaseTest do
 
     test "remove_root removes a specific root", %{client: client} do
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
         )
 
-      :ok = Hermes.Client.Base.remove_root(client, "file:///home/user/project1")
+      :ok = Anubis.Client.Base.remove_root(client, "file:///home/user/project1")
 
-      roots = Hermes.Client.Base.list_roots(client)
+      roots = Anubis.Client.Base.list_roots(client)
       assert length(roots) == 1
       assert hd(roots).uri == "file:///home/user/project2"
     end
 
     test "clear_roots removes all roots", %{client: client} do
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
         )
 
-      :ok = Hermes.Client.Base.clear_roots(client)
+      :ok = Anubis.Client.Base.clear_roots(client)
 
-      roots = Hermes.Client.Base.list_roots(client)
+      roots = Anubis.Client.Base.list_roots(client)
       assert Enum.empty?(roots)
     end
 
     test "add_root doesn't add duplicates", %{client: client} do
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project",
           "My Project"
         )
 
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project",
           "Duplicate Project"
         )
 
-      roots = Hermes.Client.Base.list_roots(client)
+      roots = Anubis.Client.Base.list_roots(client)
       assert length(roots) == 1
       assert hd(roots).name == "My Project"
     end
@@ -1054,14 +1054,14 @@ defmodule Hermes.Client.BaseTest do
 
     test "server can request roots list", %{client: client} do
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Hermes.Client.Base.add_root(
+        Anubis.Client.Base.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
@@ -1069,7 +1069,7 @@ defmodule Hermes.Client.BaseTest do
 
       request_id = "server_req_123"
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1104,7 +1104,7 @@ defmodule Hermes.Client.BaseTest do
         {:ok, %{role: "assistant", content: %{type: "text", text: "Hello"}}}
       end
 
-      :ok = Hermes.Client.Base.register_sampling_callback(client, callback)
+      :ok = Anubis.Client.Base.register_sampling_callback(client, callback)
 
       state = :sys.get_state(client)
       assert is_function(state.sampling_callback, 1)
@@ -1116,8 +1116,8 @@ defmodule Hermes.Client.BaseTest do
         {:ok, %{role: "assistant", content: %{type: "text", text: "Hello"}}}
       end
 
-      assert :ok = Hermes.Client.Base.register_sampling_callback(client, callback)
-      assert :ok = Hermes.Client.Base.unregister_sampling_callback(client)
+      assert :ok = Anubis.Client.Base.register_sampling_callback(client, callback)
+      assert :ok = Anubis.Client.Base.unregister_sampling_callback(client)
 
       state = :sys.get_state(client)
       assert is_nil(state.sampling_callback)
@@ -1129,7 +1129,7 @@ defmodule Hermes.Client.BaseTest do
 
       # Register a sampling callback
       :ok =
-        Hermes.Client.Base.register_sampling_callback(client, fn params ->
+        Anubis.Client.Base.register_sampling_callback(client, fn params ->
           send(test_pid, {:sampling_called, params})
 
           {:ok,
@@ -1151,7 +1151,7 @@ defmodule Hermes.Client.BaseTest do
         "modelPreferences" => %{}
       }
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1188,7 +1188,7 @@ defmodule Hermes.Client.BaseTest do
         "modelPreferences" => %{}
       }
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1218,7 +1218,7 @@ defmodule Hermes.Client.BaseTest do
 
       # Register a callback that returns an error
       :ok =
-        Hermes.Client.Base.register_sampling_callback(client, fn params ->
+        Anubis.Client.Base.register_sampling_callback(client, fn params ->
           send(test_pid, {:sampling_called, params})
           {:error, "Model unavailable"}
         end)
@@ -1226,7 +1226,7 @@ defmodule Hermes.Client.BaseTest do
       request_id = "server_sampling_req_789"
       params = %{"messages" => [], "modelPreferences" => %{}}
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1256,7 +1256,7 @@ defmodule Hermes.Client.BaseTest do
 
       # Register a callback that raises an exception
       :ok =
-        Hermes.Client.Base.register_sampling_callback(client, fn params ->
+        Anubis.Client.Base.register_sampling_callback(client, fn params ->
           send(test_pid, {:sampling_called, params})
           raise "Something went wrong!"
         end)
@@ -1264,7 +1264,7 @@ defmodule Hermes.Client.BaseTest do
       request_id = "server_sampling_req_999"
       params = %{"messages" => [], "modelPreferences" => %{}}
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1295,7 +1295,7 @@ defmodule Hermes.Client.BaseTest do
 
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
     test "sends notification when adding a root", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["method"] == "notifications/roots/list_changed"
@@ -1304,7 +1304,7 @@ defmodule Hermes.Client.BaseTest do
       end)
 
       assert :ok =
-               Hermes.Client.Base.add_root(client, "file:///test/root", "Test Root")
+               Anubis.Client.Base.add_root(client, "file:///test/root", "Test Root")
 
       _ = :sys.get_state(client)
 
@@ -1314,11 +1314,11 @@ defmodule Hermes.Client.BaseTest do
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
     test "sends notification when removing a root", %{client: client} do
       assert :ok =
-               Hermes.Client.Base.add_root(client, "file:///test/root", "Test Root")
+               Anubis.Client.Base.add_root(client, "file:///test/root", "Test Root")
 
       Process.sleep(50)
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["method"] == "notifications/roots/list_changed"
@@ -1326,7 +1326,7 @@ defmodule Hermes.Client.BaseTest do
         :ok
       end)
 
-      assert :ok = Hermes.Client.Base.remove_root(client, "file:///test/root")
+      assert :ok = Anubis.Client.Base.remove_root(client, "file:///test/root")
       _ = :sys.get_state(client)
 
       Process.sleep(50)
@@ -1335,14 +1335,14 @@ defmodule Hermes.Client.BaseTest do
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
     test "sends notification when clearing roots", %{client: client} do
       assert :ok =
-               Hermes.Client.Base.add_root(
+               Anubis.Client.Base.add_root(
                  client,
                  "file:///test/root1",
                  "Test Root 1"
                )
 
       assert :ok =
-               Hermes.Client.Base.add_root(
+               Anubis.Client.Base.add_root(
                  client,
                  "file:///test/root2",
                  "Test Root 2"
@@ -1350,7 +1350,7 @@ defmodule Hermes.Client.BaseTest do
 
       Process.sleep(50)
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["method"] == "notifications/roots/list_changed"
@@ -1358,7 +1358,7 @@ defmodule Hermes.Client.BaseTest do
         :ok
       end)
 
-      assert :ok = Hermes.Client.Base.clear_roots(client)
+      assert :ok = Anubis.Client.Base.clear_roots(client)
 
       _ = :sys.get_state(client)
       Process.sleep(50)
@@ -1369,7 +1369,7 @@ defmodule Hermes.Client.BaseTest do
       client: client
     } do
       assert :ok =
-               Hermes.Client.Base.add_root(client, "file:///test/root", "Test Root")
+               Anubis.Client.Base.add_root(client, "file:///test/root", "Test Root")
 
       _ = :sys.get_state(client)
     end
@@ -1379,13 +1379,13 @@ defmodule Hermes.Client.BaseTest do
     setup :initialized_client
 
     test "validates tool call output when structuredContent is present", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/list"
         :ok
       end)
 
-      list_task = Task.async(fn -> Hermes.Client.Base.list_tools(client) end)
+      list_task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
       Process.sleep(50)
 
       request_id = get_request_id(client, "tools/list")
@@ -1408,7 +1408,7 @@ defmodule Hermes.Client.BaseTest do
       send_response(client, response)
       assert {:ok, _} = Task.await(list_task)
 
-      expect(Hermes.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
         assert decoded["params"]["name"] == "get_weather"
@@ -1417,7 +1417,7 @@ defmodule Hermes.Client.BaseTest do
 
       call_task =
         Task.async(fn ->
-          Hermes.Client.Base.call_tool(client, "get_weather", %{"location" => "NYC"})
+          Anubis.Client.Base.call_tool(client, "get_weather", %{"location" => "NYC"})
         end)
 
       Process.sleep(50)
@@ -1450,11 +1450,11 @@ defmodule Hermes.Client.BaseTest do
       assert {:ok, response} = Task.await(call_task)
       assert response.result["structuredContent"] == valid_structured
 
-      expect(Hermes.MockTransport, :send_message, fn _, _ -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _ -> :ok end)
 
       invalid_task =
         Task.async(fn ->
-          Hermes.Client.Base.call_tool(client, "get_weather", %{"location" => "LA"})
+          Anubis.Client.Base.call_tool(client, "get_weather", %{"location" => "LA"})
         end)
 
       Process.sleep(50)
@@ -1485,9 +1485,9 @@ defmodule Hermes.Client.BaseTest do
     end
 
     test "handles tools with complex outputSchema", %{client: client} do
-      expect(Hermes.MockTransport, :send_message, fn _, _ -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _ -> :ok end)
 
-      task = Task.async(fn -> Hermes.Client.Base.list_tools(client) end)
+      task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
       Process.sleep(50)
 
       request_id = get_request_id(client, "tools/list")

@@ -1,10 +1,10 @@
 defmodule Mix.Interactive.State do
   @moduledoc false
 
-  alias Hermes.Client.Request
-  alias Hermes.Transport.SSE
-  alias Hermes.Transport.STDIO
-  alias Hermes.Transport.StreamableHTTP
+  alias Anubis.Client.Request
+  alias Anubis.Transport.SSE
+  alias Anubis.Transport.STDIO
+  alias Anubis.Transport.StreamableHTTP
   alias Mix.Interactive.UI
 
   @doc """
@@ -18,7 +18,7 @@ defmodule Mix.Interactive.State do
   def print_state(client) do
     client_state = :sys.get_state(client)
     transport = get_transport_info(client_state)
-    verbose = System.get_env("HERMES_VERBOSE") == "1"
+    verbose = System.get_env("ANUBIS_VERBOSE") == "1"
 
     print_client_state(client, client_state, verbose)
     print_transport_state(transport.pid, transport.layer, verbose)

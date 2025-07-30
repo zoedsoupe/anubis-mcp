@@ -1,4 +1,4 @@
-defmodule Hermes.Logging do
+defmodule Anubis.Logging do
   @moduledoc false
 
   require Logger
@@ -6,7 +6,7 @@ defmodule Hermes.Logging do
   @doc false
   defmacro __using__(_) do
     quote do
-      alias Hermes.Logging
+      alias Anubis.Logging
 
       require Logger
       require Logging
@@ -25,33 +25,33 @@ defmodule Hermes.Logging do
   """
   defmacro message(direction, type, id, data, metadata \\ []) do
     quote do
-      level = Hermes.Logging.get_logging_level(:protocol_messages)
+      level = Anubis.Logging.get_logging_level(:protocol_messages)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)
 
       summary =
-        Hermes.Logging.create_message_summary(
+        Anubis.Logging.create_message_summary(
           unquote(type),
           unquote(id),
           unquote(data)
         )
 
-      Hermes.Logging.log(
+      Anubis.Logging.log(
         level,
         "[MCP message] #{unquote(direction)} #{unquote(type)}: #{summary}",
         metadata
       )
 
-      if Hermes.Logging.should_log_details?(unquote(data)) do
-        Hermes.Logging.log(
+      if Anubis.Logging.should_log_details?(unquote(data)) do
+        Anubis.Logging.log(
           level,
           "[MCP message] #{unquote(direction)} #{unquote(type)} data: #{inspect(unquote(data))}",
           metadata
         )
       else
-        Hermes.Logging.log(
+        Anubis.Logging.log(
           level,
-          "[MCP message] #{unquote(direction)} #{unquote(type)} data (truncated): #{Hermes.Logging.truncate_data(unquote(data))}",
+          "[MCP message] #{unquote(direction)} #{unquote(type)} data (truncated): #{Anubis.Logging.truncate_data(unquote(data))}",
           metadata
         )
       end
@@ -67,14 +67,14 @@ defmodule Hermes.Logging do
   """
   defmacro server_event(event, details, metadata \\ []) do
     quote do
-      level = Hermes.Logging.get_logging_level(:server_events)
+      level = Anubis.Logging.get_logging_level(:server_events)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)
 
-      Hermes.Logging.log(level, "MCP server event: #{unquote(event)}", metadata)
+      Anubis.Logging.log(level, "MCP server event: #{unquote(event)}", metadata)
 
-      if Hermes.Logging.should_log_details?(unquote(details)) do
-        Hermes.Logging.log(
+      if Anubis.Logging.should_log_details?(unquote(details)) do
+        Anubis.Logging.log(
           level,
           "MCP event details: #{inspect(unquote(details))}",
           metadata
@@ -92,14 +92,14 @@ defmodule Hermes.Logging do
   """
   defmacro client_event(event, details, metadata \\ []) do
     quote do
-      level = Hermes.Logging.get_logging_level(:client_events)
+      level = Anubis.Logging.get_logging_level(:client_events)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)
 
-      Hermes.Logging.log(level, "MCP client event: #{unquote(event)}", metadata)
+      Anubis.Logging.log(level, "MCP client event: #{unquote(event)}", metadata)
 
-      if Hermes.Logging.should_log_details?(unquote(details)) do
-        Hermes.Logging.log(
+      if Anubis.Logging.should_log_details?(unquote(details)) do
+        Anubis.Logging.log(
           level,
           "MCP event details: #{inspect(unquote(details))}",
           metadata
@@ -117,14 +117,14 @@ defmodule Hermes.Logging do
   """
   defmacro transport_event(event, details, metadata \\ []) do
     quote do
-      level = Hermes.Logging.get_logging_level(:transport_events)
+      level = Anubis.Logging.get_logging_level(:transport_events)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)
 
-      Hermes.Logging.log(level, "MCP transport event: #{unquote(event)}", metadata)
+      Anubis.Logging.log(level, "MCP transport event: #{unquote(event)}", metadata)
 
-      if Hermes.Logging.should_log_details?(unquote(details)) do
-        Hermes.Logging.log(
+      if Anubis.Logging.should_log_details?(unquote(details)) do
+        Anubis.Logging.log(
           level,
           "MCP transport details: #{inspect(unquote(details))}",
           metadata
@@ -141,14 +141,14 @@ defmodule Hermes.Logging do
   end
 
   defp should_log?(level) do
-    log? = Application.get_env(:hermes_mcp, :log, true)
+    log? = Application.get_env(:anubis_mcp, :log, true)
     config_level = Application.get_env(:logger, :level, :debug)
     log? and Logger.compare_levels(config_level, level) != :lt
   end
 
   @doc false
   def get_logging_level(event_type) do
-    logging_config = Application.get_env(:hermes_mcp, :logging, [])
+    logging_config = Application.get_env(:anubis_mcp, :logging, [])
     Keyword.get(logging_config, event_type, :debug)
   end
 

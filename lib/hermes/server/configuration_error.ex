@@ -1,4 +1,4 @@
-defmodule Hermes.Server.ConfigurationError do
+defmodule Anubis.Server.ConfigurationError do
   @moduledoc """
   Raised when required MCP server configuration is missing or invalid.
 
@@ -10,12 +10,12 @@ defmodule Hermes.Server.ConfigurationError do
 
       # This will raise an error - missing required options
       defmodule BadServer do
-        use Hermes.Server  # Raises Hermes.Server.ConfigurationError
+        use Anubis.Server  # Raises Anubis.Server.ConfigurationError
       end
       
       # This is correct
       defmodule GoodServer do
-        use Hermes.Server,
+        use Anubis.Server,
           name: "My Server",
           version: "1.0.0"
       end
@@ -47,7 +47,7 @@ defmodule Hermes.Server.ConfigurationError do
     Please add the :name option to your use statement:
 
         defmodule #{inspect(module)} do
-          use Hermes.Server,
+          use Anubis.Server,
             name: "Your Server Name",    # <-- Add this
             version: "1.0.0"
         end
@@ -66,7 +66,7 @@ defmodule Hermes.Server.ConfigurationError do
     Please add the :version option to your use statement:
 
         defmodule #{inspect(module)} do
-          use Hermes.Server,
+          use Anubis.Server,
             name: "Your Server",
             version: "1.0.0"              # <-- Add this
         end
@@ -85,14 +85,14 @@ defmodule Hermes.Server.ConfigurationError do
     Please add these options to your use statement:
 
         defmodule #{inspect(module)} do
-          use Hermes.Server,
+          use Anubis.Server,
             name: "Your Server Name",     # <-- Add this
             version: "1.0.0"              # <-- Add this
         end
 
     Example:
         defmodule Calculator do
-          use Hermes.Server,
+          use Anubis.Server,
             name: "Calculator Server",
             version: "1.0.0"
         end

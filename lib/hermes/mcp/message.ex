@@ -1,4 +1,4 @@
-defmodule Hermes.MCP.Message do
+defmodule Anubis.MCP.Message do
   @moduledoc """
   Handles parsing and validation of MCP (Model Context Protocol) messages using the Peri library.
 

@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Transport.STDIO do
+defmodule Anubis.Server.Transport.STDIO do
   @moduledoc """
   STDIO transport implementation for MCP servers.
 
@@ -6,16 +6,16 @@ defmodule Hermes.Server.Transport.STDIO do
   processing incoming JSON-RPC messages and forwarding responses.
   """
 
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.MCP.Message
-  alias Hermes.Telemetry
-  alias Hermes.Transport.Behaviour, as: Transport
+  alias Anubis.MCP.Message
+  alias Anubis.Telemetry
+  alias Anubis.Transport.Behaviour, as: Transport
 
   require Message
 
@@ -33,9 +33,9 @@ defmodule Hermes.Server.Transport.STDIO do
           | GenServer.option()
 
   defschema(:parse_options, [
-    {:server, {:required, {:oneof, [{:custom, &Hermes.genserver_name/1}, :pid, {:tuple, [:atom, :any]}]}}},
-    {:name, {:custom, &Hermes.genserver_name/1}},
-    {:registry, {:atom, {:default, Hermes.Server.Registry}}},
+    {:server, {:required, {:oneof, [{:custom, &Anubis.genserver_name/1}, :pid, {:tuple, [:atom, :any]}]}}},
+    {:name, {:custom, &Anubis.genserver_name/1}},
+    {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}}
   ])
 
@@ -49,7 +49,7 @@ defmodule Hermes.Server.Transport.STDIO do
 
   ## Examples
 
-      iex> Hermes.Server.Transport.STDIO.start_link(server: my_server)
+      iex> Anubis.Server.Transport.STDIO.start_link(server: my_server)
       {:ok, pid}
   """
   @impl Transport

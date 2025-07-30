@@ -54,7 +54,7 @@ defmodule Ascii.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.5"},
-      {:hermes_mcp, path: "../../../"}
+      {:anubis_mcp, path: "../../../"}
     ]
   end
 

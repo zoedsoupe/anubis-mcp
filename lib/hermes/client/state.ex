@@ -1,12 +1,12 @@
-defmodule Hermes.Client.State do
+defmodule Anubis.Client.State do
   @moduledoc false
 
-  alias Hermes.Client.Base
-  alias Hermes.Client.Operation
-  alias Hermes.Client.Request
-  alias Hermes.MCP.Error
-  alias Hermes.MCP.ID
-  alias Hermes.Telemetry
+  alias Anubis.Client.Base
+  alias Anubis.Client.Operation
+  alias Anubis.Client.Request
+  alias Anubis.MCP.Error
+  alias Anubis.MCP.ID
+  alias Anubis.Telemetry
 
   @type t :: %__MODULE__{
           client_info: map(),
@@ -113,7 +113,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> Hermes.Client.State.get_request(state, "req_123")
+      iex> Anubis.Client.State.get_request(state, "req_123")
       {{pid, ref}, "ping", timer_ref, start_time} # or nil if not found
   """
   @spec get_request(t(), String.t()) :: Request.t() | nil
@@ -131,7 +131,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> {request_info, updated_state} = Hermes.Client.State.remove_request(state, "req_123")
+      iex> {request_info, updated_state} = Anubis.Client.State.remove_request(state, "req_123")
       iex> request_info.method
       "ping"
       iex> request_info.elapsed_ms > 0
@@ -161,7 +161,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> Hermes.Client.State.handle_request_timeout(state, "req_123")
+      iex> Anubis.Client.State.handle_request_timeout(state, "req_123")
       {%{from: from, method: "ping", elapsed_ms: 30000}, updated_state}
   """
   @spec handle_request_timeout(t(), String.t()) :: {Request.t() | nil, t()}
@@ -186,7 +186,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.register_progress_callback(state, "token123", fn token, progress, total -> IO.inspect({token, progress, total}) end)
+      iex> updated_state = Anubis.Client.State.register_progress_callback(state, "token123", fn token, progress, total -> IO.inspect({token, progress, total}) end)
       iex> Map.has_key?(updated_state.progress_callbacks, "token123")
       true
   """
@@ -206,7 +206,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> callback = Hermes.Client.State.get_progress_callback(state, "token123")
+      iex> callback = Anubis.Client.State.get_progress_callback(state, "token123")
       iex> is_function(callback, 3)
       true
   """
@@ -225,7 +225,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.unregister_progress_callback(state, "token123")
+      iex> updated_state = Anubis.Client.State.unregister_progress_callback(state, "token123")
       iex> Map.has_key?(updated_state.progress_callbacks, "token123")
       false
   """
@@ -245,7 +245,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.set_log_callback(state, fn level, data, logger -> IO.inspect({level, data, logger}) end)
+      iex> updated_state = Anubis.Client.State.set_log_callback(state, fn level, data, logger -> IO.inspect({level, data, logger}) end)
       iex> is_function(updated_state.log_callback, 3)
       true
   """
@@ -263,7 +263,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.clear_log_callback(state)
+      iex> updated_state = Anubis.Client.State.clear_log_callback(state)
       iex> is_nil(updated_state.log_callback)
       true
   """
@@ -281,7 +281,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> callback = Hermes.Client.State.get_log_callback(state)
+      iex> callback = Anubis.Client.State.get_log_callback(state)
       iex> is_function(callback, 3) or is_nil(callback)
       true
   """
@@ -301,7 +301,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.update_server_info(state, %{"resources" => %{}}, %{"name" => "TestServer"})
+      iex> updated_state = Anubis.Client.State.update_server_info(state, %{"resources" => %{}}, %{"name" => "TestServer"})
       iex> updated_state.server_capabilities
       %{"resources" => %{}}
       iex> updated_state.server_info
@@ -321,7 +321,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> requests = Hermes.Client.State.list_pending_requests(state)
+      iex> requests = Anubis.Client.State.list_pending_requests(state)
       iex> length(requests) > 0
       true
       iex> hd(requests).method
@@ -341,7 +341,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> Hermes.Client.State.get_server_capabilities(state)
+      iex> Anubis.Client.State.get_server_capabilities(state)
       %{"resources" => %{}, "tools" => %{}}
   """
   @spec get_server_capabilities(t()) :: map() | nil
@@ -358,7 +358,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> Hermes.Client.State.get_server_info(state)
+      iex> Anubis.Client.State.get_server_info(state)
       %{"name" => "TestServer", "version" => "1.0.0"}
   """
   @spec get_server_info(t()) :: map() | nil
@@ -376,7 +376,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.merge_capabilities(state, %{"tools" => %{"execute" => true}})
+      iex> updated_state = Anubis.Client.State.merge_capabilities(state, %{"tools" => %{"execute" => true}})
       iex> updated_state.capabilities["tools"]["execute"]
       true
   """
@@ -397,14 +397,14 @@ defmodule Hermes.Client.State do
   ## Returns
 
     * `:ok` if the method is supported
-    * `{:error, %Hermes.MCP.Error{}}` if the method is not supported
+    * `{:error, %Anubis.MCP.Error{}}` if the method is not supported
 
   ## Examples
 
-      iex> Hermes.Client.State.validate_capability(state_with_resources, "resources/list")
+      iex> Anubis.Client.State.validate_capability(state_with_resources, "resources/list")
       :ok
       
-      iex> {:error, error} = Hermes.Client.State.validate_capability(state_without_tools, "tools/list")
+      iex> {:error, error} = Anubis.Client.State.validate_capability(state_without_tools, "tools/list")
       iex> error.reason
       :method_not_found
   """
@@ -437,7 +437,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.add_root(state, "file:///home/user/project", "My Project")
+      iex> updated_state = Anubis.Client.State.add_root(state, "file:///home/user/project", "My Project")
       iex> updated_state.roots
       [%{uri: "file:///home/user/project", name: "My Project"}]
   """
@@ -468,7 +468,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.remove_root(state, "file:///home/user/project")
+      iex> updated_state = Anubis.Client.State.remove_root(state, "file:///home/user/project")
       iex> updated_state.roots
       []
   """
@@ -497,7 +497,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> Hermes.Client.State.get_root_by_uri(state, "file:///home/user/project")
+      iex> Anubis.Client.State.get_root_by_uri(state, "file:///home/user/project")
       %{uri: "file:///home/user/project", name: "My Project"}
   """
   @spec get_root_by_uri(t(), String.t()) :: Base.root() | nil
@@ -514,7 +514,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> Hermes.Client.State.list_roots(state)
+      iex> Anubis.Client.State.list_roots(state)
       [%{uri: "file:///home/user/project", name: "My Project"}]
   """
   @spec list_roots(t()) :: [Base.root()]
@@ -531,7 +531,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.clear_roots(state)
+      iex> updated_state = Anubis.Client.State.clear_roots(state)
       iex> updated_state.roots
       []
   """
@@ -561,7 +561,7 @@ defmodule Hermes.Client.State do
   ## Examples
 
       iex> callback = fn params -> {:ok, %{role: "assistant", content: %{type: "text", text: "Hello"}}} end
-      iex> updated_state = Hermes.Client.State.set_sampling_callback(state, callback)
+      iex> updated_state = Anubis.Client.State.set_sampling_callback(state, callback)
       iex> is_function(updated_state.sampling_callback, 1)
       true
   """
@@ -580,7 +580,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> Hermes.Client.State.get_sampling_callback(state)
+      iex> Anubis.Client.State.get_sampling_callback(state)
       nil
   """
   @spec get_sampling_callback(t()) ::
@@ -598,7 +598,7 @@ defmodule Hermes.Client.State do
 
   ## Examples
 
-      iex> updated_state = Hermes.Client.State.clear_sampling_callback(state)
+      iex> updated_state = Anubis.Client.State.clear_sampling_callback(state)
       iex> updated_state.sampling_callback
       nil
   """

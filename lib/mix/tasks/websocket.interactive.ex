@@ -1,5 +1,5 @@
 if Code.ensure_loaded?(:gun) do
-  defmodule Mix.Tasks.Hermes.Websocket.Interactive do
+  defmodule Mix.Tasks.Anubis.Websocket.Interactive do
     @shortdoc "Test the WebSocket transport implementation interactively."
 
     @moduledoc """
@@ -14,7 +14,7 @@ if Code.ensure_loaded?(:gun) do
 
     use Mix.Task
 
-    alias Hermes.Transport.WebSocket
+    alias Anubis.Transport.WebSocket
     alias Mix.Interactive.SupervisedShell
     alias Mix.Interactive.UI
 
@@ -27,7 +27,7 @@ if Code.ensure_loaded?(:gun) do
 
     def run(args) do
       # Start required applications without requiring a project
-      Application.ensure_all_started([:hermes_mcp, :peri, :gun])
+      Application.ensure_all_started([:anubis_mcp, :peri, :gun])
 
       # Parse arguments and set log level
       {parsed, _} =
@@ -45,7 +45,7 @@ if Code.ensure_loaded?(:gun) do
       server_url =
         Path.join(server_options[:base_url], server_options[:base_path] || "")
 
-      header = UI.header("HERMES MCP WEBSOCKET INTERACTIVE")
+      header = UI.header("ANUBIS MCP WEBSOCKET INTERACTIVE")
       IO.puts(header)
 
       IO.puts("#{UI.colors().info}Connecting to WebSocket server at: #{server_url}#{UI.colors().reset}\n")

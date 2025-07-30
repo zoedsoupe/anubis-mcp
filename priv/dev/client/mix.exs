@@ -20,7 +20,7 @@ defmodule Incomer.MixProject do
 
   defp deps do
     [
-      {:hermes_mcp, path: "../../../"}
+      {:anubis_mcp, path: "../../../"}
     ]
   end
 end

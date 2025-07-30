@@ -1,4 +1,4 @@
-defmodule Hermes.Transport.SSE do
+defmodule Anubis.Transport.SSE do
   @moduledoc """
   A transport implementation that uses Server-Sent Events (SSE) for receiving messages
   and HTTP POST requests for sending messages back to the server.
@@ -6,13 +6,13 @@ defmodule Hermes.Transport.SSE do
   > #### Deprecated {: .warning}
   >
   > This transport has been deprecated as of MCP specification 2025-03-26 in favor
-  > of the Streamable HTTP transport (`Hermes.Transport.StreamableHTTP`).
+  > of the Streamable HTTP transport (`Anubis.Transport.StreamableHTTP`).
   >
   > The HTTP+SSE transport from protocol version 2024-11-05 has been replaced by
   > the more flexible Streamable HTTP transport which supports optional SSE streaming
   > on a single endpoint.
   >
-  > For new implementations, please use `Hermes.Transport.StreamableHTTP` instead.
+  > For new implementations, please use `Anubis.Transport.StreamableHTTP` instead.
   > This module is maintained for backward compatibility with servers using the
   > 2024-11-05 protocol version.
 
@@ -22,20 +22,20 @@ defmodule Hermes.Transport.SSE do
   > the [Transport options](./transport_options.html) guides for reference.
   """
 
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.HTTP
-  alias Hermes.SSE
-  alias Hermes.SSE.Event
-  alias Hermes.Telemetry
-  alias Hermes.Transport.Behaviour, as: Transport
+  alias Anubis.HTTP
+  alias Anubis.SSE
+  alias Anubis.SSE.Event
+  alias Anubis.Telemetry
+  alias Anubis.Transport.Behaviour, as: Transport
 
-  @deprecated "Use Hermes.Transport.StreamableHTTP instead"
+  @deprecated "Use Anubis.Transport.StreamableHTTP instead"
 
   @type t :: GenServer.server()
 
@@ -74,12 +74,12 @@ defmodule Hermes.Transport.SSE do
           | GenServer.option()
 
   defschema(:options_schema, %{
-    name: {{:custom, &Hermes.genserver_name/1}, {:default, __MODULE__}},
+    name: {{:custom, &Anubis.genserver_name/1}, {:default, __MODULE__}},
     client:
       {:required,
        {:oneof,
         [
-          {:custom, &Hermes.genserver_name/1},
+          {:custom, &Anubis.genserver_name/1},
           :pid,
           {:tuple, [:atom, :any]}
         ]}},
@@ -181,24 +181,24 @@ defmodule Hermes.Transport.SSE do
   end
 
   defp handle_sse_event({:error, :halted}, pid) do
-    Hermes.Logging.transport_event("sse_halted", "Transport will be restarted")
+    Anubis.Logging.transport_event("sse_halted", "Transport will be restarted")
     shutdown(pid)
   end
 
   defp handle_sse_event(%Event{event: "endpoint", data: endpoint}, pid) do
-    Hermes.Logging.transport_event("endpoint", endpoint)
+    Anubis.Logging.transport_event("endpoint", endpoint)
     send(pid, {:endpoint, endpoint})
   end
 
   defp handle_sse_event(%Event{event: "message", data: data}, pid) do
-    Hermes.Logging.transport_event("message", data)
+    Anubis.Logging.transport_event("message", data)
     send(pid, {:message, data})
   end
 
   # coming from fast-mcp ruby
   # https://github.com/yjacquin/fast-mcp/issues/38
   defp handle_sse_event(%Event{event: "ping", data: data}, _) do
-    Hermes.Logging.transport_event("ping", data)
+    Anubis.Logging.transport_event("ping", data)
   end
 
   defp handle_sse_event(%Event{event: "reconnect", data: data}, _pid) do
@@ -208,11 +208,11 @@ defmodule Hermes.Transport.SSE do
         _ -> "unknown"
       end
 
-    Hermes.Logging.transport_event("reconnect", %{reason: reason, data: data})
+    Anubis.Logging.transport_event("reconnect", %{reason: reason, data: data})
   end
 
   defp handle_sse_event(event, _pid) do
-    Hermes.Logging.transport_event("unknown", event, level: :warning)
+    Anubis.Logging.transport_event("unknown", event, level: :warning)
   end
 
   @impl GenServer
@@ -338,7 +338,7 @@ defmodule Hermes.Transport.SSE do
   end
 
   # tries to handle multiple possibles formats for message_url URI
-  # https://github.com/cloudwalk/hermes-mcp/pull/60#issuecomment-2806309443
+  # https://github.com/zoedsoupe/anubis-mcp/pull/60#issuecomment-2806309443
   defp parse_message_url(%{path: base_path} = base, %{scheme: nil, path: path} = uri)
        when is_binary(base_path) and is_binary(path) do
     if path =~ base_path do

@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.Hermes.StreamableHttp.Interactive do
+defmodule Mix.Tasks.Anubis.StreamableHttp.Interactive do
   @shortdoc "Test the Streamable HTTP transport implementation interactively."
 
   @moduledoc """
@@ -12,14 +12,14 @@ defmodule Mix.Tasks.Hermes.StreamableHttp.Interactive do
 
   ## Examples
 
-      mix hermes.streamable_http.interactive --base-url http://localhost:8000
-      mix hermes.streamable_http.interactive --header "Authorization: Bearer token123"
-      mix hermes.streamable_http.interactive --header "X-API-Key: secret" --header "X-Custom: value"
+      mix anubis.streamable_http.interactive --base-url http://localhost:8000
+      mix anubis.streamable_http.interactive --header "Authorization: Bearer token123"
+      mix anubis.streamable_http.interactive --header "X-API-Key: secret" --header "X-Custom: value"
   """
 
   use Mix.Task
 
-  alias Hermes.Transport.StreamableHTTP
+  alias Anubis.Transport.StreamableHTTP
   alias Mix.Interactive.SupervisedShell
   alias Mix.Interactive.UI
 
@@ -32,7 +32,7 @@ defmodule Mix.Tasks.Hermes.StreamableHttp.Interactive do
 
   def run(args) do
     # Start required applications without requiring a project
-    Application.ensure_all_started([:hermes_mcp, :peri])
+    Application.ensure_all_started([:anubis_mcp, :peri])
 
     {parsed, _} =
       OptionParser.parse!(args,
@@ -49,7 +49,7 @@ defmodule Mix.Tasks.Hermes.StreamableHttp.Interactive do
     server_url = Path.join(base_url, mcp_path)
     headers = parse_headers(Keyword.get_values(parsed, :header))
 
-    header = UI.header("HERMES MCP STREAMABLE HTTP INTERACTIVE")
+    header = UI.header("ANUBIS MCP STREAMABLE HTTP INTERACTIVE")
     IO.puts(header)
 
     IO.puts("#{UI.colors().info}Connecting to Streamable HTTP server at: #{server_url}#{UI.colors().reset}\n")

@@ -1,19 +1,19 @@
-defmodule Hermes.Server.Base do
+defmodule Anubis.Server.Base do
   @moduledoc false
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.MCP.Error
-  alias Hermes.MCP.ID
-  alias Hermes.MCP.Message
-  alias Hermes.Server
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Session
-  alias Hermes.Server.Session.Supervisor, as: SessionSupervisor
-  alias Hermes.Telemetry
+  alias Anubis.MCP.Error
+  alias Anubis.MCP.ID
+  alias Anubis.MCP.Message
+  alias Anubis.Server
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Session
+  alias Anubis.Server.Session.Supervisor, as: SessionSupervisor
+  alias Anubis.Telemetry
 
   require Message
   require Server
@@ -56,10 +56,10 @@ defmodule Hermes.Server.Base do
           | GenServer.option()
 
   defschema(:parse_options, [
-    {:module, {:required, {:custom, &Hermes.genserver_name/1}}},
-    {:name, {:required, {:custom, &Hermes.genserver_name/1}}},
-    {:transport, {:required, {:custom, &Hermes.server_transport/1}}},
-    {:registry, {:atom, {:default, Hermes.Server.Registry}}},
+    {:module, {:required, {:custom, &Anubis.genserver_name/1}}},
+    {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
+    {:transport, {:required, {:custom, &Anubis.server_transport/1}}},
+    {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:session_idle_timeout, {{:integer, {:gte, 1}}, {:default, @default_session_idle_timeout}}}
   ])
 
@@ -272,7 +272,7 @@ defmodule Hermes.Server.Base do
   end
 
   def handle_info(event, %{module: module} = state) do
-    if Hermes.exported?(module, :handle_info, 2) do
+    if Anubis.exported?(module, :handle_info, 2) do
       case module.handle_info(event, state.frame) do
         {:noreply, frame} -> {:noreply, %{state | frame: frame}}
         {:noreply, frame, cont} -> {:noreply, %{state | frame: frame}, cont}
@@ -293,7 +293,7 @@ defmodule Hermes.Server.Base do
       %{reason: reason, server_info: server_info}
     )
 
-    if Hermes.exported?(module, :terminate, 2) do
+    if Anubis.exported?(module, :terminate, 2) do
       module.terminate(reason, state.frame)
     else
       :ok
@@ -481,7 +481,7 @@ defmodule Hermes.Server.Base do
     frame = %{state.frame | initialized: true}
 
     {:ok, frame} =
-      if Hermes.exported?(module, :init, 2),
+      if Anubis.exported?(module, :init, 2),
         do: module.init(session.client_info, frame),
         else: {:ok, frame}
 

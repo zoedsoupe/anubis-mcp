@@ -1,4 +1,4 @@
-defmodule Hermes.Server.ComponentPromptTest do
+defmodule Anubis.Server.ComponentPromptTest do
   use ExUnit.Case, async: true
 
   alias TestPrompts.FieldPrompt

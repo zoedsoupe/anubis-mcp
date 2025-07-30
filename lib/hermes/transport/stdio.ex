@@ -1,4 +1,4 @@
-defmodule Hermes.Transport.STDIO do
+defmodule Anubis.Transport.STDIO do
   @moduledoc """
   A transport implementation that uses standard input/output.
 
@@ -8,15 +8,15 @@ defmodule Hermes.Transport.STDIO do
   > the [Transport options](./transport_options.html) guides for reference.
   """
 
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.Telemetry
-  alias Hermes.Transport.Behaviour, as: Transport
+  alias Anubis.Telemetry
+  alias Anubis.Transport.Behaviour, as: Transport
 
   @type t :: GenServer.server()
 
@@ -42,8 +42,8 @@ defmodule Hermes.Transport.STDIO do
           | GenServer.option()
 
   defschema(:options_schema, %{
-    name: {{:custom, &Hermes.genserver_name/1}, {:default, __MODULE__}},
-    client: {:required, Hermes.get_schema(:process_name)},
+    name: {{:custom, &Anubis.genserver_name/1}, {:default, __MODULE__}},
+    client: {:required, Anubis.get_schema(:process_name)},
     command: {:required, :string},
     args: {{:list, :string}, {:default, nil}},
     env: {:map, {:default, nil}},

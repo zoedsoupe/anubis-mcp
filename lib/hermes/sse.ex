@@ -1,9 +1,9 @@
-defmodule Hermes.SSE do
+defmodule Anubis.SSE do
   @moduledoc false
 
-  use Hermes.Logging
+  use Anubis.Logging
 
-  alias Hermes.SSE.Parser
+  alias Anubis.SSE.Parser
 
   @connection_headers %{
     "accept" => "text/event-stream",
@@ -32,7 +32,7 @@ defmodule Hermes.SSE do
 
   ## Examples
 
-      iex> Hermes.SSE.connect("http://localhost:4000")
+      iex> Anubis.SSE.connect("http://localhost:4000")
       #Stream<[ref: 1, task: #PID<0.123.0>]>
 
   """
@@ -75,9 +75,9 @@ defmodule Hermes.SSE do
 
       on_chunk = &process_sse_stream(&1, &2, dest, ref)
 
-      case Finch.stream_while(req, Hermes.Finch, nil, on_chunk, http) do
+      case Finch.stream_while(req, Anubis.Finch, nil, on_chunk, http) do
         {:ok, _acc} ->
-          Hermes.Logging.transport_event("sse_reconnect", %{
+          Anubis.Logging.transport_event("sse_reconnect", %{
             reason: "success",
             attempt: attempt,
             max_attempts: retry[:max_reconnections]
@@ -87,7 +87,7 @@ defmodule Hermes.SSE do
           loop_sse_stream(req, ref, dest, opts, attempt + 1)
 
         {:error, exc, _acc} ->
-          Hermes.Logging.transport_event(
+          Anubis.Logging.transport_event(
             "sse_reconnect",
             %{
               reason: "error",
@@ -104,7 +104,7 @@ defmodule Hermes.SSE do
     else
       send(dest, {:chunk, :halted, ref})
 
-      Hermes.Logging.transport_event(
+      Anubis.Logging.transport_event(
         "sse_max_reconnects",
         %{
           max_attempts: retry[:max_reconnections]
@@ -132,19 +132,19 @@ defmodule Hermes.SSE do
         {Parser.run(data), state}
 
       {:chunk, {:status, status}, ^ref} ->
-        Hermes.Logging.transport_event("sse_status", status)
+        Anubis.Logging.transport_event("sse_status", status)
         {[], state}
 
       {:chunk, {:headers, headers}, ^ref} ->
-        Hermes.Logging.transport_event("sse_headers", headers)
+        Anubis.Logging.transport_event("sse_headers", headers)
         {[], state}
 
       {:chunk, :halted, ^ref} ->
-        Hermes.Logging.transport_event("sse_halted", "Transport will be restarted")
+        Anubis.Logging.transport_event("sse_halted", "Transport will be restarted")
         {[{:error, :halted}], state}
 
       {:chunk, unknown, ^ref} ->
-        Hermes.Logging.transport_event("sse_unknown_chunk", unknown)
+        Anubis.Logging.transport_event("sse_unknown_chunk", unknown)
         {[], state}
     end
   end

@@ -4,7 +4,7 @@ boolean = fn env ->
   System.get_env(env) in ["1", "true"]
 end
 
-config :hermes_mcp, compile_cli?: boolean.("HERMES_MCP_COMPILE_CLI")
+config :anubis_mcp, compile_cli?: boolean.("ANUBIS_MCP_COMPILE_CLI")
 
 config :logger, :default_formatter,
   format: "[$level] $message $metadata\n",

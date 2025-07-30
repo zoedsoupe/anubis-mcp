@@ -1,8 +1,8 @@
-defmodule Hermes.SSE.ParserTest do
+defmodule Anubis.SSE.ParserTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.MCP.Message
-  alias Hermes.SSE.Parser
+  alias Anubis.MCP.Message
+  alias Anubis.SSE.Parser
 
   @moduletag capture_log: true
 

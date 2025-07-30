@@ -10,7 +10,7 @@ Remember our greeter from the introduction? Let's understand what's really happe
 defmodule MyApp.Greeter do
   @moduledoc "Greet someone warmly"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field :name, :string, required: true
@@ -37,7 +37,7 @@ Now let's build a server that exposes this tool:
 
 ```elixir
 defmodule MyApp.Server do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "my-app",
     version: "1.0.0",
     capabilities: [:tools]
@@ -59,12 +59,12 @@ children = [
 How do you test this? Complete one file for reference:
 
 ```elixir
-Mix.install([{:hermes_mcp, "~> 0.11"}])
+Mix.install([{:anubis_mcp, "~> 0.11"}])
 
 defmodule MyApp.Greeter do
   @moduledoc "Greet someone warmly"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field :name, :string, required: true
@@ -76,7 +76,7 @@ defmodule MyApp.Greeter do
 end
 
 defmodule MyApp.Server do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "my-app",
     version: "1.0.0",
     capabilities: [:tools]
@@ -85,14 +85,14 @@ defmodule MyApp.Server do
   component MyApp.Greeter
 end
 
-children = [Hermes.Server.Registry, {MyApp.Server, transport: :stdio}]
+children = [Anubis.Server.Registry, {MyApp.Server, transport: :stdio}]
 {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
 ```
 
 Save it to `my_app.exs` and you can test it with the helper task:
 
 ```bash
-mix hermes.stdio.interactive -c elixir --args=--no-halt,my_app.exs
+mix anubis.stdio.interactive -c elixir --args=--no-halt,my_app.exs
 ```
 
 Or you can add it to claude, assuming you have `claude-code` installed:
@@ -109,9 +109,9 @@ Let's create something more substantial. What if we built a tool that searches t
 defmodule MyApp.ProductSearch do
   @moduledoc "Search for products in our catalog"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :query, :string, required: true
@@ -159,11 +159,11 @@ Tools perform actions. Resources provide data. What if AI assistants could read 
 defmodule MyApp.ConfigResource do
   @moduledoc "Current application configuration"
 
-  use Hermes.Server.Component,
+  use Anubis.Server.Component,
     type: :resource,
     uri: "config://app/settings"
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   @impl true
   def read(_params, frame) do
@@ -195,9 +195,9 @@ Prompts are templates that help AI assistants interact with your users more effe
 defmodule MyApp.BugReportPrompt do
   @moduledoc "Generate a structured bug report"
 
-  use Hermes.Server.Component, type: :prompt
+  use Anubis.Server.Component, type: :prompt
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :title, :string, required: true
@@ -278,7 +278,7 @@ defmodule MyAppWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :my_app
 
   # Add the MCP plug before your router
-  plug Hermes.Server.Transport.StreamableHTTP.Plug,
+  plug Anubis.Server.Transport.StreamableHTTP.Plug,
     server: MyApp.Server,
     path: "/mcp"
 
@@ -289,7 +289,7 @@ end
 # In your application supervisor
 children = [
   MyAppWeb.Endpoint,
-  Hermes.Server.Registry,
+  Anubis.Server.Registry,
   {MyApp.Server, transport: :streamable_http}
 ]
 ```
@@ -304,7 +304,7 @@ What happens when things go wrong? Let's handle errors gracefully:
 defmodule MyApp.DatabaseQuery do
   @moduledoc "Query the database"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field :query, :string, required: true
@@ -323,7 +323,7 @@ defmodule MyApp.DatabaseQuery do
 end
 ```
 
-Hermes automatically formats your error responses according to the MCP protocol.
+Anubis automatically formats your error responses according to the MCP protocol.
 
 ## Stateful Operations
 
@@ -333,7 +333,7 @@ Need to maintain state across calls? The frame provides context:
 defmodule MyApp.Conversation do
   @moduledoc "Continue a conversation"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field :message, :string, required: true
@@ -362,7 +362,7 @@ Need to add extra metadata to your tools? Annotations provide additional context
 defmodule MyApp.DatabaseQuery do
   @moduledoc "Query the application database"
 
-  use Hermes.Server.Component,
+  use Anubis.Server.Component,
     type: :tool,
     annotations: %{
       "x-api-version" => "2.0",
@@ -389,17 +389,17 @@ How do you know your server works correctly? Let's explore interactive testing f
 
 ### Interactive CLI Testing
 
-Hermes provides interactive `Mix` tasks for different transports if you need quick testing:
+Anubis provides interactive `Mix` tasks for different transports if you need quick testing:
 
 ```bash
 # Test STDIO server
-mix hermes.stdio.interactive --command elixir --args=--no-halt,my_app.exs
+mix anubis.stdio.interactive --command elixir --args=--no-halt,my_app.exs
 
 # Test HTTP server
-mix hermes.streamable_http.interactive --base-url=http://localhost:8080 --header 'authorization: Bearer 123'
+mix anubis.streamable_http.interactive --base-url=http://localhost:8080 --header 'authorization: Bearer 123'
 
 # With verbose logging
-mix hermes.stdio.sse --base-url=http//:localhost:4000 -vvv
+mix anubis.stdio.sse --base-url=http//:localhost:4000 -vvv
 ```
 
 In the interactive session:
@@ -433,7 +433,7 @@ Now let's write some tests:
 defmodule MyApp.ServerTest do
   use ExUnit.Case
 
-  alias Hermes.Server.Frame
+  alias Anubis.Server.Frame
 
   test "greeter tool works correctly" do
     frame = %Frame{}

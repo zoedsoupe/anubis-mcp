@@ -1,9 +1,9 @@
-defmodule Hermes.Server.Session.Supervisor do
+defmodule Anubis.Server.Session.Supervisor do
   @moduledoc false
 
   use DynamicSupervisor
 
-  alias Hermes.Server.Session
+  alias Anubis.Server.Session
 
   @kind :session_supervisor
 
@@ -23,7 +23,7 @@ defmodule Hermes.Server.Session.Supervisor do
   """
   def start_link(opts \\ []) do
     server = Keyword.fetch!(opts, :server)
-    registry = Keyword.get(opts, :registry, Hermes.Server.Registry)
+    registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
     name = registry.supervisor(@kind, server)
     DynamicSupervisor.start_link(__MODULE__, server, name: name)
   end
@@ -50,7 +50,7 @@ defmodule Hermes.Server.Session.Supervisor do
       {:error, {:already_started, ^session_pid}} = 
         Session.Supervisor.create_session(MyRegistry, MyServer, "session-123")
   """
-  def create_session(registry \\ Hermes.Server.Registry, server, session_id) do
+  def create_session(registry \\ Anubis.Server.Registry, server, session_id) do
     name = registry.supervisor(@kind, server)
     session_name = registry.server_session(server, session_id)
 
@@ -80,7 +80,7 @@ defmodule Hermes.Server.Session.Supervisor do
       # Attempting to close non-existent session
       {:error, :not_found} = Session.Supervisor.close_session(MyRegistry, MyServer, "unknown")
   """
-  def close_session(registry \\ Hermes.Server.Registry, server, session_id) when is_binary(session_id) do
+  def close_session(registry \\ Anubis.Server.Registry, server, session_id) when is_binary(session_id) do
     name = registry.supervisor(@kind, server)
 
     if pid = registry.whereis_server_session(server, session_id) do

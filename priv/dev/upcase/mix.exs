@@ -22,7 +22,7 @@ defmodule Upcase.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:hermes_mcp, path: "../../../"},
+      {:anubis_mcp, path: "../../../"},
       {:plug, "~> 1.18"},
       {:bandit, "~> 1.6"}
     ]

@@ -1,7 +1,7 @@
-defmodule Hermes.Server.Component.SchemaTest do
+defmodule Anubis.Server.Component.SchemaTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.Server.Component.Schema
+  alias Anubis.Server.Component.Schema
 
   describe "to_json_schema/1" do
     test "converts nil to empty object schema" do

@@ -1,6 +1,6 @@
 defmodule MockTransport do
   @moduledoc false
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   @impl true
   def start_link(_opts), do: {:ok, self()}

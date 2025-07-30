@@ -1,6 +1,6 @@
-# Building MCP Clients with Hermes
+# Building MCP Clients with Anubis
 
-This guide shows how to implement Model Context Protocol (MCP) clients using Hermes. MCP clients connect to servers to access tools, resources, and prompts.
+This guide shows how to implement Model Context Protocol (MCP) clients using Anubis. MCP clients connect to servers to access tools, resources, and prompts.
 
 ## Quick Start
 
@@ -8,7 +8,7 @@ This guide shows how to implement Model Context Protocol (MCP) clients using Her
 
 ```elixir
 defmodule MyApp.MCPClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
     protocol_version: "2025-06-18"
@@ -143,7 +143,7 @@ Enable features your client supports:
 
 ```elixir
 defmodule MyApp.MCPClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
     protocol_version: "2024-11-05",
@@ -158,7 +158,7 @@ end
 
 ```elixir
 defmodule MyApp.MCPClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
     capabilities: [:roots]
@@ -177,7 +177,7 @@ end
 
 ```elixir
 defmodule MyApp.MCPClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
     capabilities: [{:sampling, list_changed?: true}]
@@ -203,7 +203,7 @@ Access and modify session state:
 
 ```elixir
 defmodule MyApp.MCPClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",
     version: "1.0.0"
 
@@ -234,11 +234,11 @@ case MyApp.MCPClient.call_tool("risky_operation", params) do
   {:ok, result} ->
     process_result(result)
     
-  {:error, %Hermes.MCP.Error{code: -32602}} ->
+  {:error, %Anubis.MCP.Error{code: -32602}} ->
     # Invalid params
     Logger.error("Invalid parameters provided")
     
-  {:error, %Hermes.MCP.Error{code: -32603, message: message}} ->
+  {:error, %Anubis.MCP.Error{code: -32603, message: message}} ->
     # Internal error
     Logger.error("Server error: #{message}")
     
@@ -259,19 +259,19 @@ Subscribe to client events:
 ```elixir
 :telemetry.attach_many("mcp-client-handler",
   [
-    [:hermes, :client, :request, :start],
-    [:hermes, :client, :request, :stop],
-    [:hermes, :client, :request, :exception]
+    [:anubis, :client, :request, :start],
+    [:anubis, :client, :request, :stop],
+    [:anubis, :client, :request, :exception]
   ],
   &handle_event/4,
   nil
 )
 
-def handle_event([:hermes, :client, :request, :start], measurements, metadata, _) do
+def handle_event([:anubis, :client, :request, :start], measurements, metadata, _) do
   Logger.info("MCP request started: #{metadata.method}")
 end
 
-def handle_event([:hermes, :client, :request, :stop], measurements, metadata, _) do
+def handle_event([:anubis, :client, :request, :stop], measurements, metadata, _) do
   duration_ms = System.convert_time_unit(measurements.duration, :native, :millisecond)
   Logger.info("MCP request completed: #{metadata.method} in #{duration_ms}ms")
 end
@@ -283,7 +283,7 @@ Test your client interactions:
 
 ```elixir
 defmodule MyApp.MCPClientTest do
-  use Hermes.MCP.Case
+  use Anubis.MCP.Case
 
   test "client connects and lists tools" do
     # Mock server
@@ -309,7 +309,7 @@ end
 
 ```elixir
 defmodule GitHubClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "github-client",
     version: "1.0.0",
     protocol_version: "2024-11-05"

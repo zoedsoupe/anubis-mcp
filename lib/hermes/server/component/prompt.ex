@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Component.Prompt do
+defmodule Anubis.Server.Component.Prompt do
   @moduledoc """
   Defines the behaviour for MCP prompts.
 
@@ -8,9 +8,9 @@ defmodule Hermes.Server.Component.Prompt do
   ## Example
 
       defmodule MyServer.Prompts.CodeReview do
-        @behaviour Hermes.Server.Behaviour.Prompt
+        @behaviour Anubis.Server.Behaviour.Prompt
         
-        alias Hermes.Server.Frame
+        alias Anubis.Server.Frame
         
         @impl true
         def name, do: "code_review"
@@ -75,9 +75,9 @@ defmodule Hermes.Server.Component.Prompt do
       end
   """
 
-  alias Hermes.MCP.Error
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Response
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Response
 
   @type arguments :: map()
   @type message :: map()
@@ -161,7 +161,7 @@ defmodule Hermes.Server.Component.Prompt do
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
   defimpl JSON.Encoder, for: __MODULE__ do
-    alias Hermes.Server.Component.Prompt
+    alias Anubis.Server.Component.Prompt
 
     def encode(%Prompt{} = prompt, _) do
       prompt

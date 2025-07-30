@@ -1,7 +1,7 @@
-defmodule Hermes.Client.JSONSchemaConverterTest do
+defmodule Anubis.Client.JSONSchemaConverterTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.Client.JSONSchemaConverter
+  alias Anubis.Client.JSONSchemaConverter
 
   describe "to_peri/1" do
     test "converts basic string type" do

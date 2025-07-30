@@ -1,5 +1,5 @@
 if Code.ensure_loaded?(:gun) do
-  defmodule Hermes.Transport.WebSocket do
+  defmodule Anubis.Transport.WebSocket do
     @moduledoc """
     A transport implementation that uses WebSockets for bidirectional communication
     with the MCP server.
@@ -10,15 +10,15 @@ if Code.ensure_loaded?(:gun) do
     > the [Transport options](./transport_options.html) guides for reference.
     """
 
-    @behaviour Hermes.Transport.Behaviour
+    @behaviour Anubis.Transport.Behaviour
 
     use GenServer
-    use Hermes.Logging
+    use Anubis.Logging
 
     import Peri
 
-    alias Hermes.Telemetry
-    alias Hermes.Transport.Behaviour, as: Transport
+    alias Anubis.Telemetry
+    alias Anubis.Transport.Behaviour, as: Transport
 
     @type t :: GenServer.server()
 
@@ -55,12 +55,12 @@ if Code.ensure_loaded?(:gun) do
             | GenServer.option()
 
     defschema(:options_schema, %{
-      name: {{:custom, &Hermes.genserver_name/1}, {:default, __MODULE__}},
+      name: {{:custom, &Anubis.genserver_name/1}, {:default, __MODULE__}},
       client:
         {:required,
          {:oneof,
           [
-            {:custom, &Hermes.genserver_name/1},
+            {:custom, &Anubis.genserver_name/1},
             :pid,
             {:tuple, [:atom, :any]}
           ]}},

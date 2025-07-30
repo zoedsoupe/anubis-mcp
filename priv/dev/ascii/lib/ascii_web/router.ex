@@ -1,7 +1,7 @@
 defmodule AsciiWeb.Router do
   use AsciiWeb, :router
 
-  alias Hermes.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Transport.StreamableHTTP
 
   pipeline :browser do
     plug :accepts, ["html"]

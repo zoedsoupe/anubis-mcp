@@ -1,4 +1,4 @@
-defmodule Hermes.MCP.ID do
+defmodule Anubis.MCP.ID do
   @moduledoc false
 
   @doc """
@@ -11,7 +11,7 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> id = Hermes.MCP.ID.generate()
+      iex> id = Anubis.MCP.ID.generate()
       iex> is_binary(id)
       true
   """
@@ -34,7 +34,7 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> id = Hermes.MCP.ID.generate_request_id()
+      iex> id = Anubis.MCP.ID.generate_request_id()
       iex> String.starts_with?(id, "req_")
       true
   """
@@ -51,7 +51,7 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> id = Hermes.MCP.ID.generate_error_id()
+      iex> id = Anubis.MCP.ID.generate_error_id()
       iex> String.starts_with?(id, "err_")
       true
   """
@@ -68,7 +68,7 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> token = Hermes.MCP.ID.generate_progress_token()
+      iex> token = Anubis.MCP.ID.generate_progress_token()
       iex> String.starts_with?(token, "progress_")
       true
   """
@@ -85,7 +85,7 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> id = Hermes.MCP.ID.generate_session_id()
+      iex> id = Anubis.MCP.ID.generate_session_id()
       iex> String.starts_with?(id, "session_")
       true
   """
@@ -110,12 +110,12 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> id = Hermes.MCP.ID.generate()
-      iex> timestamp = Hermes.MCP.ID.timestamp_from_id(id)
+      iex> id = Anubis.MCP.ID.generate()
+      iex> timestamp = Anubis.MCP.ID.timestamp_from_id(id)
       iex> is_integer(timestamp)
       true
       
-      iex> Hermes.MCP.ID.timestamp_from_id("invalid-id")
+      iex> Anubis.MCP.ID.timestamp_from_id("invalid-id")
       nil
   """
   @spec timestamp_from_id(String.t()) :: integer() | nil
@@ -134,11 +134,11 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> id = Hermes.MCP.ID.generate()
-      iex> Hermes.MCP.ID.valid?(id)
+      iex> id = Anubis.MCP.ID.generate()
+      iex> Anubis.MCP.ID.valid?(id)
       true
       
-      iex> Hermes.MCP.ID.valid?("invalid-id")
+      iex> Anubis.MCP.ID.valid?("invalid-id")
       false
   """
   @spec valid?(term()) :: boolean()
@@ -159,11 +159,11 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> id = Hermes.MCP.ID.generate_request_id()
-      iex> Hermes.MCP.ID.valid_request_id?(id)
+      iex> id = Anubis.MCP.ID.generate_request_id()
+      iex> Anubis.MCP.ID.valid_request_id?(id)
       true
       
-      iex> Hermes.MCP.ID.valid_request_id?("not-an-id")
+      iex> Anubis.MCP.ID.valid_request_id?("not-an-id")
       false
   """
   @spec valid_request_id?(term()) :: boolean()
@@ -184,11 +184,11 @@ defmodule Hermes.MCP.ID do
 
   ## Examples
 
-      iex> token = Hermes.MCP.ID.generate_progress_token()
-      iex> Hermes.MCP.ID.valid_progress_token?(token)
+      iex> token = Anubis.MCP.ID.generate_progress_token()
+      iex> Anubis.MCP.ID.valid_progress_token?(token)
       true
       
-      iex> Hermes.MCP.ID.valid_progress_token?("not-a-token")
+      iex> Anubis.MCP.ID.valid_progress_token?("not-a-token")
       false
   """
   @spec valid_progress_token?(term()) :: boolean()

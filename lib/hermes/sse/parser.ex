@@ -1,7 +1,7 @@
-defmodule Hermes.SSE.Parser do
+defmodule Anubis.SSE.Parser do
   @moduledoc false
 
-  alias Hermes.SSE.Event
+  alias Anubis.SSE.Event
 
   @doc """
   Parses a string containing one or more SSE events.

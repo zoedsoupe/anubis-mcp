@@ -1,12 +1,12 @@
-defmodule Hermes.Server.Handlers.Tools do
+defmodule Anubis.Server.Handlers.Tools do
   @moduledoc false
 
-  alias Hermes.MCP.Error
-  alias Hermes.Server.Component.Schema
-  alias Hermes.Server.Component.Tool
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Handlers
-  alias Hermes.Server.Response
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Component.Schema
+  alias Anubis.Server.Component.Tool
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Handlers
+  alias Anubis.Server.Response
 
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}

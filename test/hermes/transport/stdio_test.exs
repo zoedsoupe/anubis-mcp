@@ -1,7 +1,7 @@
-defmodule Hermes.Transport.STDIOTest do
+defmodule Anubis.Transport.STDIOTest do
   use ExUnit.Case, async: false
 
-  alias Hermes.Transport.STDIO
+  alias Anubis.Transport.STDIO
 
   @moduletag capture_log: true
 

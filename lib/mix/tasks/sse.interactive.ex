@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.Hermes.Sse.Interactive do
+defmodule Mix.Tasks.Anubis.Sse.Interactive do
   @shortdoc "Test the SSE transport implementation interactively."
 
   @moduledoc """
@@ -9,7 +9,7 @@ defmodule Mix.Tasks.Hermes.Sse.Interactive do
   > This task uses the deprecated SSE transport. As of MCP specification 2025-03-26,
   > the HTTP+SSE transport has been replaced by the Streamable HTTP transport.
   >
-  > For testing new servers, please use `mix hermes.streamable_http.interactive` instead.
+  > For testing new servers, please use `mix anubis.streamable_http.interactive` instead.
   > This task is maintained for backward compatibility with servers using the
   > 2024-11-05 protocol version.
 
@@ -22,14 +22,14 @@ defmodule Mix.Tasks.Hermes.Sse.Interactive do
 
   ## Examples
 
-      mix hermes.sse.interactive --base-url http://localhost:8000
-      mix hermes.sse.interactive --header "Authorization: Bearer token123"
-      mix hermes.sse.interactive --header "X-API-Key: secret" --header "X-Custom: value"
+      mix anubis.sse.interactive --base-url http://localhost:8000
+      mix anubis.sse.interactive --header "Authorization: Bearer token123"
+      mix anubis.sse.interactive --header "X-API-Key: secret" --header "X-Custom: value"
   """
 
   use Mix.Task
 
-  alias Hermes.Transport.SSE
+  alias Anubis.Transport.SSE
   alias Mix.Interactive.SupervisedShell
   alias Mix.Interactive.UI
 
@@ -43,7 +43,7 @@ defmodule Mix.Tasks.Hermes.Sse.Interactive do
 
   def run(args) do
     # Start required applications without requiring a project
-    Application.ensure_all_started([:hermes_mcp, :peri])
+    Application.ensure_all_started([:anubis_mcp, :peri])
 
     # Parse arguments and set log level
     {parsed, _} =
@@ -70,7 +70,7 @@ defmodule Mix.Tasks.Hermes.Sse.Interactive do
 
     server_url = base_url |> URI.merge(base_path) |> URI.to_string()
 
-    header = UI.header("HERMES MCP SSE INTERACTIVE")
+    header = UI.header("ANUBIS MCP SSE INTERACTIVE")
     IO.puts(header)
 
     IO.puts("#{UI.colors().info}Connecting to SSE server at: #{server_url}#{UI.colors().reset}\n")

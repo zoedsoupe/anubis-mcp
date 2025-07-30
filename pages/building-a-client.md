@@ -8,7 +8,7 @@ Remember our first client? Let's understand what's happening:
 
 ```elixir
 defmodule MyApp.WeatherClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",                    # How you introduce yourself
     version: "1.0.0",                 # Your client's version
     protocol_version: "2024-11-05",   # MCP protocol target version
@@ -188,7 +188,7 @@ Need to track progress on long-running operations? Here's how:
 
 ```elixir
 # Generate a unique token for this operation
-progress_token = Hermes.MCP.ID.generate_progress_token()
+progress_token = Anubis.MCP.ID.generate_progress_token()
 
 # Option 1: Just track with a token
 MyApp.WeatherClient.call_tool("analyze_data", params,

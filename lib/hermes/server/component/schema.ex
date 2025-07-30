@@ -1,7 +1,7 @@
-defmodule Hermes.Server.Component.Schema do
+defmodule Anubis.Server.Component.Schema do
   @moduledoc false
 
-  alias Hermes.Server.Component
+  alias Anubis.Server.Component
 
   @type schema :: map() | list()
   @type field_type :: atom() | tuple()

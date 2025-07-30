@@ -1,9 +1,9 @@
 defmodule EchoMCP.Server do
   @moduledoc false
 
-  use Hermes.Server, capabilities: [:tools, :prompts, :resources]
+  use Anubis.Server, capabilities: [:tools, :prompts, :resources]
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   require Logger
 

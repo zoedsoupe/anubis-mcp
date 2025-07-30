@@ -1,7 +1,7 @@
-defmodule Hermes.MCP.MessageTest do
+defmodule Anubis.MCP.MessageTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.MCP.Message
+  alias Anubis.MCP.Message
 
   require Message
 

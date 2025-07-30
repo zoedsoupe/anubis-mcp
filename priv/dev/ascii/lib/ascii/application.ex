@@ -19,7 +19,7 @@ defmodule Ascii.Application do
       # Start to serve requests, typically the last entry
       AsciiWeb.Endpoint,
       # relevant line for MCP
-      Hermes.Server.Registry,
+      Anubis.Server.Registry,
       {Ascii.MCPServer, transport: {:streamable_http, []}}
     ]
 

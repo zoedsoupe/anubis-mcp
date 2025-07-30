@@ -1,17 +1,17 @@
-defmodule Hermes.Server.Transport.SSE do
+defmodule Anubis.Server.Transport.SSE do
   @moduledoc """
   SSE (Server-Sent Events) transport implementation for MCP servers.
 
   > #### Deprecated {: .warning}
   >
   > This transport has been deprecated as of MCP specification 2025-03-26 in favor
-  > of the Streamable HTTP transport (`Hermes.Server.Transport.StreamableHTTP`).
+  > of the Streamable HTTP transport (`Anubis.Server.Transport.StreamableHTTP`).
   >
   > The HTTP+SSE transport from protocol version 2024-11-05 has been replaced by
   > the more flexible Streamable HTTP transport which supports optional SSE streaming
   > on a single endpoint.
   >
-  > For new implementations, please use `Hermes.Server.Transport.StreamableHTTP` instead.
+  > For new implementations, please use `Anubis.Server.Transport.StreamableHTTP` instead.
   > This module is maintained for backward compatibility with clients using the
   > 2024-11-05 protocol version.
 
@@ -32,7 +32,7 @@ defmodule Hermes.Server.Transport.SSE do
 
   SSE transport is typically started through the server supervisor:
 
-      Hermes.Server.start_link(MyServer, [],
+      Anubis.Server.start_link(MyServer, [],
         transport: :sse,
         sse: [port: 8080, sse_path: "/sse", post_path: "/messages"]
       )
@@ -40,11 +40,11 @@ defmodule Hermes.Server.Transport.SSE do
   For integration with existing Phoenix/Plug applications:
 
       # In your router
-      forward "/sse", Hermes.Server.Transport.SSE.Plug,
+      forward "/sse", Anubis.Server.Transport.SSE.Plug,
         server: MyApp.MCPServer,
         mode: :sse
 
-      forward "/messages", Hermes.Server.Transport.SSE.Plug,
+      forward "/messages", Anubis.Server.Transport.SSE.Plug,
         server: MyApp.MCPServer,
         mode: :post
 
@@ -64,20 +64,20 @@ defmodule Hermes.Server.Transport.SSE do
   - `:name` - Process registration name
   """
 
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.MCP.Message
-  alias Hermes.Telemetry
-  alias Hermes.Transport.Behaviour, as: Transport
+  alias Anubis.MCP.Message
+  alias Anubis.Telemetry
+  alias Anubis.Transport.Behaviour, as: Transport
 
   require Message
 
-  @deprecated "Use Hermes.Server.Transport.StreamableHTTP instead"
+  @deprecated "Use Anubis.Server.Transport.StreamableHTTP instead"
 
   @type t :: GenServer.server()
 
@@ -97,11 +97,11 @@ defmodule Hermes.Server.Transport.SSE do
           | GenServer.option()
 
   defschema(:parse_options, [
-    {:server, {:required, Hermes.get_schema(:process_name)}},
-    {:name, {:required, {:custom, &Hermes.genserver_name/1}}},
+    {:server, {:required, Anubis.get_schema(:process_name)}},
+    {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:base_url, {:string, {:default, ""}}},
     {:post_path, {:string, {:default, "/messages"}}},
-    {:registry, {:atom, {:default, Hermes.Server.Registry}}},
+    {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}}
   ])
 

@@ -22,7 +22,7 @@ defmodule Mix.Interactive.SupervisedShell do
   Starts a supervised interactive shell session.
 
   ## Options
-    * `:transport_module` - The transport module (e.g., Hermes.Transport.StreamableHTTP)
+    * `:transport_module` - The transport module (e.g., Anubis.Transport.StreamableHTTP)
     * `:transport_opts` - Options for starting the transport
     * `:client_opts` - Options for starting the client (excluding transport)
     * `:max_restarts` - Maximum number of automatic restarts (default: 3)
@@ -207,7 +207,7 @@ defmodule Mix.Interactive.SupervisedShell do
   defp start_client(%{client_opts: opts}) do
     IO.puts("#{UI.colors().info}• Starting client...#{UI.colors().reset}")
 
-    case Hermes.Client.Base.start_link(opts) do
+    case Anubis.Client.Base.start_link(opts) do
       {:ok, pid} ->
         IO.puts("#{UI.colors().success}✓ Client started#{UI.colors().reset}")
         {:ok, pid}

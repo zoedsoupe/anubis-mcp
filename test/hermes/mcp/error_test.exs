@@ -1,7 +1,7 @@
-defmodule Hermes.MCP.ErrorTest do
+defmodule Anubis.MCP.ErrorTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.MCP.Error
+  alias Anubis.MCP.Error
 
   @moduletag capture_log: true
 

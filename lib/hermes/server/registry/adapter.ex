@@ -1,9 +1,9 @@
-defmodule Hermes.Server.Registry.Adapter do
+defmodule Anubis.Server.Registry.Adapter do
   @moduledoc """
   Behaviour for registry adapters in MCP servers.
 
   This module defines the interface that registry implementations must follow
-  to be pluggable into the Hermes MCP server architecture. It allows users
+  to be pluggable into the Anubis MCP server architecture. It allows users
   to provide custom registry implementations (e.g., using Horde for cluster-wide
   distribution) while maintaining compatibility with the existing API.
 
@@ -13,7 +13,7 @@ defmodule Hermes.Server.Registry.Adapter do
   all the callbacks defined in this behaviour:
 
       defmodule MyApp.HordeRegistry do
-        @behaviour Hermes.Server.Registry.Adapter
+        @behaviour Anubis.Server.Registry.Adapter
 
         def child_spec(opts) do
           %{
@@ -39,7 +39,7 @@ defmodule Hermes.Server.Registry.Adapter do
 
   You can configure a custom registry at multiple levels:
 
-    Hermes.Server.start_link(MyServer, :ok, transport: :stdio, registry: MyApp.HordeRegistry)
+    Anubis.Server.start_link(MyServer, :ok, transport: :stdio, registry: MyApp.HordeRegistry)
 
   ## Default Implementation
 

@@ -1,9 +1,9 @@
-defmodule Hermes.Server.Transport.SSETest do
-  use Hermes.MCP.Case, async: false
+defmodule Anubis.Server.Transport.SSETest do
+  use Anubis.MCP.Case, async: false
 
   import ExUnit.CaptureLog
 
-  alias Hermes.Server.Transport.SSE
+  alias Anubis.Server.Transport.SSE
 
   setup :with_default_registry
 
@@ -46,7 +46,7 @@ defmodule Hermes.Server.Transport.SSETest do
 
   describe "with running transport" do
     setup do
-      registry = Hermes.Server.Registry
+      registry = Anubis.Server.Registry
       name = registry.transport(StubServer, :sse)
 
       {:ok, transport} =
@@ -172,7 +172,7 @@ defmodule Hermes.Server.Transport.SSETest do
     end
 
     test "get_endpoint_url with custom base_url and post_path" do
-      registry = Hermes.Server.Registry
+      registry = Anubis.Server.Registry
       name = :custom_sse_transport
 
       {:ok, transport} =

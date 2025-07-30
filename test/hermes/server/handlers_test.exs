@@ -1,11 +1,11 @@
-defmodule Hermes.Server.HandlersTest do
+defmodule Anubis.Server.HandlersTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.Server.Component.Prompt
-  alias Hermes.Server.Component.Resource
-  alias Hermes.Server.Component.Tool
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Handlers
+  alias Anubis.Server.Component.Prompt
+  alias Anubis.Server.Component.Resource
+  alias Anubis.Server.Component.Tool
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Handlers
 
   defmodule MockServer do
     @moduledoc false

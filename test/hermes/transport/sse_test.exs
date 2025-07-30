@@ -1,8 +1,8 @@
-defmodule Hermes.Transport.SSETest do
+defmodule Anubis.Transport.SSETest do
   use ExUnit.Case, async: false
 
-  alias Hermes.MCP.Message
-  alias Hermes.Transport.SSE
+  alias Anubis.MCP.Message
+  alias Anubis.Transport.SSE
 
   @moduletag capture_log: true
   @test_http_opts [max_reconnections: 0]

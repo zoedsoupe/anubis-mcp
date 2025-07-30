@@ -1,4 +1,4 @@
-# Hermes MCP Development Guide
+# Anubis MCP Development Guide
 
 ## Build & Test Commands
 
@@ -32,50 +32,50 @@ mix docs
 
 ### MCP Protocol Handling
 
-- **Message Processing**: ALWAYS use `Hermes.MCP.Message` for all MCP/JSON-RPC message encoding/decoding
+- **Message Processing**: ALWAYS use `Anubis.MCP.Message` for all MCP/JSON-RPC message encoding/decoding
   - Use `Message.decode/1` to parse incoming messages
   - Use `Message.encode_request/2`, `Message.encode_response/2`, `Message.encode_notification/1`, `Message.encode_error/2`
   - Use message guards: `is_request/1`, `is_response/1`, `is_notification/1`, `is_error/1`
-- **Error Handling**: ALWAYS use `Hermes.MCP.Error` for standardized error representation
+- **Error Handling**: ALWAYS use `Anubis.MCP.Error` for standardized error representation
   - Use factory functions: `Error.parse_error/1`, `Error.invalid_request/1`, `Error.method_not_found/1`
   - Use `Error.transport_error/2`, `Error.client_error/2`, `Error.domain_error/1` for specialized errors
   - Convert between JSON-RPC: `Error.from_json_rpc/1`, `Error.to_json_rpc!/2`
 
 ### Transport Layer Architecture
 
-- **Transport Behaviour**: All transports implement `Hermes.Transport.Behaviour`
+- **Transport Behaviour**: All transports implement `Anubis.Transport.Behaviour`
   - Required callbacks: `start_link/1`, `send_message/2`, `shutdown/1`
-  - Transport modules: `Hermes.Transport.STDIO`, `Hermes.Transport.SSE`, `Hermes.Transport.WebSocket`, `Hermes.Transport.StreamableHTTP`
-- **Client Transport Integration**: In `Hermes.Client` use transport via state configuration
+  - Transport modules: `Anubis.Transport.STDIO`, `Anubis.Transport.SSE`, `Anubis.Transport.WebSocket`, `Anubis.Transport.StreamableHTTP`
+- **Client Transport Integration**: In `Anubis.Client` use transport via state configuration
   - Store as `%{layer: TransportModule, name: process_name}`
   - Send messages via `transport.layer.send_message(transport.name, data)`
 
 ### Client Architecture Patterns
 
-- **State Management**: Use `Hermes.Client.State` for all client state operations
+- **State Management**: Use `Anubis.Client.State` for all client state operations
   - Create state: `State.new/1`
   - Request tracking: `State.add_request_from_operation/3`, `State.remove_request/2`
   - Progress callbacks: `State.register_progress_callback/3`, `State.get_progress_callback/2`
   - Capabilities: `State.validate_capability/2`, `State.merge_capabilities/2`
-- **Operation Handling**: Use `Hermes.Client.Operation` for request configuration
+- **Operation Handling**: Use `Anubis.Client.Operation` for request configuration
   - Progress tracking, timeouts, method/params encapsulation
-- **Request Management**: Use `Hermes.Client.Request` for request lifecycle tracking
+- **Request Management**: Use `Anubis.Client.Request` for request lifecycle tracking
   - ID generation, timing, caller reference management
 
 ### Server Architecture Patterns
 
-- **Base Server**: Use `Hermes.Server.Base` as foundation for all MCP servers
-  - Implement `Hermes.Server.Behaviour` callbacks in your server module
+- **Base Server**: Use `Anubis.Server.Base` as foundation for all MCP servers
+  - Implement `Anubis.Server.Behaviour` callbacks in your server module
   - Required: `init/1`, `handle_request/2`, `handle_notification/2`, `server_info/0`
   - Optional: `server_capabilities/0`
 - **Server Transport Integration**: Configure transport in server options
   - `transport: [layer: TransportModule, name: process_name]`
-  - Use `Hermes.Server.Transport.STDIO`, `Hermes.Server.Transport.StreamableHTTP`
+  - Use `Anubis.Server.Transport.STDIO`, `Anubis.Server.Transport.StreamableHTTP`
 
 ### OTP Compliance & GenServer Patterns
 
 - **Process Structure**: All core components are GenServers with proper OTP supervision
-- **GenServer Naming**: Use `Hermes.genserver_name/1` validator with Peri schemas
+- **GenServer Naming**: Use `Anubis.genserver_name/1` validator with Peri schemas
 - **State Immutability**: Always return updated state from handle\_\* callbacks
 - **Hibernation**: Use `:hibernate` for reduced memory footprint in init
 - **Graceful Shutdown**: Implement proper `terminate/2` callbacks with cleanup
@@ -89,27 +89,27 @@ mix docs
 
 ### ID Generation & Request Tracking
 
-- **Unique IDs**: Use `Hermes.MCP.ID` for generating request/response IDs
+- **Unique IDs**: Use `Anubis.MCP.ID` for generating request/response IDs
   - `ID.generate_request_id/0`, `ID.generate_error_id/0`
 - **Timer Management**: Use `Process.send_after/3` for request timeouts
 - **Request Lifecycle**: Track requests with timers, cleanup on completion/timeout
 
 ### Telemetry & Observability
 
-- **Event Emission**: Use `Hermes.Telemetry` for consistent telemetry events
+- **Event Emission**: Use `Anubis.Telemetry` for consistent telemetry events
   - Client events: `event_client_init/0`, `event_client_request/0`, `event_client_response/0`
   - Server events: `event_server_init/0`, `event_server_request/0`, `event_server_response/0`
-- **Logging**: Use `Hermes.Logging` for structured logging
+- **Logging**: Use `Anubis.Logging` for structured logging
   - `client_event/2`, `server_event/2`, `message/4` for protocol message logging
 
 ### Testing Patterns
 
-- **MCP Framework**: Use `Hermes.MCP.Case` for comprehensive MCP protocol testing
+- **MCP Framework**: Use `Anubis.MCP.Case` for comprehensive MCP protocol testing
   - Provides builders, setup functions, helpers, and domain-specific assertions
   - Reduces test boilerplate by ~90% while maintaining flexibility
   - Uses MockTransport (test double) instead of real transports like STDIO/HTTP
   - No mocking library needed - MockTransport is already a test implementation
-- **Message Builders**: Use Hermes.MCP.Builders builders for consistent message construction
+- **Message Builders**: Use Anubis.MCP.Builders builders for consistent message construction
   - `init_request/1`, `ping_request/0`, `tools_list_request/1`, etc.
   - `build_request/2`, `build_response/2`, `build_notification/2` for custom messages
 - **Setup Functions**: Use composable setup functions for test contexts

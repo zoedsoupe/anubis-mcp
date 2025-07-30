@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Session do
+defmodule Anubis.Server.Session do
   @moduledoc false
 
   use Agent, restart: :transient
@@ -141,7 +141,7 @@ defmodule Hermes.Server.Session do
   end
 end
 
-defimpl Inspect, for: Hermes.Server.Session do
+defimpl Inspect, for: Anubis.Server.Session do
   import Inspect.Algebra
 
   def inspect(session, opts) do

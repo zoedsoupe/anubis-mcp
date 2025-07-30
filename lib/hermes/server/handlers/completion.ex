@@ -1,9 +1,9 @@
-defmodule Hermes.Server.Handlers.Completion do
+defmodule Anubis.Server.Handlers.Completion do
   @moduledoc false
 
-  alias Hermes.MCP.Error
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Response
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Response
 
   @spec handle_complete(map(), Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
@@ -11,7 +11,7 @@ defmodule Hermes.Server.Handlers.Completion do
     %{"ref" => ref} = params
     argument = Map.get(params, "argument", %{})
 
-    if Hermes.exported?(server, :handle_completion, 3) do
+    if Anubis.exported?(server, :handle_completion, 3) do
       case server.handle_completion(ref, argument, frame) do
         {:reply, %Response{type: :completion} = response, frame} ->
           result = Response.to_protocol(response)

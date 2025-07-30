@@ -3,7 +3,7 @@ defmodule Upcase.Server do
   A simple MCP server that upcases input text.
   """
 
-  use Hermes.Server
+  use Anubis.Server
 
   require Logger
 

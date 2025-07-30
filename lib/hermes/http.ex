@@ -1,7 +1,7 @@
-defmodule Hermes.HTTP do
+defmodule Anubis.HTTP do
   @moduledoc false
 
-  use Hermes.Logging
+  use Anubis.Logging
 
   @default_headers %{
     "content-type" => "application/json"
@@ -31,7 +31,7 @@ defmodule Hermes.HTTP do
   # @spec follow_redirect(Finch.Request.t(), non_neg_integer) ::
   #         {:ok, Finch.Response.t()} | {:error, term}
   def follow_redirect(%Finch.Request{} = request, attempts \\ @max_redirects) do
-    with {:ok, resp} <- Finch.request(request, Hermes.Finch),
+    with {:ok, resp} <- Finch.request(request, Anubis.Finch),
          do: do_follow_redirect(request, resp, attempts)
   end
 
@@ -40,7 +40,7 @@ defmodule Hermes.HTTP do
   defp do_follow_redirect(req, %Finch.Response{status: 307, headers: headers}, attempts) when is_integer(attempts) do
     location = List.keyfind(headers, "location", 0)
 
-    Hermes.Logging.transport_event("redirect", %{
+    Anubis.Logging.transport_event("redirect", %{
       location: location,
       attempts_left: attempts,
       method: req.method

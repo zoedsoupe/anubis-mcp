@@ -1,9 +1,9 @@
-defmodule Hermes.Server.Component do
+defmodule Anubis.Server.Component do
   @moduledoc false
 
-  alias Hermes.Server.Component.Prompt
-  alias Hermes.Server.Component.Resource
-  alias Hermes.Server.Component.Tool
+  alias Anubis.Server.Component.Prompt
+  alias Anubis.Server.Component.Resource
+  alias Anubis.Server.Component.Tool
 
   @doc false
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
@@ -24,7 +24,7 @@ defmodule Hermes.Server.Component do
     quote do
       @behaviour unquote(behaviour_module)
 
-      import Hermes.Server.Component,
+      import Anubis.Server.Component,
         only: [
           schema: 1,
           output_schema: 1,
@@ -36,7 +36,7 @@ defmodule Hermes.Server.Component do
           embeds_one: 2
         ]
 
-      import Hermes.Server.Frame
+      import Anubis.Server.Frame
 
       @doc false
       def __mcp_component_type__, do: unquote(type)
@@ -47,7 +47,7 @@ defmodule Hermes.Server.Component do
       if unquote(type) == :tool do
         @impl true
         def input_schema do
-          alias Hermes.Server.Component.Schema
+          alias Anubis.Server.Component.Schema
 
           Schema.to_json_schema(__mcp_raw_schema__())
         end
@@ -61,7 +61,7 @@ defmodule Hermes.Server.Component do
       if unquote(type) == :prompt do
         @impl true
         def arguments do
-          alias Hermes.Server.Component.Schema
+          alias Anubis.Server.Component.Schema
 
           Schema.to_prompt_arguments(__mcp_raw_schema__())
         end
@@ -101,7 +101,7 @@ defmodule Hermes.Server.Component do
     quote do
       import Peri
 
-      alias Hermes.Server.Component
+      alias Anubis.Server.Component
 
       @doc false
       def __mcp_raw_schema__, do: unquote(wrapped_schema)
@@ -135,7 +135,7 @@ defmodule Hermes.Server.Component do
     quote do
       import Peri
 
-      alias Hermes.Server.Component
+      alias Anubis.Server.Component
 
       @doc false
       def __mcp_output_schema__, do: unquote(wrapped_schema)
@@ -147,7 +147,7 @@ defmodule Hermes.Server.Component do
 
       @impl true
       def output_schema do
-        alias Hermes.Server.Component.Schema
+        alias Anubis.Server.Component.Schema
 
         Schema.to_json_schema(__mcp_output_schema__())
       end
@@ -302,9 +302,9 @@ defmodule Hermes.Server.Component do
 
       iex> defmodule MyTool do
       ...>   @moduledoc "A helpful tool"
-      ...>   use Hermes.Server.Component, type: :tool
+      ...>   use Anubis.Server.Component, type: :tool
       ...> end
-      iex> Hermes.Server.Component.get_description(MyTool)
+      iex> Anubis.Server.Component.get_description(MyTool)
       "A helpful tool"
   """
   def get_description(module) when is_atom(module) do
@@ -329,9 +329,9 @@ defmodule Hermes.Server.Component do
   ## Examples
 
       iex> defmodule MyTool do
-      ...>   use Hermes.Server.Component, type: :tool
+      ...>   use Anubis.Server.Component, type: :tool
       ...> end
-      iex> Hermes.Server.Component.get_type(MyTool)
+      iex> Anubis.Server.Component.get_type(MyTool)
       :tool
   """
   def get_type(module) when is_atom(module) do
@@ -345,21 +345,21 @@ defmodule Hermes.Server.Component do
     * `module` - The module atom to check
 
   ## Returns
-    * `true` if the module uses `Hermes.Server.Component`
+    * `true` if the module uses `Anubis.Server.Component`
     * `false` otherwise
 
   ## Examples
 
       iex> defmodule MyTool do
-      ...>   use Hermes.Server.Component, type: :tool
+      ...>   use Anubis.Server.Component, type: :tool
       ...> end
-      iex> Hermes.Server.Component.component?(MyTool)
+      iex> Anubis.Server.Component.component?(MyTool)
       true
 
       iex> defmodule NotAComponent do
       ...>   def hello, do: :world
       ...> end
-      iex> Hermes.Server.Component.component?(NotAComponent)
+      iex> Anubis.Server.Component.component?(NotAComponent)
       false
   """
   def component?(module) when is_atom(module) do

@@ -1,8 +1,8 @@
-defmodule Hermes.Transport.StreamableHTTPTest do
+defmodule Anubis.Transport.StreamableHTTPTest do
   use ExUnit.Case, async: false
 
-  alias Hermes.MCP.Message
-  alias Hermes.Transport.StreamableHTTP
+  alias Anubis.MCP.Message
+  alias Anubis.Transport.StreamableHTTP
 
   @moduletag capture_log: true
   @test_http_opts [max_reconnections: 0]

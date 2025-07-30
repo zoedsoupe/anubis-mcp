@@ -1,13 +1,13 @@
-defmodule Hermes.Server.Transport.StreamableHTTP.PlugTest do
-  use Hermes.MCP.Case, async: false
+defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
+  use Anubis.MCP.Case, async: false
 
   import ExUnit.CaptureLog
   import Plug.Conn
   import Plug.Test
 
-  alias Hermes.MCP.Message
-  alias Hermes.Server.Transport.StreamableHTTP
-  alias Hermes.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
+  alias Anubis.MCP.Message
+  alias Anubis.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
 
   setup :with_default_registry
 
@@ -115,7 +115,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP.PlugTest do
       # Start the session supervisor
       {:ok, _session_sup} =
         start_supervised({
-          Hermes.Server.Session.Supervisor,
+          Anubis.Server.Session.Supervisor,
           server: StubServer, registry: registry
         })
 
@@ -126,7 +126,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP.PlugTest do
       # Start the Base server with stub transport
       {:ok, _server} =
         start_supervised({
-          Hermes.Server.Base,
+          Anubis.Server.Base,
           module: StubServer,
           name: registry.server(StubServer),
           transport: [layer: StubTransport, name: stub_transport],
@@ -262,7 +262,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP.PlugTest do
       # Start the session supervisor
       {:ok, _session_sup} =
         start_supervised({
-          Hermes.Server.Session.Supervisor,
+          Anubis.Server.Session.Supervisor,
           server: StubServer, registry: registry
         })
 
@@ -273,7 +273,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP.PlugTest do
       # Start the Base server with stub transport
       {:ok, _server} =
         start_supervised({
-          Hermes.Server.Base,
+          Anubis.Server.Base,
           module: StubServer,
           name: registry.server(StubServer),
           transport: [layer: StubTransport, name: stub_transport],

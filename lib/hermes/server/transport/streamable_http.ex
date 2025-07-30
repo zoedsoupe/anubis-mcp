@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Transport.StreamableHTTP do
+defmodule Anubis.Server.Transport.StreamableHTTP do
   @moduledoc """
   StreamableHTTP transport implementation for MCP servers.
 
@@ -19,7 +19,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
 
   StreamableHTTP is typically started through the server supervisor:
 
-      Hermes.Server.start_link(MyServer, [],
+      Anubis.Server.start_link(MyServer, [],
         transport: :streamable_http,
         streamable_http: [port: 4000]
       )
@@ -27,7 +27,7 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
   For integration with existing Phoenix/Plug applications:
 
       # In your router
-      forward "/mcp", Hermes.Server.Transport.StreamableHTTP.Plug,
+      forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug,
         server: MyApp.MCPServer
 
   ## Message Flow
@@ -44,16 +44,16 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
   - `:name` - Process registration name
   """
 
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.MCP.Message
-  alias Hermes.Telemetry
-  alias Hermes.Transport.Behaviour, as: Transport
+  alias Anubis.MCP.Message
+  alias Anubis.Telemetry
+  alias Anubis.Transport.Behaviour, as: Transport
 
   require Message
 
@@ -71,11 +71,11 @@ defmodule Hermes.Server.Transport.StreamableHTTP do
           | GenServer.option()
 
   defschema(:parse_options, [
-    {:server, {:required, Hermes.get_schema(:process_name)}},
-    {:name, {:required, {:custom, &Hermes.genserver_name/1}}},
-    {:registry, {:atom, {:default, Hermes.Server.Registry}}},
+    {:server, {:required, Anubis.get_schema(:process_name)}},
+    {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
+    {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}},
-    {:task_supervisor, {:required, {:custom, &Hermes.genserver_name/1}}}
+    {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}}
   ])
 
   @doc """

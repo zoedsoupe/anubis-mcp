@@ -1,7 +1,7 @@
-defmodule Hermes.Server.ComponentEmbedsTest do
+defmodule Anubis.Server.ComponentEmbedsTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.Server.Component
+  alias Anubis.Server.Component
 
   defmodule TestToolWithEmbedsMany do
     @moduledoc "Test tool with embeds_many"

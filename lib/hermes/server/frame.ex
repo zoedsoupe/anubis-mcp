@@ -1,6 +1,6 @@
-defmodule Hermes.Server.Frame do
+defmodule Anubis.Server.Frame do
   @moduledoc """
-  The Hermes Frame.
+  The Anubis Frame.
 
   This module defines a struct and functions for working with
   MCP server state throughout the request/response lifecycle.
@@ -56,11 +56,11 @@ defmodule Hermes.Server.Frame do
       * `protocol_version` - active MCP protocol version, example: `"2025-03-26"`
   """
 
-  alias Hermes.Server.Component
-  alias Hermes.Server.Component.Prompt
-  alias Hermes.Server.Component.Resource
-  alias Hermes.Server.Component.Schema
-  alias Hermes.Server.Component.Tool
+  alias Anubis.Server.Component
+  alias Anubis.Server.Component.Prompt
+  alias Anubis.Server.Component.Resource
+  alias Anubis.Server.Component.Schema
+  alias Anubis.Server.Component.Tool
 
   @type server_component_t :: Tool.t() | Resource.t() | Prompt.t()
 
@@ -535,17 +535,17 @@ defmodule Hermes.Server.Frame do
   end
 end
 
-defimpl Inspect, for: Hermes.Server.Frame do
+defimpl Inspect, for: Anubis.Server.Frame do
   import Inspect.Algebra
 
   def inspect(frame, opts) do
     components = frame.private[:__mcp_components__] || []
-    tools_count = Enum.count(components, &match?(%Hermes.Server.Component.Tool{}, &1))
+    tools_count = Enum.count(components, &match?(%Anubis.Server.Component.Tool{}, &1))
 
     resources_count =
-      Enum.count(components, &match?(%Hermes.Server.Component.Resource{}, &1))
+      Enum.count(components, &match?(%Anubis.Server.Component.Resource{}, &1))
 
-    prompts_count = Enum.count(components, &match?(%Hermes.Server.Component.Prompt{}, &1))
+    prompts_count = Enum.count(components, &match?(%Anubis.Server.Component.Prompt{}, &1))
 
     info = [
       assigns: frame.assigns,
