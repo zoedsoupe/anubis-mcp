@@ -1,9 +1,9 @@
 defmodule Anubis.MCP.Setup do
   @moduledoc false
 
+  import Anubis.MCP.Assertions
   import ExUnit.Assertions, only: [assert: 1]
   import ExUnit.Callbacks, only: [start_supervised!: 1, start_supervised!: 2]
-  import Anubis.MCP.Assertions
 
   alias Anubis.MCP.Builders
   alias Anubis.MCP.Message

@@ -54,7 +54,7 @@ defmodule Anubis.Transport.SSETest do
       # force client to initialize
       _ = :sys.get_state(stub_client)
       state = :sys.get_state(transport)
-      assert state.message_url != nil
+      assert state.message_url
       assert String.ends_with?(to_string(state.message_url), "/messages/123")
 
       # Clean up
@@ -120,7 +120,7 @@ defmodule Anubis.Transport.SSETest do
 
       # Verify the transport has received the endpoint
       transport_state = :sys.get_state(transport)
-      assert transport_state.message_url != nil
+      assert transport_state.message_url
 
       assert String.ends_with?(
                to_string(transport_state.message_url),
@@ -218,7 +218,7 @@ defmodule Anubis.Transport.SSETest do
 
       # Verify the transport has received the endpoint
       transport_state = :sys.get_state(transport)
-      assert transport_state.message_url != nil
+      assert transport_state.message_url
 
       # Send a message and check for error response
       assert {:error, {:http_error, 500, "Internal Server Error"}} =
@@ -283,7 +283,7 @@ defmodule Anubis.Transport.SSETest do
 
       # Verify the transport has set up the message URL
       transport_state = :sys.get_state(transport)
-      assert transport_state.message_url != nil
+      assert transport_state.message_url
 
       # Check that the StubClient received our message
       messages = StubClient.get_messages()
@@ -379,7 +379,7 @@ defmodule Anubis.Transport.SSETest do
       Process.sleep(200)
 
       transport_state = :sys.get_state(transport)
-      assert transport_state.message_url != nil
+      assert transport_state.message_url
       assert :ok = SSE.send_message(transport, "test message")
 
       SSE.shutdown(transport)
@@ -493,7 +493,7 @@ defmodule Anubis.Transport.SSETest do
 
       transport_state = :sys.get_state(transport)
       assert transport_state.message_url == "#{server_url}/messages/123"
-      assert not String.contains?(transport_state.message_url, "/mcp/mcp/")
+      refute String.contains?(transport_state.message_url, "/mcp/mcp/")
       assert :ok = SSE.send_message(transport, "test message")
 
       SSE.shutdown(transport)

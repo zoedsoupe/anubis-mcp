@@ -167,7 +167,7 @@ defmodule Anubis.Client.StateTest do
 
       updated_state = State.unregister_progress_callback(state, token)
 
-      assert not Map.has_key?(updated_state.progress_callbacks, token)
+      refute Map.has_key?(updated_state.progress_callbacks, token)
     end
   end
 

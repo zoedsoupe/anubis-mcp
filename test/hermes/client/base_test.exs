@@ -759,7 +759,7 @@ defmodule Anubis.Client.BaseTest do
       Process.sleep(50)
 
       request_id = get_request_id(client, "tools/call")
-      assert request_id != nil
+      assert request_id
 
       cancelled_notification = cancelled_notification(request_id, "server timeout")
       send_notification(client, cancelled_notification)
@@ -784,7 +784,7 @@ defmodule Anubis.Client.BaseTest do
       Process.sleep(50)
 
       request_id = get_request_id(client, "resources/list")
-      assert request_id != nil
+      assert request_id
 
       expect(Anubis.MockTransport, :send_message, fn _, message ->
         decoded = JSON.decode!(message)
