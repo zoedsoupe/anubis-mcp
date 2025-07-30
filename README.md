@@ -60,8 +60,11 @@ children = [
   {MyApp.MCPServer, transport: :streamable_http}
 ]
 
-# Add to your Plug/Phoenix router (if using HTTP)
+# Add to your Phoenix router (if using HTTP)
 forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug, server: MyApp.MCPServer
+
+# Or if using only Plug router
+forward "/mcp", to: Anubis.Server.Transport.StreamableHTTP.Plug, init_opts: [server: MyApp.MCPServer]
 ```
 
 Now you can achieve your MCP server on `http://localhost:<port>/mcp`
