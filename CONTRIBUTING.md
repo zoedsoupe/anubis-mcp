@@ -1,6 +1,6 @@
-# Contributing to Hermes MCP
+# Contributing to Anubis MCP
 
-Thank you for your interest in contributing to Hermes MCP! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to Anubis MCP! This document provides guidelines and instructions for contributing to the project.
 
 Firstly, have sure to follow the official MCP (Model Context Protocol) [specification](https://spec.modelcontextprotocol.io/specification/2024-11-05/)!
 
@@ -19,8 +19,8 @@ Firstly, have sure to follow the official MCP (Model Context Protocol) [specific
 1. Clone the repository
 
    ```bash
-   git clone https://github.com/cloudwalk/hermes-mcp.git
-   cd hermes-mcp
+   git clone https://github.com/zoedsoupe/anubis-mcp.git
+   cd anubis-mcp
    ```
 
 2. Install dependencies
@@ -113,4 +113,4 @@ Releases are managed by the maintainers. Version numbers follow [Semantic Versio
 
 ## License
 
-By contributing to Hermes MCP, you agree that your contributions will be licensed under the project's [MIT License](./LICENSE).
+By contributing to Anubis MCP, you agree that your contributions will be licensed under the project's [MIT License](./LICENSE).

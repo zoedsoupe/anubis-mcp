@@ -1,8 +1,8 @@
-defmodule Hermes.MCP.Builders do
+defmodule Anubis.MCP.Builders do
   @moduledoc false
 
-  alias Hermes.MCP.ID
-  alias Hermes.MCP.Message
+  alias Anubis.MCP.ID
+  alias Anubis.MCP.Message
 
   require Message
 

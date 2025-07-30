@@ -1,9 +1,9 @@
 defmodule TestTools.NestedFieldTool do
   @moduledoc "Tool with nested field definitions"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :name, {:required, :string}, description: "Full name"
@@ -30,9 +30,9 @@ end
 defmodule TestTools.SingleNestedFieldTool do
   @moduledoc "Tool with single nested field"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :user, description: "User information" do
@@ -49,9 +49,9 @@ end
 defmodule TestTools.DeeplyNestedTool do
   @moduledoc "Tool with deeply nested fields"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :organization do
@@ -78,9 +78,9 @@ end
 defmodule TestTools.LegacyTool do
   @moduledoc "Tool using traditional Peri schema syntax without field macros"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     %{
@@ -104,9 +104,9 @@ end
 defmodule TestTools.EnumWithTypeTool do
   @moduledoc "Tool demonstrating enum with type specification"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :weight, {:required, :integer}
@@ -123,9 +123,9 @@ end
 defmodule TestPrompts.FieldPrompt do
   @moduledoc "Test prompt with field metadata"
 
-  use Hermes.Server.Component, type: :prompt
+  use Anubis.Server.Component, type: :prompt
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :code, {:required, :string}, description: "The code to review"
@@ -142,9 +142,9 @@ end
 defmodule TestPrompts.NestedPrompt do
   @moduledoc "Prompt with nested fields"
 
-  use Hermes.Server.Component, type: :prompt
+  use Anubis.Server.Component, type: :prompt
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :config, description: "Configuration options" do
@@ -162,9 +162,9 @@ end
 defmodule TestPrompts.LegacyPrompt do
   @moduledoc "Legacy prompt without field macros"
 
-  use Hermes.Server.Component, type: :prompt
+  use Anubis.Server.Component, type: :prompt
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     %{

@@ -1,9 +1,9 @@
 if Code.ensure_loaded?(:gun) do
-  defmodule Hermes.Transport.WebSocketTest do
+  defmodule Anubis.Transport.WebSocketTest do
     use ExUnit.Case, async: false
     use Mimic
 
-    alias Hermes.Transport.WebSocket
+    alias Anubis.Transport.WebSocket
 
     @moduletag capture_log: true
 

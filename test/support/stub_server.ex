@@ -6,15 +6,15 @@ defmodule StubServer do
   This server has no components and provides only the bare minimum implementation.
   """
 
-  use Hermes.Server,
+  use Anubis.Server,
     name: "Test Server",
     version: "1.0.0",
     capabilities: [:tools, :prompts, :resources]
 
-  import Hermes.Server.Frame, only: [assign: 3]
+  import Anubis.Server.Frame, only: [assign: 3]
 
-  alias Hermes.MCP.Error
-  alias Hermes.Server.Response
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Response
 
   @tools [
     %{

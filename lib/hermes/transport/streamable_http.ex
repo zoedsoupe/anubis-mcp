@@ -1,4 +1,4 @@
-defmodule Hermes.Transport.StreamableHTTP do
+defmodule Anubis.Transport.StreamableHTTP do
   @moduledoc """
   A transport implementation that uses Streamable HTTP as specified in MCP 2025-03-26.
 
@@ -8,14 +8,14 @@ defmodule Hermes.Transport.StreamableHTTP do
   ## Usage
 
       # Start the transport with a base URL
-      {:ok, transport} = Hermes.Transport.StreamableHTTP.start_link(
+      {:ok, transport} = Anubis.Transport.StreamableHTTP.start_link(
         client: client_pid,
         base_url: "http://localhost:8000",
         mcp_path: "/mcp"
       )
 
       # Send a message
-      :ok = Hermes.Transport.StreamableHTTP.send_message(transport, encoded_message)
+      :ok = Anubis.Transport.StreamableHTTP.send_message(transport, encoded_message)
 
   ## Session Management
 
@@ -39,18 +39,18 @@ defmodule Hermes.Transport.StreamableHTTP do
   This allows the server to send requests and notifications without a client request.
   """
 
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.HTTP
-  alias Hermes.SSE
-  alias Hermes.SSE.Event
-  alias Hermes.Telemetry
-  alias Hermes.Transport.Behaviour, as: Transport
+  alias Anubis.HTTP
+  alias Anubis.SSE
+  alias Anubis.SSE.Event
+  alias Anubis.Telemetry
+  alias Anubis.Transport.Behaviour, as: Transport
 
   @type t :: GenServer.server()
   @type params_t :: Enumerable.t(option)
@@ -78,8 +78,8 @@ defmodule Hermes.Transport.StreamableHTTP do
           | GenServer.option()
 
   defschema(:options_schema, %{
-    name: {{:custom, &Hermes.genserver_name/1}, {:default, __MODULE__}},
-    client: {:required, Hermes.get_schema(:process_name)},
+    name: {{:custom, &Anubis.genserver_name/1}, {:default, __MODULE__}},
+    client: {:required, Anubis.get_schema(:process_name)},
     base_url: {:required, {:string, {:transform, &URI.new!/1}}},
     mcp_path: {:string, {:default, "/mcp"}},
     headers: {:map, {:default, %{}}},

@@ -1,4 +1,4 @@
-defmodule Hermes.Client.Operation do
+defmodule Anubis.Client.Operation do
   @moduledoc """
   Represents an operation to be performed by the MCP client.
 

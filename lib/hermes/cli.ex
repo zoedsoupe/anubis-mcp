@@ -1,5 +1,5 @@
 if Code.ensure_loaded?(Burrito) do
-  defmodule Hermes.CLI do
+  defmodule Anubis.CLI do
     @moduledoc false
 
     alias Burrito.Util

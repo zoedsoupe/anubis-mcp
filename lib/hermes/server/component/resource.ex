@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Component.Resource do
+defmodule Anubis.Server.Component.Resource do
   @moduledoc """
   Defines the behaviour for MCP resources.
 
@@ -9,9 +9,9 @@ defmodule Hermes.Server.Component.Resource do
   ## Example
 
       defmodule MyServer.Resources.Documentation do
-        @behaviour Hermes.Server.Behaviour.Resource
+        @behaviour Anubis.Server.Behaviour.Resource
         
-        alias Hermes.Server.Frame
+        alias Anubis.Server.Frame
         
         @impl true
         def uri, do: "file:///docs/readme.md"
@@ -42,7 +42,7 @@ defmodule Hermes.Server.Component.Resource do
   ## Example with dynamic content
 
       defmodule MyServer.Resources.SystemStatus do
-        @behaviour Hermes.Server.Behaviour.Resource
+        @behaviour Anubis.Server.Behaviour.Resource
         
         @impl true
         def uri, do: "system://status"
@@ -70,9 +70,9 @@ defmodule Hermes.Server.Component.Resource do
       end
   """
 
-  alias Hermes.MCP.Error
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Response
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Response
 
   @type params :: map()
   @type content :: binary() | String.t()
@@ -147,7 +147,7 @@ defmodule Hermes.Server.Component.Resource do
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
   defimpl JSON.Encoder, for: __MODULE__ do
-    alias Hermes.Server.Component.Resource
+    alias Anubis.Server.Component.Resource
 
     def encode(%Resource{uri_template: uri_template} = resource, _) when not is_nil(uri_template) do
       %{

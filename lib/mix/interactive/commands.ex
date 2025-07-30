@@ -1,10 +1,10 @@
 defmodule Mix.Interactive.Commands do
   @moduledoc false
 
-  alias Hermes.MCP.Response
-  alias Hermes.Transport.SSE
-  alias Hermes.Transport.STDIO
-  alias Hermes.Transport.StreamableHTTP
+  alias Anubis.MCP.Response
+  alias Anubis.Transport.SSE
+  alias Anubis.Transport.STDIO
+  alias Anubis.Transport.StreamableHTTP
   alias Mix.Interactive
   alias Mix.Interactive.State
   alias Mix.Interactive.UI
@@ -80,7 +80,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Fetching tools...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Hermes.Client.Base.list_tools(client, timeout_opts) do
+    case Anubis.Client.Base.list_tools(client, timeout_opts) do
       {:ok, %Response{result: %{"tools" => tools}}} ->
         UI.print_items("tools", tools, "name")
 
@@ -116,7 +116,7 @@ defmodule Mix.Interactive.Commands do
   defp perform_tool_call(client, tool_name, tool_args, timeout_opts) do
     IO.puts("\n#{UI.colors().info}Calling tool #{tool_name}...#{UI.colors().reset}")
 
-    case Hermes.Client.Base.call_tool(client, tool_name, tool_args, timeout_opts) do
+    case Anubis.Client.Base.call_tool(client, tool_name, tool_args, timeout_opts) do
       {:ok, %Response{result: result}} ->
         IO.puts("#{UI.colors().success}Tool call successful#{UI.colors().reset}")
         IO.puts("\n#{UI.colors().info}Result:#{UI.colors().reset}")
@@ -133,7 +133,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Fetching prompts...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Hermes.Client.Base.list_prompts(client, timeout_opts) do
+    case Anubis.Client.Base.list_prompts(client, timeout_opts) do
       {:ok, %Response{result: %{"prompts" => prompts}}} ->
         UI.print_items("prompts", prompts, "name")
 
@@ -169,7 +169,7 @@ defmodule Mix.Interactive.Commands do
   defp perform_get_prompt(client, prompt_name, prompt_args, timeout_opts) do
     IO.puts("\n#{UI.colors().info}Getting prompt #{prompt_name}...#{UI.colors().reset}")
 
-    case Hermes.Client.Base.get_prompt(
+    case Anubis.Client.Base.get_prompt(
            client,
            prompt_name,
            prompt_args,
@@ -191,7 +191,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Fetching resources...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Hermes.Client.Base.list_resources(client, timeout_opts) do
+    case Anubis.Client.Base.list_resources(client, timeout_opts) do
       {:ok, %Response{result: %{"resources" => resources}}} ->
         UI.print_items("resources", resources, "uri")
 
@@ -210,7 +210,7 @@ defmodule Mix.Interactive.Commands do
 
     IO.puts("\n#{UI.colors().info}Reading resource #{resource_uri}...#{UI.colors().reset}")
 
-    case Hermes.Client.Base.read_resource(client, resource_uri, timeout_opts) do
+    case Anubis.Client.Base.read_resource(client, resource_uri, timeout_opts) do
       {:ok, %Response{result: result}} ->
         IO.puts("#{UI.colors().success}Read resource successfully#{UI.colors().reset}")
 
@@ -233,7 +233,7 @@ defmodule Mix.Interactive.Commands do
   defp exit_client(client) do
     IO.puts("\n#{UI.colors().info}Closing connection and exiting...#{UI.colors().reset}")
 
-    Hermes.Client.Base.close(client)
+    Anubis.Client.Base.close(client)
     :ok
   end
 
@@ -273,10 +273,10 @@ defmodule Mix.Interactive.Commands do
   defp print_initialization_error(error, state) do
     UI.print_error(error)
 
-    verbose = System.get_env("HERMES_VERBOSE") == "1"
+    verbose = System.get_env("ANUBIS_VERBOSE") == "1"
 
     if verbose && state do
-      IO.puts("\n#{UI.colors().info}Additional error context (HERMES_VERBOSE=1):#{UI.colors().reset}")
+      IO.puts("\n#{UI.colors().info}Additional error context (ANUBIS_VERBOSE=1):#{UI.colors().reset}")
 
       case error do
         %{reason: :connection_refused} ->
@@ -294,7 +294,7 @@ defmodule Mix.Interactive.Commands do
           IO.puts("    #{inspect(state, pretty: true, limit: 10)}")
       end
     else
-      IO.puts("#{UI.colors().info}For more detailed error information, set HERMES_VERBOSE=1#{UI.colors().reset}")
+      IO.puts("#{UI.colors().info}For more detailed error information, set ANUBIS_VERBOSE=1#{UI.colors().reset}")
     end
   end
 
@@ -389,7 +389,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Pinging server...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Hermes.Client.Base.ping(client, timeout_opts) do
+    case Anubis.Client.Base.ping(client, timeout_opts) do
       :pong ->
         IO.puts("#{UI.colors().success}✓ Pong! Server is responding#{UI.colors().reset}")
 

@@ -1,4 +1,4 @@
-defmodule Hermes.MCP.Response do
+defmodule Anubis.MCP.Response do
   @moduledoc """
   Represents successful responses in the MCP protocol.
 
@@ -16,7 +16,7 @@ defmodule Hermes.MCP.Response do
 
   The MCP protocol distinguishes between two types of errors:
 
-  1. Protocol errors: Standard JSON-RPC errors with error codes (handled by `Hermes.MCP.Error`)
+  1. Protocol errors: Standard JSON-RPC errors with error codes (handled by `Anubis.MCP.Error`)
   2. Domain errors: Valid responses that indicate application-level errors with `isError: true`
 
   This module specifically handles domain errors, which are successful at the protocol level
@@ -26,17 +26,17 @@ defmodule Hermes.MCP.Response do
 
   ```elixir
   # Create from a JSON-RPC response
-  response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
+  response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
 
   # Check if the response is successful or has a domain error
-  if Hermes.MCP.Response.success?(response) do
+  if Anubis.MCP.Response.success?(response) do
     # Handle success
   else
     # Handle domain error
   end
 
   # Unwrap the response to get the result or error
-  case Hermes.MCP.Response.unwrap(response) do
+  case Anubis.MCP.Response.unwrap(response) do
     {:ok, result} -> # Handle success
     {:error, error} -> # Handle domain error
   end
@@ -63,11 +63,11 @@ defmodule Hermes.MCP.Response do
 
   ## Examples
 
-      iex> Hermes.MCP.Response.from_json_rpc(%{"result" => %{}, "id" => "req_123"})
-      %Hermes.MCP.Response{result: %{}, id: "req_123", is_error: false}
+      iex> Anubis.MCP.Response.from_json_rpc(%{"result" => %{}, "id" => "req_123"})
+      %Anubis.MCP.Response{result: %{}, id: "req_123", is_error: false}
       
-      iex> Hermes.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true}, "id" => "req_123"})
-      %Hermes.MCP.Response{result: %{"isError" => true}, id: "req_123", is_error: true}
+      iex> Anubis.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true}, "id" => "req_123"})
+      %Anubis.MCP.Response{result: %{"isError" => true}, id: "req_123", is_error: true}
   """
   @spec from_json_rpc(map()) :: t()
   def from_json_rpc(%{"result" => result, "id" => id}) do
@@ -88,12 +88,12 @@ defmodule Hermes.MCP.Response do
 
   ## Examples
 
-      iex> response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.unwrap(response)
+      iex> response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.unwrap(response)
       %{"data" => "value"}
       
-      iex> error_response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true, "reason" => "not_found"}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.unwrap(error_response)
+      iex> error_response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true, "reason" => "not_found"}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.unwrap(error_response)
       %{"isError" => true, "reason" => "not_found"}
   """
   @spec unwrap(t()) :: map()
@@ -104,12 +104,12 @@ defmodule Hermes.MCP.Response do
 
   ## Examples
 
-      iex> response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.success?(response)
+      iex> response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.success?(response)
       true
       
-      iex> error_response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.success?(error_response)
+      iex> error_response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.success?(error_response)
       false
   """
   @spec success?(t()) :: boolean()
@@ -121,12 +121,12 @@ defmodule Hermes.MCP.Response do
 
   ## Examples
 
-      iex> response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.error?(response)
+      iex> response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.error?(response)
       false
       
-      iex> error_response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.error?(error_response)
+      iex> error_response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.error?(error_response)
       true
   """
   @spec error?(t()) :: boolean()
@@ -141,8 +141,8 @@ defmodule Hermes.MCP.Response do
 
   ## Examples
 
-      iex> response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.get_result(response)
+      iex> response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.get_result(response)
       %{"data" => "value"}
   """
   @spec get_result(t()) :: map()
@@ -153,8 +153,8 @@ defmodule Hermes.MCP.Response do
 
   ## Examples
 
-      iex> response = Hermes.MCP.Response.from_json_rpc(%{"result" => %{}, "id" => "req_123"})
-      iex> Hermes.MCP.Response.get_id(response)
+      iex> response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{}, "id" => "req_123"})
+      iex> Anubis.MCP.Response.get_id(response)
       "req_123"
   """
   @spec get_id(t()) :: String.t()

@@ -4,13 +4,13 @@ defmodule StubTransport do
   Records all messages sent through it for inspection in tests.
   """
 
-  @behaviour Hermes.Transport.Behaviour
+  @behaviour Anubis.Transport.Behaviour
 
   use GenServer
 
-  alias Hermes.MCP.Builders
-  alias Hermes.MCP.ID
-  alias Hermes.MCP.Message
+  alias Anubis.MCP.Builders
+  alias Anubis.MCP.ID
+  alias Anubis.MCP.Message
 
   require Message
 
@@ -160,7 +160,7 @@ defmodule StubTransport do
     if message["method"] == "sampling/createMessage" do
       :ok
     else
-      name = Hermes.Server.Registry.server(StubServer)
+      name = Anubis.Server.Registry.server(StubServer)
 
       {:ok, response} =
         GenServer.call(name, {:request, message, state.session_id, %{}})
@@ -170,12 +170,12 @@ defmodule StubTransport do
   end
 
   defp forward_to_server(message, state) when Message.is_response(message) or Message.is_error(message) do
-    name = Hermes.Server.Registry.server(StubServer)
+    name = Anubis.Server.Registry.server(StubServer)
     GenServer.cast(name, {:response, message, state.session_id, %{}})
   end
 
   defp forward_to_server(message, state) when Message.is_notification(message) do
-    name = Hermes.Server.Registry.server(StubServer)
+    name = Anubis.Server.Registry.server(StubServer)
     :ok = GenServer.cast(name, {:notification, message, state.session_id})
   end
 end

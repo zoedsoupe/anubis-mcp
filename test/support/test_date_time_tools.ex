@@ -1,9 +1,9 @@
 defmodule TestTools.DateTool do
   @moduledoc "Tool with date field"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :event_date, :date, required: true, description: "Event date"
@@ -19,9 +19,9 @@ end
 defmodule TestTools.DateTimeTool do
   @moduledoc "Tool with datetime field"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :created_at, :datetime, required: true, description: "Creation timestamp"
@@ -37,9 +37,9 @@ end
 defmodule TestTools.TimeTool do
   @moduledoc "Tool with time field"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :start_time, :time, required: true, description: "Start time"
@@ -54,9 +54,9 @@ end
 defmodule TestTools.NaiveDateTimeTool do
   @moduledoc "Tool with naive datetime field"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :timestamp, :naive_datetime, required: true
@@ -71,9 +71,9 @@ end
 defmodule TestTools.EventTool do
   @moduledoc "Tool with nested date fields"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :event, required: true do
@@ -92,9 +92,9 @@ end
 defmodule TestTools.DateListTool do
   @moduledoc "Tool with list of dates"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :important_dates, {:list, :date}, required: true
@@ -109,9 +109,9 @@ end
 defmodule TestTools.RequiredOptionTool do
   @moduledoc "Tool demonstrating required: true option"
 
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   schema do
     field :birth_date, :date, required: true, description: "Date of birth"

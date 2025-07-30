@@ -1,4 +1,4 @@
-defmodule Hermes.SSE.Event do
+defmodule Anubis.SSE.Event do
   @moduledoc false
 
   @type t :: %__MODULE__{
@@ -15,11 +15,11 @@ defmodule Hermes.SSE.Event do
 
   ## Examples
 
-      iex> event = %Hermes.SSE.Event{data: "hello"}
+      iex> event = %Anubis.SSE.Event{data: "hello"}
       iex> inspect(event)
       "event: message\\ndata: hello\\n\\n"
       
-      iex> event = %Hermes.SSE.Event{id: "123", event: "ping", data: "pong"}
+      iex> event = %Anubis.SSE.Event{id: "123", event: "ping", data: "pong"}
       iex> inspect(event)
       "id: 123\\nevent: ping\\ndata: pong\\n\\n"
   """

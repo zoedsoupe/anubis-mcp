@@ -1,17 +1,17 @@
-defmodule Hermes.Telemetry do
+defmodule Anubis.Telemetry do
   @moduledoc false
 
   @doc """
-  Execute a telemetry event with the Hermes MCP namespace.
+  Execute a telemetry event with the Anubis MCP namespace.
 
   ## Parameters
-  - `event_name` - List of atoms for the event name, excluding the :hermes_mcp prefix
+  - `event_name` - List of atoms for the event name, excluding the :anubis_mcp prefix
   - `measurements` - Map of measurements for the event
   - `metadata` - Map of metadata for the event
   """
   @spec execute(list(atom()), map(), map()) :: :ok
   def execute(event_name, measurements, metadata) do
-    :telemetry.execute([:hermes_mcp | event_name], measurements, metadata)
+    :telemetry.execute([:anubis_mcp | event_name], measurements, metadata)
   end
 
   # Define event name constants to ensure consistency

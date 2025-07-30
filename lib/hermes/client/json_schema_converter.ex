@@ -1,4 +1,4 @@
-defmodule Hermes.Client.JSONSchemaConverter do
+defmodule Anubis.Client.JSONSchemaConverter do
   @moduledoc false
 
   @type json_schema :: map()

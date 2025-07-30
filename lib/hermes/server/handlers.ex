@@ -1,13 +1,13 @@
-defmodule Hermes.Server.Handlers do
+defmodule Anubis.Server.Handlers do
   @moduledoc false
 
-  alias Hermes.MCP.Error
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Handlers.Completion
-  alias Hermes.Server.Handlers.Prompts
-  alias Hermes.Server.Handlers.Resources
-  alias Hermes.Server.Handlers.Tools
-  alias Hermes.Server.Response
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Handlers.Completion
+  alias Anubis.Server.Handlers.Prompts
+  alias Anubis.Server.Handlers.Resources
+  alias Anubis.Server.Handlers.Tools
+  alias Anubis.Server.Response
 
   @spec handle(map, module, Frame.t()) ::
           {:reply, response :: Response.t(), new_state :: Frame.t()}

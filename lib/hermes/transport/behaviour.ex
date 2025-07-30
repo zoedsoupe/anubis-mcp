@@ -1,9 +1,9 @@
-defmodule Hermes.Transport.Behaviour do
+defmodule Anubis.Transport.Behaviour do
   @moduledoc """
   Defines the behavior that all transport implementations must follow.
   """
 
-  alias Hermes.MCP.Error
+  alias Anubis.MCP.Error
 
   @type t :: GenServer.server()
   @typedoc "The JSON-RPC message encoded"

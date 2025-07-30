@@ -1,8 +1,8 @@
 defmodule MockCustomRegistry do
   @moduledoc false
-  @behaviour Hermes.Server.Registry.Adapter
+  @behaviour Anubis.Server.Registry.Adapter
 
-  alias Hermes.Server.Registry.Adapter
+  alias Anubis.Server.Registry.Adapter
 
   @impl true
   def child_spec(opts) do

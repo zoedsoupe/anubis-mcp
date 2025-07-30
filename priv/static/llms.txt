@@ -1,10 +1,10 @@
-# Hermes MCP - Model Context Protocol Implementation for Elixir
+# Anubis MCP - Model Context Protocol Implementation for Elixir
 
-Hermes MCP is a comprehensive Elixir framework for building Model Context Protocol (MCP) servers and clients. It provides a robust, OTP-compliant implementation that enables language models to interact with external tools, resources, and data sources through a standardized protocol.
+Anubis MCP is a comprehensive Elixir framework for building Model Context Protocol (MCP) servers and clients. It provides a robust, OTP-compliant implementation that enables language models to interact with external tools, resources, and data sources through a standardized protocol.
 
 ## Overview
 
-The Model Context Protocol (MCP) is an open standard that enables language models to securely access tools and data sources. Hermes brings this capability to the Elixir ecosystem with:
+The Model Context Protocol (MCP) is an open standard that enables language models to securely access tools and data sources. Anubis brings this capability to the Elixir ecosystem with:
 
 - **Full MCP Specification Support**: Implements the complete MCP protocol including tools, resources, prompts, and sampling
 - **Multiple Transport Layers**: STDIO, Server-Sent Events (SSE), WebSocket, and HTTP streaming
@@ -17,25 +17,25 @@ The Model Context Protocol (MCP) is an open standard that enables language model
 
 ### Core Components
 
-1. **MCP Protocol Layer** (`Hermes.MCP`)
+1. **MCP Protocol Layer** (`Anubis.MCP`)
    - Message encoding/decoding for JSON-RPC 2.0
    - Standardized error handling
    - Request/response correlation
    - Batch request support
 
-2. **Transport Abstraction** (`Hermes.Transport`)
+2. **Transport Abstraction** (`Anubis.Transport`)
    - Pluggable transport layers
    - Session management
    - Message routing
    - Connection lifecycle
 
-3. **Server Framework** (`Hermes.Server`)
+3. **Server Framework** (`Anubis.Server`)
    - Declarative server definition
    - Component registration (tools, prompts, resources)
    - Request/notification handling
    - Session isolation
 
-4. **Client Framework** (`Hermes.Client`)
+4. **Client Framework** (`Anubis.Client`)
    - High-level client DSL
    - Request pipeline with timeouts
    - Progress tracking
@@ -55,7 +55,7 @@ The Model Context Protocol (MCP) is an open standard that enables language model
 
 ```elixir
 defmodule MyApp.MCPServer do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "my-app",
     version: "1.0.0",
     capabilities: [:tools, :resources, :prompts]
@@ -76,7 +76,7 @@ end
 
 ```elixir
 defmodule MyApp.AnthropicClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp", 
     version: "1.0.0",
     protocol_version: "2025-06-18"
@@ -130,7 +130,7 @@ Offer reusable templates that can be customized with arguments. Prompts help sta
 
 ## Integration
 
-Hermes MCP servers can be integrated with:
+Anubis MCP servers can be integrated with:
 - Claude Desktop (via stdio transport)
 - Custom LLM applications (via HTTP/WebSocket)
 - Development tools and IDEs

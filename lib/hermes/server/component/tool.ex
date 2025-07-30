@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Component.Tool do
+defmodule Anubis.Server.Component.Tool do
   @moduledoc """
   Defines the behaviour for MCP tools.
 
@@ -9,9 +9,9 @@ defmodule Hermes.Server.Component.Tool do
   ## Example
 
       defmodule MyServer.Tools.Calculator do
-        @behaviour Hermes.Server.Behaviour.Tool
+        @behaviour Anubis.Server.Behaviour.Tool
         
-        alias Hermes.Server.Frame
+        alias Anubis.Server.Frame
         
         @impl true
         def name, do: "calculator"
@@ -55,9 +55,9 @@ defmodule Hermes.Server.Component.Tool do
       end
   """
 
-  alias Hermes.MCP.Error
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Response
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Response
 
   @type params :: map()
   @type result :: term()
@@ -162,7 +162,7 @@ defmodule Hermes.Server.Component.Tool do
   @optional_callbacks annotations: 0, output_schema: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
-    alias Hermes.Server.Component.Tool
+    alias Anubis.Server.Component.Tool
 
     def encode(%Tool{} = tool, _) do
       %{

@@ -1,14 +1,14 @@
-defmodule Hermes do
+defmodule Anubis do
   @moduledoc false
 
   import Peri
 
-  alias Hermes.Server.Transport.SSE, as: ServerSSE
-  alias Hermes.Server.Transport.STDIO, as: ServerSTDIO
-  alias Hermes.Server.Transport.StreamableHTTP, as: ServerStreamableHTTP
-  alias Hermes.Transport.SSE, as: ClientSSE
-  alias Hermes.Transport.STDIO, as: ClientSTDIO
-  alias Hermes.Transport.StreamableHTTP, as: ClientStreamableHTTP
+  alias Anubis.Server.Transport.SSE, as: ServerSSE
+  alias Anubis.Server.Transport.STDIO, as: ServerSTDIO
+  alias Anubis.Server.Transport.StreamableHTTP, as: ServerStreamableHTTP
+  alias Anubis.Transport.SSE, as: ClientSSE
+  alias Anubis.Transport.STDIO, as: ClientSTDIO
+  alias Anubis.Transport.StreamableHTTP, as: ClientStreamableHTTP
 
   @client_transports if Mix.env() == :test,
                        do: [
@@ -16,7 +16,7 @@ defmodule Hermes do
                          ClientSSE,
                          ClientStreamableHTTP,
                          StubTransport,
-                         Hermes.MockTransport
+                         Anubis.MockTransport
                        ],
                        else: [ClientSTDIO, ClientSSE, ClientStreamableHTTP]
 
@@ -39,10 +39,10 @@ defmodule Hermes do
 
   defschema :process_name, {:either, {:pid, {:custom, &genserver_name/1}}}
 
-  @doc "Checks if hermes should be compiled/used as standalone CLI or OTP library"
+  @doc "Checks if anubis should be compiled/used as standalone CLI or OTP library"
   def should_compile_cli? do
     Code.ensure_loaded?(Burrito) and
-      Application.get_env(:hermes_mcp, :compile_cli?, false)
+      Application.get_env(:anubis_mcp, :compile_cli?, false)
   end
 
   @doc """

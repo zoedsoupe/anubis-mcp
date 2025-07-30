@@ -1,10 +1,10 @@
-defmodule Hermes.Client.StateTest do
+defmodule Anubis.Client.StateTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.Client.Operation
-  alias Hermes.Client.Request
-  alias Hermes.Client.State
-  alias Hermes.MCP.Error
+  alias Anubis.Client.Operation
+  alias Anubis.Client.Request
+  alias Anubis.Client.State
+  alias Anubis.MCP.Error
 
   describe "new/1" do
     test "creates a new state with the given options" do
@@ -167,7 +167,7 @@ defmodule Hermes.Client.StateTest do
 
       updated_state = State.unregister_progress_callback(state, token)
 
-      assert not Map.has_key?(updated_state.progress_callbacks, token)
+      refute Map.has_key?(updated_state.progress_callbacks, token)
     end
   end
 

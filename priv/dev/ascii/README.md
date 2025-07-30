@@ -1,10 +1,10 @@
-# ASCII Art Studio with Hermes MCP
+# ASCII Art Studio with Anubis MCP
 
 A Phoenix LiveView application that bridges interactive web experiences with programmatic MCP access, demonstrating how modern Elixir applications can serve multiple audiences through unified business logic.
 
 ## The Convergence of Web and AI
 
-How do you build an application that's equally accessible to humans through a rich UI and to AI assistants through structured APIs? The ASCII Art Studio explores this challenge by implementing a dual-interface architecture where Phoenix LiveView powers the human experience while Hermes MCP enables programmatic access.
+How do you build an application that's equally accessible to humans through a rich UI and to AI assistants through structured APIs? The ASCII Art Studio explores this challenge by implementing a dual-interface architecture where Phoenix LiveView powers the human experience while Anubis MCP enables programmatic access.
 
 ## Architecture Overview
 
@@ -34,7 +34,7 @@ Converts text to ASCII art using various fonts. The implementation automatically
 
 ```elixir
 # Generate ASCII art via MCP
-{:ok, result} = Hermes.Client.call_tool(client, "text_to_ascii", %{
+{:ok, result} = Anubis.Client.call_tool(client, "text_to_ascii", %{
   text: "HELLO",
   font: "3d"  # Options: standard, slant, 3d, banner
 })
@@ -46,7 +46,7 @@ Returns available font options with descriptions. This meta-tool helps clients d
 
 ```elixir
 # Discover available fonts
-{:ok, %{"fonts" => fonts}} = Hermes.Client.call_tool(client, "list_fonts", %{})
+{:ok, %{"fonts" => fonts}} = Anubis.Client.call_tool(client, "list_fonts", %{})
 ```
 
 ### Tool: `generate_banner`
@@ -55,7 +55,7 @@ Creates text banners with customizable borders. The width parameter (20-100 char
 
 ```elixir
 # Create a bordered banner
-{:ok, banner} = Hermes.Client.call_tool(client, "generate_banner", %{
+{:ok, banner} = Anubis.Client.call_tool(client, "generate_banner", %{
   text: "Welcome",
   width: 50
 })
@@ -68,7 +68,7 @@ The server uses StreamableHTTP transport, making it accessible via standard HTTP
 ```elixir
 # Application supervisor configuration
 children = [
-  Hermes.Server.Registry,
+  Anubis.Server.Registry,
   {Ascii.MCPServer, transport: {:streamable_http, []}}
 ]
 
@@ -120,4 +120,4 @@ As you explore this codebase, consider these extension points:
 - What caching strategies could improve performance for frequently requested text?
 - How might you implement user-specific generation history?
 
-The ASCII Art Studio demonstrates that MCP servers built with Hermes integrate naturally into existing Phoenix applications, enabling you to serve both human users and AI assistants from a single, well-architected codebase.
+The ASCII Art Studio demonstrates that MCP servers built with Anubis integrate naturally into existing Phoenix applications, enabling you to serve both human users and AI assistants from a single, well-architected codebase.

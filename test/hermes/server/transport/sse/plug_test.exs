@@ -1,14 +1,14 @@
-defmodule Hermes.Server.Transport.SSE.PlugTest do
-  use Hermes.MCP.Case, async: false
+defmodule Anubis.Server.Transport.SSE.PlugTest do
+  use Anubis.MCP.Case, async: false
 
   import ExUnit.CaptureLog
   import Plug.Conn
   import Plug.Test
 
-  alias Hermes.MCP.Message
-  alias Hermes.Server.Base
-  alias Hermes.Server.Transport.SSE
-  alias Hermes.Server.Transport.SSE.Plug, as: SSEPlug
+  alias Anubis.MCP.Message
+  alias Anubis.Server.Base
+  alias Anubis.Server.Transport.SSE
+  alias Anubis.Server.Transport.SSE.Plug, as: SSEPlug
 
   setup :with_default_registry
 
@@ -116,7 +116,7 @@ defmodule Hermes.Server.Transport.SSE.PlugTest do
       # Start the session supervisor
       {:ok, _session_sup} =
         start_supervised({
-          Hermes.Server.Session.Supervisor,
+          Anubis.Server.Session.Supervisor,
           server: StubServer, registry: registry
         })
 

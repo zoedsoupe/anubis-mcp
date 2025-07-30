@@ -1,4 +1,4 @@
-defmodule Hermes.Server.ComponentFieldMacroTest do
+defmodule Anubis.Server.ComponentFieldMacroTest do
   use ExUnit.Case, async: true
 
   alias TestTools.DeeplyNestedTool
@@ -150,7 +150,7 @@ defmodule Hermes.Server.ComponentFieldMacroTest do
       defmodule CleanSyntaxTool do
         @moduledoc "Tool demonstrating clean syntax"
 
-        use Hermes.Server.Component, type: :tool
+        use Anubis.Server.Component, type: :tool
 
         schema do
           field(:title, {:required, :string}, description: "Title of the item")

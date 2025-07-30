@@ -1,10 +1,10 @@
-defmodule Hermes.Server.BaseTest do
-  use Hermes.MCP.Case, async: false
+defmodule Anubis.Server.BaseTest do
+  use Anubis.MCP.Case, async: false
 
-  alias Hermes.MCP.Message
-  alias Hermes.Server.Base
-  alias Hermes.Server.Frame
-  alias Hermes.Server.Session
+  alias Anubis.MCP.Message
+  alias Anubis.Server.Base
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Session
 
   require Message
 
@@ -88,15 +88,15 @@ defmodule Hermes.Server.BaseTest do
 
     test "sends notification to transport", ctx do
       frame = Frame.put_private(%Frame{}, ctx)
-      assert :ok = Hermes.Server.send_log_message(frame, :info, "hello")
+      assert :ok = Anubis.Server.send_log_message(frame, :info, "hello")
     end
   end
 
   describe "session expiration" do
     setup do
-      start_supervised!(Hermes.Server.Registry)
+      start_supervised!(Anubis.Server.Registry)
 
-      start_supervised!({Session.Supervisor, server: StubServer, registry: Hermes.Server.Registry})
+      start_supervised!({Session.Supervisor, server: StubServer, registry: Anubis.Server.Registry})
 
       :ok
     end
@@ -129,7 +129,7 @@ defmodule Hermes.Server.BaseTest do
                  {:notification, init_notification, session_id, %{}}
                )
 
-      session_name = Hermes.Server.Registry.server_session(StubServer, session_id)
+      session_name = Anubis.Server.Registry.server_session(StubServer, session_id)
       assert Session.get(session_name)
 
       Process.sleep(150)
@@ -168,7 +168,7 @@ defmodule Hermes.Server.BaseTest do
                  {:notification, init_notification, session_id, %{}}
                )
 
-      session_name = Hermes.Server.Registry.server_session(StubServer, session_id)
+      session_name = Anubis.Server.Registry.server_session(StubServer, session_id)
 
       for _ <- 1..3 do
         Process.sleep(100)
@@ -213,7 +213,7 @@ defmodule Hermes.Server.BaseTest do
                  {:notification, init_notification, session_id, %{}}
                )
 
-      session_name = Hermes.Server.Registry.server_session(StubServer, session_id)
+      session_name = Anubis.Server.Registry.server_session(StubServer, session_id)
 
       for _ <- 1..3 do
         Process.sleep(100)
@@ -265,7 +265,7 @@ defmodule Hermes.Server.BaseTest do
       ]
 
       :ok =
-        Hermes.Server.send_sampling_request(frame, messages,
+        Anubis.Server.send_sampling_request(frame, messages,
           system_prompt: "You are a helpful assistant",
           max_tokens: 100,
           metadata: %{test: true}
@@ -314,7 +314,7 @@ defmodule Hermes.Server.BaseTest do
         %{"role" => "user", "content" => %{"type" => "text", "text" => "Hello"}}
       ]
 
-      :ok = Hermes.Server.send_sampling_request(frame, messages)
+      :ok = Anubis.Server.send_sampling_request(frame, messages)
 
       Process.sleep(10)
 
@@ -336,7 +336,7 @@ defmodule Hermes.Server.BaseTest do
         %{"role" => "user", "content" => %{"type" => "text", "text" => "Hello"}}
       ]
 
-      :ok = Hermes.Server.send_sampling_request(frame, messages)
+      :ok = Anubis.Server.send_sampling_request(frame, messages)
 
       Process.sleep(10)
 

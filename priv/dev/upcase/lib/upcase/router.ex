@@ -1,7 +1,7 @@
 defmodule Upcase.Router do
   use Plug.Router
 
-  alias Hermes.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Transport.StreamableHTTP
 
   plug Plug.Logger
   plug :match

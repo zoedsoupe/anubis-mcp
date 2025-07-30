@@ -1,24 +1,24 @@
-defmodule Hermes.Server.Transport.StreamableHTTPTest do
-  use Hermes.MCP.Case, async: false
+defmodule Anubis.Server.Transport.StreamableHTTPTest do
+  use Anubis.MCP.Case, async: false
 
   import ExUnit.CaptureLog
 
-  alias Hermes.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Transport.StreamableHTTP
 
   setup :with_default_registry
 
   describe "start_link/1" do
     test "starts with valid options" do
-      server = Hermes.Server.Registry.server(StubServer)
-      name = Hermes.Server.Registry.transport(StubServer, :streamable_http)
-      sup = Hermes.Server.Registry.task_supervisor(StubServer)
+      server = Anubis.Server.Registry.server(StubServer)
+      name = Anubis.Server.Registry.transport(StubServer, :streamable_http)
+      sup = Anubis.Server.Registry.task_supervisor(StubServer)
 
       assert {:ok, pid} =
                StreamableHTTP.start_link(server: server, name: name, task_supervisor: sup)
 
       assert Process.alive?(pid)
 
-      assert Hermes.Server.Registry.whereis_transport(StubServer, :streamable_http) ==
+      assert Anubis.Server.Registry.whereis_transport(StubServer, :streamable_http) ==
                pid
     end
 
@@ -31,7 +31,7 @@ defmodule Hermes.Server.Transport.StreamableHTTPTest do
 
   describe "with running transport" do
     setup do
-      registry = Hermes.Server.Registry
+      registry = Anubis.Server.Registry
       name = registry.transport(StubServer, :streamable_http)
       sup = registry.task_supervisor(StubServer)
       start_supervised!({Task.Supervisor, name: sup})

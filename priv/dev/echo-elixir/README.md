@@ -1,10 +1,10 @@
 # Echo MCP Server
 
-A comprehensive Phoenix-based MCP server that demonstrates Server-Sent Events transport and the full spectrum of MCP capabilities through Hermes.
+A comprehensive Phoenix-based MCP server that demonstrates Server-Sent Events transport and the full spectrum of MCP capabilities through Anubis.
 
 ## Exploring Real-time MCP Communication
 
-What happens when you combine Phoenix's real-time capabilities with the Model Context Protocol? The Echo server answers this by implementing an SSE-based transport that enables streaming communication between clients and servers. This approach showcases how Hermes adapts to different transport mechanisms while maintaining protocol compliance.
+What happens when you combine Phoenix's real-time capabilities with the Model Context Protocol? The Echo server answers this by implementing an SSE-based transport that enables streaming communication between clients and servers. This approach showcases how Anubis adapts to different transport mechanisms while maintaining protocol compliance.
 
 ## Transport Architecture
 
@@ -31,7 +31,7 @@ The Echo server implements all three core MCP capabilities, making it an excelle
 
 **Echo Tool**
 
-The foundational echo tool demonstrates stateful request handling. Each invocation increments a server-side counter, showing how Hermes servers can maintain context across requests.
+The foundational echo tool demonstrates stateful request handling. Each invocation increments a server-side counter, showing how Anubis servers can maintain context across requests.
 
 ```elixir
 def handle_tool("echo", %{text: text}, frame) do
@@ -75,7 +75,7 @@ The server exposes system information through the `file:///server/info` resource
 
 ## Frame-based State Management
 
-Notice how the server uses Hermes' frame pattern for state management:
+Notice how the server uses Anubis' frame pattern for state management:
 
 ```elixir
 def init(_client_info, frame) do
@@ -128,4 +128,4 @@ As you explore this implementation, consider these enhancement possibilities:
 - What patterns would you use for broadcasting updates to multiple connected clients?
 - How might you implement request queuing for rate-limited operations?
 
-The Echo server demonstrates that with Hermes, you can build feature-rich MCP servers that leverage Phoenix's strengths while maintaining clean separation between transport, protocol, and business logic. This architecture enables you to focus on your domain-specific tools while Hermes handles the protocol complexity.
+The Echo server demonstrates that with Anubis, you can build feature-rich MCP servers that leverage Phoenix's strengths while maintaining clean separation between transport, protocol, and business logic. This architecture enables you to focus on your domain-specific tools while Anubis handles the protocol complexity.

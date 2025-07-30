@@ -1,7 +1,7 @@
 defmodule EchoWeb.Router do
   use EchoWeb, :router
 
-  alias Hermes.Server.Transport.SSE
+  alias Anubis.Server.Transport.SSE
 
   pipeline :sse do
     plug :accepts, ["json", "event-stream"]

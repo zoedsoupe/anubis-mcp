@@ -49,7 +49,7 @@ defmodule Mix.Interactive.CLI do
       _ ->
         IO.puts("""
         #{UI.colors().error}ERROR: Unknown transport type "#{transport}"
-        Usage: hermes-mcp --transport [sse|websocket|stdio|streamable_http] [options]
+        Usage: anubis-mcp --transport [sse|websocket|stdio|streamable_http] [options]
 
         Available transports:
           sse             - SSE transport implementation
@@ -70,14 +70,14 @@ defmodule Mix.Interactive.CLI do
     server_url =
       Path.join(server_options[:base_url], server_options[:base_path] || "")
 
-    IO.puts(UI.header("HERMES MCP SSE INTERACTIVE"))
+    IO.puts(UI.header("ANUBIS MCP SSE INTERACTIVE"))
 
-    client_info = %{"name" => "Hermes.CLI.SSE", "version" => "0.1.0"}
+    client_info = %{"name" => "Anubis.CLI.SSE", "version" => "0.1.0"}
     name = SSETest
     transport = SSETest.Transport
 
     opts = [name: name, transport: {:sse, server_options}, client_info: client_info]
-    {:ok, _} = Hermes.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
 
     sse = Process.whereis(transport)
 
@@ -100,9 +100,9 @@ defmodule Mix.Interactive.CLI do
     server_url =
       Path.join(server_options[:base_url], server_options[:base_path] || "")
 
-    IO.puts(UI.header("HERMES MCP WEBSOCKET INTERACTIVE"))
+    IO.puts(UI.header("ANUBIS MCP WEBSOCKET INTERACTIVE"))
 
-    client_info = %{"name" => "Hermes.CLI.Websocket", "version" => "0.1.0"}
+    client_info = %{"name" => "Anubis.CLI.Websocket", "version" => "0.1.0"}
 
     name = WebsocketTest
     transport = WebsocketTest.Transport
@@ -113,7 +113,7 @@ defmodule Mix.Interactive.CLI do
       client_info: client_info
     ]
 
-    {:ok, _} = Hermes.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
 
     ws = Process.whereis(transport)
 
@@ -134,7 +134,7 @@ defmodule Mix.Interactive.CLI do
     cmd = opts[:command] || "mcp"
     args = String.split(opts[:args] || "run,priv/dev/echo/index.py", ",", trim: true)
 
-    IO.puts(UI.header("HERMES MCP STDIO INTERACTIVE"))
+    IO.puts(UI.header("ANUBIS MCP STDIO INTERACTIVE"))
 
     IO.puts("#{UI.colors().info}Starting STDIO interaction MCP server#{UI.colors().reset}\n")
 
@@ -146,7 +146,7 @@ defmodule Mix.Interactive.CLI do
       System.halt(1)
     end
 
-    client_info = %{"name" => "Hermes.CLI.STDIO", "versoin" => "0.1.0"}
+    client_info = %{"name" => "Anubis.CLI.STDIO", "versoin" => "0.1.0"}
     name = STDIOTest
     transport = STDIOTest.Transport
 
@@ -156,7 +156,7 @@ defmodule Mix.Interactive.CLI do
       client_info: client_info
     ]
 
-    {:ok, _} = Hermes.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
 
     if Process.whereis(transport) do
       IO.puts("#{UI.colors().success}✓ STDIO transport started#{UI.colors().reset}")
@@ -182,9 +182,9 @@ defmodule Mix.Interactive.CLI do
     server_url =
       Path.join(server_options[:base_url], server_options[:base_path] || "")
 
-    IO.puts(UI.header("HERMES MCP STREAMABLE HTTP INTERACTIVE"))
+    IO.puts(UI.header("ANUBIS MCP STREAMABLE HTTP INTERACTIVE"))
 
-    client_info = %{"name" => "Hermes.CLI.StreamableHTTP", "version" => "0.1.0"}
+    client_info = %{"name" => "Anubis.CLI.StreamableHTTP", "version" => "0.1.0"}
     name = StreamableHTTPTest
     transport = StreamableHTTPTest.Transport
 
@@ -194,7 +194,7 @@ defmodule Mix.Interactive.CLI do
       client_info: client_info
     ]
 
-    {:ok, _} = Hermes.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
 
     http = Process.whereis(transport)
 
@@ -243,7 +243,7 @@ defmodule Mix.Interactive.CLI do
   def check_client_connection(client, attempt) do
     :timer.sleep(200 * attempt)
 
-    if cap = Hermes.Client.Base.get_server_capabilities(client) do
+    if cap = Anubis.Client.Base.get_server_capabilities(client) do
       IO.puts("#{UI.colors().info}Server capabilities: #{inspect(cap, pretty: true)}#{UI.colors().reset}")
 
       IO.puts("#{UI.colors().success}✓ Successfully connected to server#{UI.colors().reset}")
@@ -335,11 +335,11 @@ defmodule Mix.Interactive.CLI do
     colors = UI.colors()
 
     IO.puts("""
-    #{colors.info}Hermes MCP Client v#{@version}#{colors.reset}
+    #{colors.info}Anubis MCP Client v#{@version}#{colors.reset}
     #{colors.success}A command-line MCP client for interacting with MCP servers#{colors.reset}
 
     #{colors.info}USAGE:#{colors.reset}
-      hermes-mcp [OPTIONS]
+      anubis-mcp [OPTIONS]
 
     #{colors.info}OPTIONS:#{colors.reset}
       #{colors.command}-h, --help#{colors.reset}             Show this help message and exit
@@ -368,19 +368,19 @@ defmodule Mix.Interactive.CLI do
 
     #{colors.info}EXAMPLES:#{colors.reset}
       # Connect to a local SSE server
-      hermes-mcp 
+      anubis-mcp 
 
       # Connect to a remote SSE server
-      hermes-mcp --transport sse --base-url https://remote-server.example.com
+      anubis-mcp --transport sse --base-url https://remote-server.example.com
 
       # Connect to a WebSocket server
-      hermes-mcp --transport websocket --base-url http://localhost:8000 --ws-path /mcp/ws
+      anubis-mcp --transport websocket --base-url http://localhost:8000 --ws-path /mcp/ws
 
       # Connect to a StreamableHTTP server
-      hermes-mcp --transport streamable_http --base-url http://localhost:8000
+      anubis-mcp --transport streamable_http --base-url http://localhost:8000
 
       # Run a local MCP server with stdio
-      hermes-mcp --transport stdio --command ./my-mcp-server --args arg1,arg2
+      anubis-mcp --transport stdio --command ./my-mcp-server --args arg1,arg2
 
     #{colors.info}INTERACTIVE COMMANDS:#{colors.reset}
       Once connected, type 'help' to see available interactive commands.

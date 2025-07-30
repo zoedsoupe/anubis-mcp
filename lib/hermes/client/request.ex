@@ -1,4 +1,4 @@
-defmodule Hermes.Client.Request do
+defmodule Anubis.Client.Request do
   @moduledoc false
 
   @type t :: %__MODULE__{
@@ -50,7 +50,7 @@ defmodule Hermes.Client.Request do
   end
 end
 
-defimpl Inspect, for: Hermes.Client.Request do
+defimpl Inspect, for: Anubis.Client.Request do
   def inspect(%{id: id, method: method, start_time: start_time}, _opts) do
     elapsed = System.monotonic_time(:millisecond) - start_time
     "#MCP.Client.Request<#{id} #{method} (elapsed: #{elapsed}ms)>"

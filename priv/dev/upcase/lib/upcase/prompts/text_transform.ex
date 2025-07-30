@@ -1,8 +1,8 @@
 defmodule Upcase.Prompts.TextTransform do
   @moduledoc "Generate prompts for various text transformation requests"
 
-  use Hermes.Server.Component, type: :prompt
-  alias Hermes.Server.Response
+  use Anubis.Server.Component, type: :prompt
+  alias Anubis.Server.Response
 
   schema do
     %{

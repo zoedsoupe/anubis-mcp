@@ -1,13 +1,13 @@
-defmodule Hermes.Server.Supervisor do
+defmodule Anubis.Server.Supervisor do
   @moduledoc false
 
   use Supervisor, restart: :permanent
 
-  alias Hermes.Server.Base
-  alias Hermes.Server.Session
-  alias Hermes.Server.Transport.SSE
-  alias Hermes.Server.Transport.STDIO
-  alias Hermes.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Base
+  alias Anubis.Server.Session
+  alias Anubis.Server.Transport.SSE
+  alias Anubis.Server.Transport.STDIO
+  alias Anubis.Server.Transport.StreamableHTTP
 
   @type sse :: {:sse, keyword()}
   @type stream_http :: {:streamable_http, keyword()}
@@ -26,11 +26,11 @@ defmodule Hermes.Server.Supervisor do
 
   ## Parameters
 
-    * `server` - The module implementing `Hermes.Server`
+    * `server` - The module implementing `Anubis.Server`
     * `opts` - Options including:
       * `:transport` - Transport configuration (required)
       * `:name` - Supervisor name (optional, defaults to registered name)
-      * `:registry` - The custom registry to use to manage processes names (defaults to `Hermes.Server.Registry`)
+      * `:registry` - The custom registry to use to manage processes names (defaults to `Anubis.Server.Registry`)
       * `:session_idle_timeout` - Time in milliseconds before idle sessions expire (default: 30 minutes)
       * `:request_timeout` - Time limit in miliseconds for server requests timeout (defaults to 30s)
       * `:server_name` - Custom server name, non derived from the `server_module`
@@ -38,22 +38,22 @@ defmodule Hermes.Server.Supervisor do
   ## Examples
 
       # Start with STDIO transport
-      Hermes.Server.Supervisor.start_link(MyServer, [], transport: :stdio)
+      Anubis.Server.Supervisor.start_link(MyServer, [], transport: :stdio)
 
       # Start with StreamableHTTP transport
-      Hermes.Server.Supervisor.start_link(MyServer, [],
+      Anubis.Server.Supervisor.start_link(MyServer, [],
         transport: {:streamable_http, port: 8080}
       )
       
       # With custom session timeout (15 minutes)
-      Hermes.Server.Supervisor.start_link(MyServer, [],
+      Anubis.Server.Supervisor.start_link(MyServer, [],
         transport: {:streamable_http, port: 8080},
         session_idle_timeout: :timer.minutes(15)
       )
   """
   @spec start_link(server :: module, list(start_option)) :: Supervisor.on_start()
   def start_link(server, opts) when is_atom(server) and is_list(opts) do
-    registry = Keyword.get(opts, :registry, Hermes.Server.Registry)
+    registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
     name = Keyword.get(opts, :name, registry.supervisor(server))
     opts = Keyword.merge(opts, module: server, registry: registry)
     Supervisor.start_link(__MODULE__, opts, name: name)
@@ -159,7 +159,7 @@ defmodule Hermes.Server.Supervisor do
 
   defp http_server_running? do
     cond do
-      System.get_env("HERMES_MCP_SERVER") -> true
+      System.get_env("ANUBIS_MCP_SERVER") -> true
       System.get_env("PHX_SERVER") -> true
       true -> check_phoenix_config()
     end

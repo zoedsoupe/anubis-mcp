@@ -1,7 +1,7 @@
-defmodule Hermes.Transport.STDIOTest do
+defmodule Anubis.Transport.STDIOTest do
   use ExUnit.Case, async: false
 
-  alias Hermes.Transport.STDIO
+  alias Anubis.Transport.STDIO
 
   @moduletag capture_log: true
 
@@ -23,7 +23,7 @@ defmodule Hermes.Transport.STDIOTest do
       ]
 
       assert {:ok, pid} = STDIO.start_link(opts)
-      assert Process.whereis(:test_transport) != nil
+      assert Process.whereis(:test_transport)
 
       safe_stop(pid)
     end
@@ -103,7 +103,7 @@ defmodule Hermes.Transport.STDIOTest do
         )
 
       original_pid = Process.whereis(transport_name)
-      assert original_pid != nil
+      assert original_pid
 
       ref = Process.monitor(original_pid)
 

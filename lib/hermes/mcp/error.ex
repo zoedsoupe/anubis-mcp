@@ -1,4 +1,4 @@
-defmodule Hermes.MCP.Error do
+defmodule Anubis.MCP.Error do
   @moduledoc """
   Fluent API for building MCP protocol errors.
 
@@ -15,25 +15,25 @@ defmodule Hermes.MCP.Error do
   ## Examples
 
       # Protocol errors
-      Hermes.MCP.Error.protocol(:parse_error)
-      Hermes.MCP.Error.protocol(:method_not_found, %{method: "unknown"})
+      Anubis.MCP.Error.protocol(:parse_error)
+      Anubis.MCP.Error.protocol(:method_not_found, %{method: "unknown"})
 
       # Transport errors
-      Hermes.MCP.Error.transport(:connection_refused)
-      Hermes.MCP.Error.transport(:timeout, %{elapsed_ms: 30000})
+      Anubis.MCP.Error.transport(:connection_refused)
+      Anubis.MCP.Error.transport(:timeout, %{elapsed_ms: 30000})
 
       # Resource errors
-      Hermes.MCP.Error.resource(:not_found, %{uri: "file:///missing.txt"})
+      Anubis.MCP.Error.resource(:not_found, %{uri: "file:///missing.txt"})
 
       # Execution errors with custom messages
-      Hermes.MCP.Error.execution("Database connection failed", %{retries: 3})
+      Anubis.MCP.Error.execution("Database connection failed", %{retries: 3})
 
       # Converting from JSON-RPC
-      Hermes.MCP.Error.from_json_rpc(%{"code" => -32700, "message" => "Parse error"})
+      Anubis.MCP.Error.from_json_rpc(%{"code" => -32700, "message" => "Parse error"})
   """
 
-  alias Hermes.MCP.ID
-  alias Hermes.MCP.Message
+  alias Anubis.MCP.ID
+  alias Anubis.MCP.Message
 
   @type t :: %__MODULE__{
           code: integer(),
@@ -83,11 +83,11 @@ defmodule Hermes.MCP.Error do
 
   ## Examples
 
-      iex> Hermes.MCP.Error.protocol(:parse_error)
-      %Hermes.MCP.Error{code: -32700, reason: :parse_error, message: "Parse error", data: %{}}
+      iex> Anubis.MCP.Error.protocol(:parse_error)
+      %Anubis.MCP.Error{code: -32700, reason: :parse_error, message: "Parse error", data: %{}}
 
-      iex> Hermes.MCP.Error.protocol(:method_not_found, %{method: "foo"})
-      %Hermes.MCP.Error{code: -32601, reason: :method_not_found, message: "Method not found", data: %{method: "foo"}}
+      iex> Anubis.MCP.Error.protocol(:method_not_found, %{method: "foo"})
+      %Anubis.MCP.Error{code: -32601, reason: :method_not_found, message: "Method not found", data: %{method: "foo"}}
   """
   @spec protocol(atom(), map()) :: t()
   def protocol(reason, data \\ %{})
@@ -144,11 +144,11 @@ defmodule Hermes.MCP.Error do
 
   ## Examples
 
-      iex> Hermes.MCP.Error.transport(:connection_refused)
-      %Hermes.MCP.Error{code: -32000, reason: :connection_refused, message: "Connection Refused", data: %{}}
+      iex> Anubis.MCP.Error.transport(:connection_refused)
+      %Anubis.MCP.Error{code: -32000, reason: :connection_refused, message: "Connection Refused", data: %{}}
 
-      iex> Hermes.MCP.Error.transport(:timeout, %{elapsed_ms: 5000})
-      %Hermes.MCP.Error{code: -32000, reason: :timeout, message: "Timeout", data: %{elapsed_ms: 5000}}
+      iex> Anubis.MCP.Error.transport(:timeout, %{elapsed_ms: 5000})
+      %Anubis.MCP.Error{code: -32000, reason: :timeout, message: "Timeout", data: %{elapsed_ms: 5000}}
   """
   @spec transport(atom(), map()) :: t()
   def transport(reason, data \\ %{}) when is_atom(reason) do
@@ -169,8 +169,8 @@ defmodule Hermes.MCP.Error do
 
   ## Examples
 
-      iex> Hermes.MCP.Error.resource(:not_found, %{uri: "file:///missing.txt"})
-      %Hermes.MCP.Error{code: -32002, reason: :resource_not_found, message: "Resource not found", data: %{uri: "file:///missing.txt"}}
+      iex> Anubis.MCP.Error.resource(:not_found, %{uri: "file:///missing.txt"})
+      %Anubis.MCP.Error{code: -32002, reason: :resource_not_found, message: "Resource not found", data: %{uri: "file:///missing.txt"}}
   """
   @spec resource(atom(), map()) :: t()
   def resource(:not_found, data \\ %{}) do
@@ -189,11 +189,11 @@ defmodule Hermes.MCP.Error do
 
   ## Examples
 
-      iex> Hermes.MCP.Error.execution("Database connection failed")
-      %Hermes.MCP.Error{code: -32000, reason: :execution_error, message: "Database connection failed", data: %{}}
+      iex> Anubis.MCP.Error.execution("Database connection failed")
+      %Anubis.MCP.Error{code: -32000, reason: :execution_error, message: "Database connection failed", data: %{}}
 
-      iex> Hermes.MCP.Error.execution("API rate limit exceeded", %{retry_after: 60})
-      %Hermes.MCP.Error{code: -32000, reason: :execution_error, message: "API rate limit exceeded", data: %{retry_after: 60}}
+      iex> Anubis.MCP.Error.execution("API rate limit exceeded", %{retry_after: 60})
+      %Anubis.MCP.Error{code: -32000, reason: :execution_error, message: "API rate limit exceeded", data: %{retry_after: 60}}
   """
   @spec execution(String.t(), map()) :: t()
   def execution(message, data \\ %{}) when is_binary(message) do
@@ -210,11 +210,11 @@ defmodule Hermes.MCP.Error do
 
   ## Examples
 
-      iex> Hermes.MCP.Error.from_json_rpc(%{"code" => -32700, "message" => "Parse error"})
-      %Hermes.MCP.Error{code: -32700, reason: :parse_error, message: "Parse error", data: %{}}
+      iex> Anubis.MCP.Error.from_json_rpc(%{"code" => -32700, "message" => "Parse error"})
+      %Anubis.MCP.Error{code: -32700, reason: :parse_error, message: "Parse error", data: %{}}
 
-      iex> Hermes.MCP.Error.from_json_rpc(%{"code" => -32002, "message" => "Not found", "data" => %{"uri" => "/file"}})
-      %Hermes.MCP.Error{code: -32002, reason: :resource_not_found, message: "Not found", data: %{"uri" => "/file"}}
+      iex> Anubis.MCP.Error.from_json_rpc(%{"code" => -32002, "message" => "Not found", "data" => %{"uri" => "/file"}})
+      %Anubis.MCP.Error{code: -32002, reason: :resource_not_found, message: "Not found", data: %{"uri" => "/file"}}
   """
   @spec from_json_rpc(map()) :: t()
   def from_json_rpc(%{"code" => code} = error) do
@@ -231,8 +231,8 @@ defmodule Hermes.MCP.Error do
 
   ## Examples
 
-      iex> error = Hermes.MCP.Error.protocol(:parse_error)
-      iex> {:ok, encoded} = Hermes.MCP.Error.to_json_rpc(error, "req-123")
+      iex> error = Anubis.MCP.Error.protocol(:parse_error)
+      iex> {:ok, encoded} = Anubis.MCP.Error.to_json_rpc(error, "req-123")
       iex> String.contains?(encoded, "Parse error")
       true
   """
@@ -284,7 +284,7 @@ defmodule Hermes.MCP.Error do
   end
 end
 
-defimpl Inspect, for: Hermes.MCP.Error do
+defimpl Inspect, for: Anubis.MCP.Error do
   def inspect(%{reason: reason, message: message, data: data}, _opts) do
     details =
       cond do

@@ -1,22 +1,22 @@
-# Hermes MCP
+# Anubis MCP
 
-[![hex.pm](https://img.shields.io/hexpm/v/hermes_mcp.svg)](https://hex.pm/packages/hermes_mcp)
-[![docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/hermes_mcp)
-[![ci](https://github.com/cloudwalk/hermes-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudwalk/hermes-mcp/actions/workflows/ci.yml)
-[![Hex Downloads](https://img.shields.io/hexpm/dt/hermes_mcp)](https://hex.pm/packages/hermes_mcp)
+[![hex.pm](https://img.shields.io/hexpm/v/anubis_mcp.svg)](https://hex.pm/packages/anubis_mcp)
+[![docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/anubis_mcp)
+[![ci](https://github.com/zoedsoupe/anubis-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/zoedsoupe/anubis-mcp/actions/workflows/ci.yml)
+[![Hex Downloads](https://img.shields.io/hexpm/dt/anubis_mcp)](https://hex.pm/packages/anubis_mcp)
 
 A high-performance Model Context Protocol (MCP) implementation in Elixir.
 
 ## Overview
 
-Hermes MCP is a comprehensive Elixir SDK for the [Model Context Protocol](https://spec.modelcontextprotocol.io/), providing complete client and server implementations with Elixir's exceptional concurrency model and fault tolerance.
+Anubis MCP is a comprehensive Elixir SDK for the [Model Context Protocol](https://spec.modelcontextprotocol.io/), providing complete client and server implementations with Elixir's exceptional concurrency model and fault tolerance.
 
 ## Installation
 
 ```elixir
 def deps do
   [
-    {:hermes_mcp, "~> 0.13.0"}  # x-release-please-version
+    {:anubis_mcp, "~> 0.13.0"}  # x-release-please-version
   ]
 end
 ```
@@ -28,7 +28,7 @@ end
 ```elixir
 # Define a server with tools capabilities
 defmodule MyApp.MCPServer do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "My Server",
     version: "1.0.0",
     capabilities: [:tools]
@@ -56,12 +56,12 @@ end
 
 # Add to your application supervisor
 children = [
-  Hermes.Server.Registry,
+  Anubis.Server.Registry,
   {MyApp.MCPServer, transport: :streamable_http}
 ]
 
 # Add to your Plug/Phoenix router (if using HTTP)
-forward "/mcp", Hermes.Server.Transport.StreamableHTTP.Plug, server: MyApp.MCPServer
+forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug, server: MyApp.MCPServer
 ```
 
 Now you can achieve your MCP server on `http://localhost:<port>/mcp`
@@ -71,7 +71,7 @@ Now you can achieve your MCP server on `http://localhost:<port>/mcp`
 ```elixir
 # Define a client module
 defmodule MyApp.MCPClient do
-  use Hermes.Client,
+  use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
     protocol_version: "2025-03-26"
@@ -87,13 +87,15 @@ children = [
 {:ok, result} = MyApp.MCPClient.call_tool("echo", %{text: "this will be echoed!"})
 ```
 
-## Why Hermes?
+## Why Anubis?
 
-Named after Hermes, the Greek god of boundaries and communication, this library facilitates seamless interaction between Large Language Models and external tools - serving as a messenger between AI and data sources.
+Named after Anubis, the Egyptian god of the underworld and guide to the afterlife, this library helps navigate the boundaries between Large Language Models and external tools. Much like how Anubis guided souls through transitions, this SDK guides data through the liminal space between AI and external systems. 
+
+The name also carries personal significance - after my journey through the corporate underworld ended unexpectedly, this project was reborn from the ashes of its predecessor, ready to guide developers through their own MCP adventures. Sometimes you need a deity of transitions to help you... transition. 🏳️‍⚧️
 
 ## Documentation
 
-For detailed guides and examples, visit the [official documentation](https://hexdocs.pm/hermes_mcp).
+For detailed guides and examples, visit the [official documentation](https://hexdocs.pm/anubis_mcp).
 
 ## Examples
 
@@ -105,4 +107,4 @@ We have build some elixir implementation examples using `plug` based and `phoeni
 
 ## License
 
-MIT License. See [LICENSE](./LICENSE) for details.
+LGPL-v3 License. See [LICENSE](./LICENSE) for details.

@@ -1,4 +1,4 @@
-defmodule Hermes.Server.ComponentDateTimeTest do
+defmodule Anubis.Server.ComponentDateTimeTest do
   use ExUnit.Case, async: true
 
   alias TestTools.DateListTool

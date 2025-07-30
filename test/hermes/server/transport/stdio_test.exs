@@ -1,9 +1,9 @@
-defmodule Hermes.Server.Transport.STDIOTest do
-  use Hermes.MCP.Case, async: false
+defmodule Anubis.Server.Transport.STDIOTest do
+  use Anubis.MCP.Case, async: false
 
   import ExUnit.CaptureIO
 
-  alias Hermes.Server.Transport.STDIO
+  alias Anubis.Server.Transport.STDIO
 
   @moduletag capture_log: true, capture_io: true, skip: true
 

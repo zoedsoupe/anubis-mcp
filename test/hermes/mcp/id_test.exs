@@ -1,7 +1,7 @@
-defmodule Hermes.MCP.IDTest do
+defmodule Anubis.MCP.IDTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.MCP.ID
+  alias Anubis.MCP.ID
 
   @moduletag capture_log: true
 

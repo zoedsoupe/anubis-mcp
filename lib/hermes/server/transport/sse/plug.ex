@@ -1,18 +1,18 @@
 if Code.ensure_loaded?(Plug) do
-  defmodule Hermes.Server.Transport.SSE.Plug do
+  defmodule Anubis.Server.Transport.SSE.Plug do
     @moduledoc """
     A Plug implementation for the SSE (Server-Sent Events) transport.
 
     > #### Deprecated {: .warning}
     >
     > This Plug has been deprecated as of MCP specification 2025-03-26 in favor
-    > of the Streamable HTTP transport (`Hermes.Server.Transport.StreamableHTTP.Plug`).
+    > of the Streamable HTTP transport (`Anubis.Server.Transport.StreamableHTTP.Plug`).
     >
     > The HTTP+SSE transport from protocol version 2024-11-05 has been replaced by
     > the more flexible Streamable HTTP transport which supports optional SSE streaming
     > on a single endpoint.
     >
-    > For new implementations, please use `Hermes.Server.Transport.StreamableHTTP.Plug` instead.
+    > For new implementations, please use `Anubis.Server.Transport.StreamableHTTP.Plug` instead.
     > This module is maintained for backward compatibility with clients using the
     > 2024-11-05 protocol version.
 
@@ -37,24 +37,24 @@ if Code.ensure_loaded?(Plug) do
           pipe_through :mcp
 
           # SSE endpoint
-          get "/sse", Hermes.Server.Transport.SSE.Plug,
+          get "/sse", Anubis.Server.Transport.SSE.Plug,
             server: :your_server_name, mode: :sse
 
           # POST endpoint
-          post "/messages", Hermes.Server.Transport.SSE.Plug,
+          post "/messages", Anubis.Server.Transport.SSE.Plug,
             server: :your_server_name, mode: :post
         end
 
     ## Usage in Plug Router (Standalone)
 
         # When using in a standalone Plug.Router app
-        plug Hermes.Server.Transport.SSE.Plug,
+        plug Anubis.Server.Transport.SSE.Plug,
           server: :your_server_name,
           mode: :sse,
           at: "/sse",
           method_whitelist: ["GET"]
 
-        plug Hermes.Server.Transport.SSE.Plug,
+        plug Anubis.Server.Transport.SSE.Plug,
           server: :your_server_name,
           mode: :post,
           at: "/messages",
@@ -65,7 +65,7 @@ if Code.ensure_loaded?(Plug) do
     - `:server` - The server process name (required)
     - `:mode` - Either `:sse` or `:post` to determine endpoint behavior (required)
     - `:timeout` - Request timeout in milliseconds (default: 30000)
-    - `:registry` - The registry to use. See `Hermes.Server.Registry.Adapter` for more information (default: Elixir's Registry implementation)
+    - `:registry` - The registry to use. See `Anubis.Server.Registry.Adapter` for more information (default: Elixir's Registry implementation)
 
     ## Security Features
 
@@ -84,20 +84,20 @@ if Code.ensure_loaded?(Plug) do
 
     @behaviour Plug
 
-    use Hermes.Logging
+    use Anubis.Logging
 
     import Plug.Conn
 
-    alias Hermes.MCP.Error
-    alias Hermes.MCP.ID
-    alias Hermes.MCP.Message
-    alias Hermes.Server.Transport.SSE
-    alias Hermes.SSE.Streaming
+    alias Anubis.MCP.Error
+    alias Anubis.MCP.ID
+    alias Anubis.MCP.Message
+    alias Anubis.Server.Transport.SSE
+    alias Anubis.SSE.Streaming
     alias Plug.Conn.Unfetched
 
     require Message
 
-    @deprecated "Use Hermes.Server.Transport.StreamableHTTP.Plug instead"
+    @deprecated "Use Anubis.Server.Transport.StreamableHTTP.Plug instead"
 
     @default_timeout 30_000
 
@@ -112,7 +112,7 @@ if Code.ensure_loaded?(Plug) do
         raise ArgumentError, "SSE.Plug requires :mode to be either :sse or :post"
       end
 
-      registry = Keyword.get(opts, :registry, Hermes.Server.Registry)
+      registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
       transport = registry.transport(server, :sse)
       timeout = Keyword.get(opts, :timeout, @default_timeout)
 

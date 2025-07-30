@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Response do
+defmodule Anubis.Server.Response do
   @moduledoc """
   Fluent interface for building MCP component responses.
 

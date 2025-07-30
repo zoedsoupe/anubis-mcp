@@ -1,8 +1,8 @@
-defmodule Hermes.Server.Component.ToolAnnotationsTest do
-  use Hermes.MCP.Case, async: true
+defmodule Anubis.Server.Component.ToolAnnotationsTest do
+  use Anubis.MCP.Case, async: true
 
-  alias Hermes.MCP.Message
-  alias Hermes.Server.Component
+  alias Anubis.MCP.Message
+  alias Anubis.Server.Component
 
   defmodule ToolWithAnnotations do
     @moduledoc "A tool with annotations"
@@ -15,7 +15,7 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
         "tags" => ["nlp", "text", "analysis"]
       }
 
-    alias Hermes.Server.Response
+    alias Anubis.Server.Response
 
     schema do
       field(:text, {:required, :string}, description: "Text to process")
@@ -32,7 +32,7 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
 
     use Component, type: :tool
 
-    alias Hermes.Server.Response
+    alias Anubis.Server.Response
 
     schema do
       field(:input, {:required, :string}, description: "Input value")
@@ -49,7 +49,7 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
 
     use Component, type: :tool
 
-    alias Hermes.Server.Response
+    alias Anubis.Server.Response
 
     schema do
       field(:data, {:required, :string}, description: "Data to process")
@@ -78,7 +78,7 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
 
     use Component, type: :tool
 
-    alias Hermes.Server.Response
+    alias Anubis.Server.Response
 
     schema do
       field(:query, {:required, :string}, description: "Query to process")
@@ -122,7 +122,7 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
 
     use Component, type: :tool
 
-    alias Hermes.Server.Response
+    alias Anubis.Server.Response
 
     schema do
       field(:input, {:required, :string})
@@ -179,7 +179,7 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
   describe "tools/list with annotations" do
     defmodule ServerWithAnnotatedTools do
       @moduledoc false
-      use Hermes.Server,
+      use Anubis.Server,
         name: "Test Server with Annotations",
         version: "1.0.0",
         capabilities: [:tools]
@@ -198,22 +198,22 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
     end
 
     setup do
-      start_supervised!(Hermes.Server.Registry)
+      start_supervised!(Anubis.Server.Registry)
       transport = start_supervised!(StubTransport)
 
       # Start session supervisor
       start_supervised!(
-        {Hermes.Server.Session.Supervisor, server: ServerWithAnnotatedTools, registry: Hermes.Server.Registry}
+        {Anubis.Server.Session.Supervisor, server: ServerWithAnnotatedTools, registry: Anubis.Server.Registry}
       )
 
       server_opts = [
         module: ServerWithAnnotatedTools,
         name: :test_server,
-        registry: Hermes.Server.Registry,
+        registry: Anubis.Server.Registry,
         transport: [layer: StubTransport, name: transport]
       ]
 
-      server = start_supervised!({Hermes.Server.Base, server_opts})
+      server = start_supervised!({Anubis.Server.Base, server_opts})
 
       # Initialize the server
       session_id = "test-session"
@@ -307,7 +307,7 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
   describe "tools/call with output schema validation" do
     defmodule ServerWithOutputSchemaTools do
       @moduledoc false
-      use Hermes.Server,
+      use Anubis.Server,
         name: "Test Server with Output Schema Tools",
         version: "1.0.0",
         capabilities: [:tools]
@@ -324,22 +324,22 @@ defmodule Hermes.Server.Component.ToolAnnotationsTest do
     end
 
     setup do
-      start_supervised!(Hermes.Server.Registry)
+      start_supervised!(Anubis.Server.Registry)
       transport = start_supervised!(StubTransport)
 
       # Start session supervisor
       start_supervised!(
-        {Hermes.Server.Session.Supervisor, server: ServerWithOutputSchemaTools, registry: Hermes.Server.Registry}
+        {Anubis.Server.Session.Supervisor, server: ServerWithOutputSchemaTools, registry: Anubis.Server.Registry}
       )
 
       server_opts = [
         module: ServerWithOutputSchemaTools,
         name: :test_output_server,
-        registry: Hermes.Server.Registry,
+        registry: Anubis.Server.Registry,
         transport: [layer: StubTransport, name: transport]
       ]
 
-      server = start_supervised!({Hermes.Server.Base, server_opts})
+      server = start_supervised!({Anubis.Server.Base, server_opts})
 
       # Initialize the server
       session_id = "test-session-output"

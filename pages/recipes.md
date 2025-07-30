@@ -1,6 +1,6 @@
 # Recipes
 
-Let's explore patterns we've discovered while building with Hermes MCP. What challenges are you facing?
+Let's explore patterns we've discovered while building with Anubis MCP. What challenges are you facing?
 
 ## Authentication & Authorization
 
@@ -10,7 +10,7 @@ How do you ensure only authorized clients can access your server? Let's explore 
 
 ```elixir
 defmodule MyApp.AuthenticatedServer do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "secure-app",
     version: "1.0.0",
     capabilities: [:tools]
@@ -41,7 +41,7 @@ Now your tools can access the authenticated user:
 
 ```elixir
 defmodule MyApp.SecureTool do
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   def execute(params, frame) do
     user = frame.assigns.user
@@ -58,7 +58,7 @@ For more complex authentication flows:
 
 ```elixir
 defmodule MyApp.OAuthResource do
-  use Hermes.Server.Component,
+  use Anubis.Server.Component,
     type: :resource,
     uri: "auth://oauth/status"
 
@@ -86,7 +86,7 @@ Need to work with files? Here's a safe pattern:
 
 ```elixir
 defmodule MyApp.FileManager do
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   @moduledoc "Safely read files from allowed directories"
 
@@ -133,7 +133,7 @@ How do you expose database queries safely?
 
 ```elixir
 defmodule MyApp.QueryBuilder do
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   @moduledoc "Build and execute safe database queries"
 
@@ -187,7 +187,7 @@ What about operations that take time? Let's handle them gracefully:
 
 ```elixir
 defmodule MyApp.ReportGenerator do
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   @moduledoc "Generate complex reports"
 
@@ -215,7 +215,7 @@ defmodule MyApp.ReportGenerator do
 end
 
 defmodule MyApp.ReportStatus do
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field :task_id, :string, required: true
@@ -242,7 +242,7 @@ Need to push updates to clients? Here's how:
 
 ```elixir
 defmodule MyApp.LiveDataServer do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "live-data",
     version: "1.0.0",
     capabilities: [:tools]
@@ -280,14 +280,14 @@ defmodule MyApp.ComponentTest do
 
       # Test schema validation
       assert {:error, errors} =
-        Hermes.Server.Component.validate_params(tool, %{})
+        Anubis.Server.Component.validate_params(tool, %{})
 
       assert errors[:required_field] == ["is required"]
     end
 
     test "executes with valid params" do
       params = %{required_field: "value", optional_field: 42}
-      frame = %Hermes.Server.Frame{assigns: %{user: %{id: 1}}}
+      frame = %Anubis.Server.Frame{assigns: %{user: %{id: 1}}}
 
       assert {:ok, result} = MyApp.ComplexTool.execute(params, frame)
       assert result.processed == true
@@ -302,7 +302,7 @@ How do you handle and recover from errors gracefully?
 
 ```elixir
 defmodule MyApp.ResilientTool do
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   def execute(params, frame) do
     with {:ok, data} <- fetch_external_data(params),
@@ -336,7 +336,7 @@ Need to handle high-throughput scenarios?
 
 ```elixir
 defmodule MyApp.BatchProcessor do
-  use Hermes.Server.Component, type: :tool
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field :items, {:array, :map}, required: true, max_items: 1000
@@ -399,7 +399,7 @@ Send structured logs to connected clients:
 
 ```elixir
 defmodule MyApp.LoggingServer do
-  use Hermes.Server,
+  use Anubis.Server,
     name: "logging-demo",
     version: "1.0.0",
     capabilities: [:logging]  # Advertise logging support
@@ -419,18 +419,18 @@ end
 
 ### Configuring Library Logging
 
-Control Hermes's internal logging verbosity:
+Control Anubis's internal logging verbosity:
 
 ```elixir
 # In config/config.exs
-config :hermes_mcp, :logging,
+config :anubis_mcp, :logging,
   client_events: :info,      # Client lifecycle events
   server_events: :info,      # Server request handling
   transport_events: :warning, # Connection issues
   protocol_messages: :debug   # Raw message exchanges
 
 # Or disable completely for production
-config :hermes_mcp, log: false
+config :anubis_mcp, log: false
 ```
 
 ## What Pattern Do You Need?

@@ -1,4 +1,4 @@
-defmodule Hermes.MCP.Case do
+defmodule Anubis.MCP.Case do
   @moduledoc """
   Test case template for MCP protocol testing.
 
@@ -13,11 +13,11 @@ defmodule Hermes.MCP.Case do
     quote do
       use ExUnit.Case, async: unquote(async)
 
-      import Hermes.MCP.Assertions
-      import Hermes.MCP.Builders
-      import Hermes.MCP.Setup
+      import Anubis.MCP.Assertions
+      import Anubis.MCP.Builders
+      import Anubis.MCP.Setup
 
-      require Hermes.MCP.Message
+      require Anubis.MCP.Message
 
       @moduletag capture_log: true
     end

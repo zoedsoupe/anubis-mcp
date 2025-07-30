@@ -3,12 +3,12 @@ defmodule Ascii.MCPServer do
   MCP server that generates ASCII art from text.
   """
 
-  use Hermes.Server,
+  use Anubis.Server,
     name: "ASCII Art Generator",
     version: "1.0.0",
     capabilities: [:tools]
 
-  alias Hermes.MCP.Error
+  alias Anubis.MCP.Error
   require Logger
 
   @impl true

@@ -1,8 +1,8 @@
 defmodule Upcase.Tools.Upcase do
   @moduledoc "Converts text to upcase"
 
-  use Hermes.Server.Component, type: :tool
-  alias Hermes.Server.Response
+  use Anubis.Server.Component, type: :tool
+  alias Anubis.Server.Response
 
   schema do
     %{text: {:required, :string}}

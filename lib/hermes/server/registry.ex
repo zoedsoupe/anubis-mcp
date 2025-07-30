@@ -1,4 +1,4 @@
-defmodule Hermes.Server.Registry do
+defmodule Anubis.Server.Registry do
   @moduledoc false
 
   def child_spec(_) do

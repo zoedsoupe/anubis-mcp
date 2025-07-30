@@ -1,7 +1,7 @@
-defmodule Hermes.Server.ResponseTest do
+defmodule Anubis.Server.ResponseTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   describe "tool responses" do
     test "builds a simple text response" do

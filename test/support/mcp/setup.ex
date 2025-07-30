@@ -1,15 +1,15 @@
-defmodule Hermes.MCP.Setup do
+defmodule Anubis.MCP.Setup do
   @moduledoc false
 
+  import Anubis.MCP.Assertions
   import ExUnit.Assertions, only: [assert: 1]
   import ExUnit.Callbacks, only: [start_supervised!: 1, start_supervised!: 2]
-  import Hermes.MCP.Assertions
 
-  alias Hermes.MCP.Builders
-  alias Hermes.MCP.Message
-  alias Hermes.Server.Base
-  alias Hermes.Server.Session
-  alias Hermes.Server.Transport
+  alias Anubis.MCP.Builders
+  alias Anubis.MCP.Message
+  alias Anubis.Server.Base
+  alias Anubis.Server.Session
+  alias Anubis.Server.Transport
 
   require Message
 
@@ -77,7 +77,7 @@ defmodule Hermes.MCP.Setup do
     capabilities = ctx[:client_capabilities]
     info = ctx[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"}
 
-    start_supervised!(Hermes.Server.Registry)
+    start_supervised!(Anubis.Server.Registry)
     transport = start_supervised!(StubTransport)
 
     client_opts = [
@@ -87,10 +87,10 @@ defmodule Hermes.MCP.Setup do
       protocol_version: protocol_version
     ]
 
-    client = start_supervised!({Hermes.Client.Base, client_opts})
+    client = start_supervised!({Anubis.Client.Base, client_opts})
     unique_id = System.unique_integer([:positive])
     start_supervised!({StubServer, transport: StubTransport}, id: unique_id)
-    assert server = Hermes.Server.Registry.whereis_server(StubServer)
+    assert server = Anubis.Server.Registry.whereis_server(StubServer)
 
     Process.sleep(30)
 
@@ -112,21 +112,21 @@ defmodule Hermes.MCP.Setup do
     capabilities = ctx[:client_capabilities]
     info = ctx[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"}
 
-    start_supervised!(Hermes.Server.Registry)
+    start_supervised!(Anubis.Server.Registry)
     transport = start_supervised!(StubTransport)
 
     # Start session supervisor
-    start_supervised!({Hermes.Server.Session.Supervisor, server: StubServer, registry: Hermes.Server.Registry})
+    start_supervised!({Anubis.Server.Session.Supervisor, server: StubServer, registry: Anubis.Server.Registry})
 
     server_opts = [
       module: StubServer,
-      name: Hermes.Server.Registry.server(StubServer),
-      registry: Hermes.Server.Registry,
+      name: Anubis.Server.Registry.server(StubServer),
+      registry: Anubis.Server.Registry,
       transport: [layer: StubTransport, name: transport]
     ]
 
     server = start_supervised!({Base, server_opts})
-    assert server == Hermes.Server.Registry.whereis_server(StubServer)
+    assert server == Anubis.Server.Registry.whereis_server(StubServer)
 
     request = Builders.init_request(protocol_version, info, capabilities)
     assert {:ok, _} = GenServer.call(server, {:request, request, session_id, %{}})
@@ -145,7 +145,7 @@ defmodule Hermes.MCP.Setup do
       transport: transport,
       server: server,
       session_id: session_id,
-      server_registry: Hermes.Server.Registry,
+      server_registry: Anubis.Server.Registry,
       server_module: StubServer
     })
   end
@@ -203,14 +203,14 @@ defmodule Hermes.MCP.Setup do
 
   def server_with_stdio_transport(ctx) do
     name = ctx[:name] || :test_stdio_server
-    name = Hermes.Server.Registry.server(name)
+    name = Anubis.Server.Registry.server(name)
     server_module = ctx[:server_module] || StubServer
 
-    transport_name = Hermes.Server.Registry.transport(server_module, :stdio)
+    transport_name = Anubis.Server.Registry.transport(server_module, :stdio)
     start_supervised!({Transport.STDIO, name: transport_name, server: server_module})
 
     assert transport =
-             Hermes.Server.Registry.whereis_transport(server_module, :stdio)
+             Anubis.Server.Registry.whereis_transport(server_module, :stdio)
 
     opts = [
       module: server_module,
@@ -219,21 +219,21 @@ defmodule Hermes.MCP.Setup do
     ]
 
     start_supervised!({Base, opts})
-    assert server = Hermes.Server.Registry.whereis_server(server_module)
+    assert server = Anubis.Server.Registry.whereis_server(server_module)
 
     Map.merge(ctx, %{server: server, transport: transport})
   end
 
   def with_default_registry(ctx) do
-    start_supervised!(Hermes.Server.Registry)
-    assert Process.whereis(Hermes.Server.Registry)
-    Map.put(ctx, :registry, Hermes.Server.Registry)
+    start_supervised!(Anubis.Server.Registry)
+    assert Process.whereis(Anubis.Server.Registry)
+    Map.put(ctx, :registry, Anubis.Server.Registry)
   end
 
   def initialized_client(context) do
     import Mox
 
-    start_supervised!(Hermes.Server.Registry)
+    start_supervised!(Anubis.Server.Registry)
 
     server_capabilities =
       context[:server_capabilities] ||
@@ -250,14 +250,14 @@ defmodule Hermes.MCP.Setup do
 
     client =
       start_supervised!(
-        {Hermes.Client.Base,
-         transport: [layer: Hermes.MockTransport, name: MockTransport],
+        {Anubis.Client.Base,
+         transport: [layer: Anubis.MockTransport, name: MockTransport],
          client_info: client_info,
          capabilities: client_capabilities},
         restart: :temporary
       )
 
-    allow(Hermes.MockTransport, self(), fn -> client end)
+    allow(Anubis.MockTransport, self(), fn -> client end)
     initialize_client(client, server_capabilities: server_capabilities)
 
     Map.put(context, :client, client)

@@ -1,4 +1,4 @@
-defmodule Hermes.Client do
+defmodule Anubis.Client do
   @moduledoc """
   High-level DSL for defining MCP (Model Context Protocol) clients.
 
@@ -11,7 +11,7 @@ defmodule Hermes.Client do
   Define a client module:
 
       defmodule MyApp.AnthropicClient do
-        use Hermes.Client,
+        use Anubis.Client,
           name: "MyApp",
           version: "1.0.0",
           protocol_version: "2024-11-05",
@@ -75,7 +75,7 @@ defmodule Hermes.Client do
   named as `Module.concat(ClientName, "Transport")`.
   """
 
-  alias Hermes.Client.Base
+  alias Anubis.Client.Base
 
   @client_capabilities ~w(roots sampling)a
 
@@ -139,7 +139,7 @@ defmodule Hermes.Client do
       defoverridable child_spec: 1
 
       def start_link(opts) do
-        Hermes.Client.Supervisor.start_link(__MODULE__, opts)
+        Anubis.Client.Supervisor.start_link(__MODULE__, opts)
       end
 
       @doc """

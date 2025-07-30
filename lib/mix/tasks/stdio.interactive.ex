@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.Hermes.Stdio.Interactive do
+defmodule Mix.Tasks.Anubis.Stdio.Interactive do
   @shortdoc "Test the STDIO transport implementation interactively."
 
   @moduledoc """
@@ -12,7 +12,7 @@ defmodule Mix.Tasks.Hermes.Stdio.Interactive do
 
   use Mix.Task
 
-  alias Hermes.Transport.STDIO
+  alias Anubis.Transport.STDIO
   alias Mix.Interactive.SupervisedShell
   alias Mix.Interactive.UI
 
@@ -24,7 +24,7 @@ defmodule Mix.Tasks.Hermes.Stdio.Interactive do
 
   def run(args) do
     # Start required applications without requiring a project
-    Application.ensure_all_started(:hermes_mcp)
+    Application.ensure_all_started(:anubis_mcp)
 
     # Parse arguments and set log level
     {parsed, _} =
@@ -42,7 +42,7 @@ defmodule Mix.Tasks.Hermes.Stdio.Interactive do
     args =
       String.split(parsed[:args] || "run,priv/dev/echo/index.py", ",", trim: true)
 
-    header = UI.header("HERMES MCP STDIO INTERACTIVE")
+    header = UI.header("ANUBIS MCP STDIO INTERACTIVE")
     IO.puts(header)
 
     IO.puts("#{UI.colors().info}Starting STDIO interaction MCP server#{UI.colors().reset}\n")

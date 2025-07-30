@@ -7,7 +7,7 @@ A quick reference for the most commonly used functions. Looking for more detaile
 ### Module Definition
 
 ```elixir
-use Hermes.Client, options
+use Anubis.Client, options
 ```
 
 **Required Options:**
@@ -82,7 +82,7 @@ Functions that make requests accept options:
 ### Module Definition
 
 ```elixir
-use Hermes.Server, options
+use Anubis.Server, options
 ```
 
 **Required Options:**
@@ -106,7 +106,7 @@ use Hermes.Server, options
 ### Server Callbacks
 
 ```elixir
-@behaviour Hermes.Server.Behaviour
+@behaviour Anubis.Server.Behaviour
 
 # Optional initialization
 def init(arg, frame) do
@@ -129,7 +129,7 @@ end
 #### Tools
 
 ```elixir
-use Hermes.Server.Component, type: :tool
+use Anubis.Server.Component, type: :tool
 
 # Schema definition
 schema do
@@ -146,7 +146,7 @@ end
 #### Resources
 
 ```elixir
-use Hermes.Server.Component,
+use Anubis.Server.Component,
   type: :resource,
   uri: "resource://type/name"
 
@@ -159,7 +159,7 @@ end
 #### Prompts
 
 ```elixir
-use Hermes.Server.Component, type: :prompt
+use Anubis.Server.Component, type: :prompt
 
 # Schema for arguments
 schema do
@@ -176,7 +176,7 @@ end
 
 ```elixir
 defmodule MyApp.Server do
-  use Hermes.Server, ...
+  use Anubis.Server, ...
 
   # Register components
   component MyApp.MyTool
@@ -253,8 +253,8 @@ Errors are automatically formatted according to MCP protocol. You can return:
 
 **Interactive Testing:**
 
-- `mix hermes.stdio.interactive Module` - Test with STDIO
-- `mix hermes.streamable_http.interactive Module` - Test with HTTP
+- `mix anubis.stdio.interactive Module` - Test with STDIO
+- `mix anubis.streamable_http.interactive Module` - Test with HTTP
 
 **Development:**
 

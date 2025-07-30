@@ -1,7 +1,7 @@
 defmodule Mix.Interactive.UI do
   @moduledoc false
 
-  alias Hermes.MCP.Error
+  alias Anubis.MCP.Error
   alias IO.ANSI
 
   @colors %{

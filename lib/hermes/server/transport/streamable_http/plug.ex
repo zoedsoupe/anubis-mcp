@@ -1,5 +1,5 @@
 if Code.ensure_loaded?(Plug) do
-  defmodule Hermes.Server.Transport.StreamableHTTP.Plug do
+  defmodule Anubis.Server.Transport.StreamableHTTP.Plug do
     @moduledoc """
     A Plug implementation for the Streamable HTTP transport.
 
@@ -23,19 +23,19 @@ if Code.ensure_loaded?(Plug) do
 
         scope "/mcp" do
           pipe_through :mcp
-          forward "/", to: Hermes.Server.Transport.StreamableHTTP.Plug, server: :your_server_name
+          forward "/", to: Anubis.Server.Transport.StreamableHTTP.Plug, server: :your_server_name
         end
 
     ## Usage in Plug Router
 
-        forward "/mcp", to: Hermes.Server.Transport.StreamableHTTP.Plug, init_opts: [server: :your_server_name]
+        forward "/mcp", to: Anubis.Server.Transport.StreamableHTTP.Plug, init_opts: [server: :your_server_name]
 
     ## Configuration Options
 
     - `:server` - The server process name (required)
     - `:session_header` - Custom header name for session ID (default: "mcp-session-id")
     - `:timeout` - Request timeout in milliseconds (default: 30000)
-    - `:registry` - The registry to use. See `Hermes.Server.Registry.Adapter` for more information (default: Elixir's Registry implementation)
+    - `:registry` - The registry to use. See `Anubis.Server.Registry.Adapter` for more information (default: Elixir's Registry implementation)
 
     ## Security Features
 
@@ -56,15 +56,15 @@ if Code.ensure_loaded?(Plug) do
 
     @behaviour Plug
 
-    use Hermes.Logging
+    use Anubis.Logging
 
     import Plug.Conn
 
-    alias Hermes.MCP.Error
-    alias Hermes.MCP.ID
-    alias Hermes.MCP.Message
-    alias Hermes.Server.Transport.StreamableHTTP
-    alias Hermes.SSE.Streaming
+    alias Anubis.MCP.Error
+    alias Anubis.MCP.ID
+    alias Anubis.MCP.Message
+    alias Anubis.Server.Transport.StreamableHTTP
+    alias Anubis.SSE.Streaming
     alias Plug.Conn.Unfetched
 
     require Message
@@ -77,7 +77,7 @@ if Code.ensure_loaded?(Plug) do
     @impl Plug
     def init(opts) do
       server = Keyword.fetch!(opts, :server)
-      registry = Keyword.get(opts, :registry, Hermes.Server.Registry)
+      registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
       transport = registry.transport(server, :streamable_http)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       timeout = Keyword.get(opts, :timeout, @default_timeout)

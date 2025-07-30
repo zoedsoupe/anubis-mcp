@@ -1,7 +1,7 @@
-defmodule Hermes.MCP.ResponseTest do
+defmodule Anubis.MCP.ResponseTest do
   use ExUnit.Case, async: true
 
-  alias Hermes.MCP.Response
+  alias Anubis.MCP.Response
 
   @moduletag capture_log: true
 

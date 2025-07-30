@@ -1,10 +1,10 @@
 if Code.ensure_loaded?(Plug) do
-  defmodule Hermes.SSE.Streaming do
+  defmodule Anubis.SSE.Streaming do
     @moduledoc false
 
-    use Hermes.Logging
+    use Anubis.Logging
 
-    alias Hermes.SSE.Event
+    alias Anubis.SSE.Event
 
     @type conn :: Plug.Conn.t()
     @type transport :: GenServer.server()

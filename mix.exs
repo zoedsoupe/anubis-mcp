@@ -1,12 +1,12 @@
-defmodule Hermes.MixProject do
+defmodule Anubis.MixProject do
   use Mix.Project
 
   @version "0.13.0"
-  @source_url "https://github.com/cloudwalk/hermes-mcp"
+  @source_url "https://github.com/zoedsoupe/anubis-mcp"
 
   def project do
     [
-      app: :hermes_mcp,
+      app: :anubis_mcp,
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
@@ -33,7 +33,7 @@ defmodule Hermes.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Hermes.Application, []}
+      mod: {Anubis.Application, []}
     ]
   end
 
@@ -66,10 +66,10 @@ defmodule Hermes.MixProject do
   # Define releases for standalone binaries
   def releases do
     [
-      hermes_mcp: [
+      anubis_mcp: [
         steps: [:assemble, &Burrito.wrap/1],
         applications: [
-          hermes_mcp: :permanent
+          anubis_mcp: :permanent
         ],
         include_executables_for: [:unix, :windows],
         burrito: [
@@ -82,18 +82,18 @@ defmodule Hermes.MixProject do
         ],
         # Set the CLI module as the main entry point
         default_release: true,
-        main_module: Hermes.CLI
+        main_module: Anubis.CLI
       ]
     ]
   end
 
   defp package do
     %{
-      licenses: ["MIT"],
+      licenses: ["LGPL-3.0"],
       contributors: ["zoedsoupe"],
       links: %{
         "GitHub" => @source_url,
-        "Docs" => "https://hexdocs.pm/hermes_mcp"
+        "Docs" => "https://hexdocs.pm/anubis_mcp"
       },
       files: ~w[lib mix.exs README.md CHANGELOG.md LICENSE .formatter.exs]
     }
@@ -127,7 +127,7 @@ defmodule Hermes.MixProject do
           "README.md",
           "pages/home.md"
         ],
-        "Building with Hermes": [
+        "Building with Anubis": [
           "pages/building-a-client.md",
           "pages/building-a-server.md"
         ],

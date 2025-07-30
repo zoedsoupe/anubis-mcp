@@ -1,20 +1,20 @@
-defmodule Hermes.Client.Base do
+defmodule Anubis.Client.Base do
   @moduledoc false
 
   use GenServer
-  use Hermes.Logging
+  use Anubis.Logging
 
   import Peri
 
-  alias Hermes.Client.Cache
-  alias Hermes.Client.Operation
-  alias Hermes.Client.Request
-  alias Hermes.Client.State
-  alias Hermes.MCP.Error
-  alias Hermes.MCP.Message
-  alias Hermes.MCP.Response
-  alias Hermes.Protocol
-  alias Hermes.Telemetry
+  alias Anubis.Client.Cache
+  alias Anubis.Client.Operation
+  alias Anubis.Client.Request
+  alias Anubis.Client.State
+  alias Anubis.MCP.Error
+  alias Anubis.MCP.Message
+  alias Anubis.MCP.Response
+  alias Anubis.Protocol
+  alias Anubis.Telemetry
 
   require Message
 
@@ -72,16 +72,16 @@ defmodule Hermes.Client.Base do
   @typedoc """
   MCP client transport options
 
-  - `:layer` - The transport layer to use, either `Hermes.Transport.STDIO`, `Hermes.Transport.SSE`, `Hermes.Transport.WebSocket`, or `Hermes.Transport.StreamableHTTP` (required)
+  - `:layer` - The transport layer to use, either `Anubis.Transport.STDIO`, `Anubis.Transport.SSE`, `Anubis.Transport.WebSocket`, or `Anubis.Transport.StreamableHTTP` (required)
   - `:name` - The transport optional custom name
   """
   @type transport ::
           list(
             {:layer,
-             Hermes.Transport.STDIO
-             | Hermes.Transport.SSE
-             | Hermes.Transport.WebSocket
-             | Hermes.Transport.StreamableHTTP}
+             Anubis.Transport.STDIO
+             | Anubis.Transport.SSE
+             | Anubis.Transport.WebSocket
+             | Anubis.Transport.StreamableHTTP}
             | {:name, GenServer.server()}
           )
 
@@ -132,8 +132,8 @@ defmodule Hermes.Client.Base do
           | GenServer.option()
 
   defschema(:parse_options, [
-    {:name, {{:custom, &Hermes.genserver_name/1}, {:default, __MODULE__}}},
-    {:transport, {:required, {:custom, &Hermes.client_transport/1}}},
+    {:name, {{:custom, &Anubis.genserver_name/1}, {:default, __MODULE__}}},
+    {:transport, {:required, {:custom, &Anubis.client_transport/1}}},
     {:client_info, {:required, :map}},
     {:capabilities, {:required, :map}},
     {:protocol_version, {:string, {:default, @default_protocol_version}}}
@@ -428,7 +428,7 @@ defmodule Hermes.Client.Base do
       # Get completion for a prompt argument
       ref = %{"type" => "ref/prompt", "name" => "code_review"}
       argument = %{"name" => "language", "value" => "py"}
-      {:ok, response} = Hermes.Client.complete(client, ref, argument)
+      {:ok, response} = Anubis.Client.complete(client, ref, argument)
       
       # Access the completion values
       values = get_in(Response.unwrap(response), ["completion", "values"])
@@ -616,7 +616,7 @@ defmodule Hermes.Client.Base do
 
   ## Examples
 
-      iex> Hermes.Client.add_root(client, "file:///home/user/project", "My Project")
+      iex> Anubis.Client.add_root(client, "file:///home/user/project", "My Project")
       :ok
   """
   @spec add_root(t, String.t(), String.t() | nil, opts :: Keyword.t()) :: :ok
@@ -637,7 +637,7 @@ defmodule Hermes.Client.Base do
 
   ## Examples
 
-      iex> Hermes.Client.remove_root(client, "file:///home/user/project")
+      iex> Anubis.Client.remove_root(client, "file:///home/user/project")
       :ok
   """
   @spec remove_root(t, String.t(), opts :: Keyword.t()) :: :ok
@@ -657,7 +657,7 @@ defmodule Hermes.Client.Base do
 
   ## Examples
 
-      iex> Hermes.Client.list_roots(client)
+      iex> Anubis.Client.list_roots(client)
       [%{uri: "file:///home/user/project", name: "My Project"}]
   """
   @spec list_roots(t, opts :: Keyword.t()) :: [map()]
@@ -677,7 +677,7 @@ defmodule Hermes.Client.Base do
 
   ## Examples
 
-      iex> Hermes.Client.clear_roots(client)
+      iex> Anubis.Client.clear_roots(client)
       :ok
   """
   @spec clear_roots(t, opts :: Keyword.t()) :: :ok

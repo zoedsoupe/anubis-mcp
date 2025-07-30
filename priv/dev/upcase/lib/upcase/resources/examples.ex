@@ -1,12 +1,12 @@
 defmodule Upcase.Resources.Examples do
   @moduledoc "Provides example texts for transformation"
 
-  use Hermes.Server.Component,
+  use Anubis.Server.Component,
     type: :resource,
     uri: "upcase://examples",
     mime_type: "application/json"
 
-  alias Hermes.Server.Response
+  alias Anubis.Server.Response
 
   @impl true
   def read(_params, frame) do

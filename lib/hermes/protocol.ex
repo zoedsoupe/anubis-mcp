@@ -1,7 +1,7 @@
-defmodule Hermes.Protocol do
+defmodule Anubis.Protocol do
   @moduledoc false
 
-  alias Hermes.MCP.Error
+  alias Anubis.MCP.Error
 
   @type version :: String.t()
   @type feature :: atom()
