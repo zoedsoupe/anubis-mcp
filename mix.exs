@@ -89,7 +89,7 @@ defmodule Anubis.MixProject do
 
   defp package do
     %{
-      licenses: ["MIT"],
+      licenses: ["LGPL-3.0"],
       contributors: ["zoedsoupe"],
       links: %{
         "GitHub" => @source_url,
