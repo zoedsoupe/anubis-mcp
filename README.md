@@ -16,7 +16,7 @@ Anubis MCP is a comprehensive Elixir SDK for the [Model Context Protocol](https:
 ```elixir
 def deps do
   [
-    {:anubis_mcp, "~> 0.13.0"}  # x-release-please-version
+    {:anubis_mcp, "~> 0.13.1"}  # x-release-please-version
   ]
 end
 ```
