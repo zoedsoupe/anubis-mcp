@@ -36,9 +36,23 @@ defmodule Anubis.Server.Handlers.Prompts do
     end
   end
 
+  def handle_get(%{"params" => %{"name" => prompt_name}}, frame, server) do
+    registered_prompts = Handlers.get_server_prompts(server, frame)
+
+    if prompt = find_prompt_module(registered_prompts, prompt_name) do
+      with {:ok, params} <- validate_params(%{}, prompt, frame),
+           do: forward_to(server, prompt, params, frame)
+    else
+      payload = %{message: "Prompt not found: #{prompt_name}"}
+      {:error, Error.protocol(:invalid_params, payload), frame}
+    end
+  end
+
   # Private functions
 
   defp find_prompt_module(prompts, name), do: Enum.find(prompts, &(&1.name == name))
+
+  defp validate_params(_, %Prompt{validate_input: nil}, _), do: {:ok, %{}}
 
   defp validate_params(params, %Prompt{} = prompt, frame) do
     with {:error, errors} <- prompt.validate_input.(params) do

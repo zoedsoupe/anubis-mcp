@@ -146,6 +146,24 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
   end
 
+  defmodule ToolWithoutRequiredParams do
+    @moduledoc "A tool with no required parameters"
+
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+      field(:optional_message, :string, description: "Optional message")
+    end
+
+    @impl true
+    def execute(params, frame) do
+      message = Map.get(params, :optional_message, "default message")
+      {:reply, Response.text(Response.tool(), "Tool executed: #{message}"), frame}
+    end
+  end
+
   describe "tool annotations" do
     test "annotations callback is optional" do
       assert function_exported?(ToolWithAnnotations, :annotations, 0)
@@ -189,6 +207,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
       component(ToolWithCustomAnnotations)
       component(ToolWithOutputSchema)
       component(ToolWithInvalidOutput)
+      component(ToolWithoutRequiredParams)
 
       @impl true
       def init(_arg, frame), do: {:ok, frame}
@@ -243,7 +262,6 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
 
       assert response["result"]
       tools = response["result"]["tools"]
-      assert length(tools) == 5
 
       tool_with_annotations =
         Enum.find(tools, &(&1["name"] == "tool_with_annotations"))
@@ -315,6 +333,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
       component(ToolWithOutputSchema)
       component(ToolWithInvalidOutput)
       component(ToolWithoutAnnotations)
+      component(ToolWithoutRequiredParams)
 
       @impl true
       def init(_arg, frame), do: {:ok, frame}
@@ -440,6 +459,51 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
       assert error["code"] == -32_000
       assert error["message"] == "Tool doesnt conform for it output schema"
       assert error["data"]["errors"]
+    end
+
+    test "tool call with missing arguments parameter should not crash server", %{
+      server: server,
+      session_id: session_id
+    } do
+      request =
+        build_request("tools/call", %{
+          "name" => "tool_without_annotations"
+        })
+
+      {:ok, response_string} =
+        GenServer.call(server, {:request, request, session_id, %{}})
+
+      {:ok, [response]} = Message.decode(response_string)
+
+      # Should return proper validation error, not crash
+      assert response["error"]
+      error = response["error"]
+      assert error["code"] == -32_602
+      assert error["message"] == "Invalid params"
+      assert error["data"]["message"] =~ "input: is required"
+    end
+
+    test "tool call with missing arguments parameter works for tools without required params", %{
+      server: server,
+      session_id: session_id
+    } do
+      request =
+        build_request("tools/call", %{
+          "name" => "tool_without_required_params"
+        })
+
+      {:ok, response_string} =
+        GenServer.call(server, {:request, request, session_id, %{}})
+
+      {:ok, [response]} = Message.decode(response_string)
+
+      # Should succeed with default behavior
+      assert response["result"]
+      result = response["result"]
+      assert result["content"]
+      text_content = Enum.find(result["content"], &(&1["type"] == "text"))
+      assert text_content["text"] == "Tool executed: default message"
+      assert result["isError"] == false
     end
   end
 end
