@@ -36,9 +36,23 @@ defmodule Anubis.Server.Handlers.Tools do
     end
   end
 
+  def handle_call(%{"params" => %{"name" => tool_name}}, frame, server) do
+    registered_tools = Handlers.get_server_tools(server, frame)
+
+    if tool = find_tool_module(registered_tools, tool_name) do
+      with {:ok, params} <- validate_params(%{}, tool, frame),
+           do: forward_to(server, tool, params, frame)
+    else
+      payload = %{message: "Tool not found: #{tool_name}"}
+      {:error, Error.protocol(:invalid_params, payload), frame}
+    end
+  end
+
   # Private functions
 
   defp find_tool_module(tools, name), do: Enum.find(tools, &(&1.name == name))
+
+  defp validate_params(_, %Tool{validate_input: nil}, _), do: {:ok, %{}}
 
   defp validate_params(params, %Tool{} = tool, frame) do
     with {:error, errors} <- tool.validate_input.(params) do
