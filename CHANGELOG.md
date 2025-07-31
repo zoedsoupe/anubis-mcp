@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.13.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.0...v0.13.1) (2025-07-31)
+
+
+### Bug Fixes
+
+* not crash server on empty tool/prompt args ([#4](https://github.com/zoedsoupe/anubis-mcp/issues/4)) ([ee8043f](https://github.com/zoedsoupe/anubis-mcp/commit/ee8043f331481790931d2d711b6df8f9cd7a4940))
+
+
+### Miscellaneous Chores
+
+* old release are from the original fork ([e99d8ba](https://github.com/zoedsoupe/anubis-mcp/commit/e99d8baa7e8c00f3105ce16f8ac2178698859278))
+* plug router config on readme ([#2](https://github.com/zoedsoupe/anubis-mcp/issues/2)) ([243176c](https://github.com/zoedsoupe/anubis-mcp/commit/243176cd95fdb3ac0a500630b4e80cc26bc33769))
+* readme ([bed6ff7](https://github.com/zoedsoupe/anubis-mcp/commit/bed6ff78ed617af3eaba6d316c1107643e8aea06))
+
 ## [0.13.0](https://github.com/cloudwalk/hermes-mcp/compare/v0.12.1...v0.13.0) (2025-07-18)
 
 
