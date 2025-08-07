@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.13.2](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.1...v0.13.2) (2025-08-07)
+
+
+### Bug Fixes
+
+* explicit handle title for components ([#9](https://github.com/zoedsoupe/anubis-mcp/issues/9)) ([1adfed2](https://github.com/zoedsoupe/anubis-mcp/commit/1adfed2f0e18a4cd2dc7d013556455a155a8ff7f))
+
+
+### Miscellaneous Chores
+
+* rename hermes folders/files to anubis ([#5](https://github.com/zoedsoupe/anubis-mcp/issues/5)) ([239ee3f](https://github.com/zoedsoupe/anubis-mcp/commit/239ee3f611fd9ba3a8234ee8155da1cb9a8b89c7))
+
 ## [0.13.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.0...v0.13.1) (2025-07-31)
 
 
