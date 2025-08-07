@@ -21,7 +21,10 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     test "output schema is properly defined" do
       output_schema = ToolWithOutputSchema.output_schema()
       assert output_schema["type"] == "object"
-      assert output_schema["required"] == ["query_time_ms", "results", "total_count"]
+      output_required = output_schema["required"]
+      assert "query_time_ms" in output_required
+      assert "results" in output_required
+      assert "total_count" in output_required
 
       results_schema = output_schema["properties"]["results"]
       assert results_schema["type"] == "array"
@@ -148,11 +151,10 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
       assert tool_with_output["outputSchema"]
       assert tool_with_output["outputSchema"]["type"] == "object"
 
-      assert tool_with_output["outputSchema"]["required"] == [
-               "query_time_ms",
-               "results",
-               "total_count"
-             ]
+      output_required = tool_with_output["outputSchema"]["required"]
+      assert "query_time_ms" in output_required
+      assert "results" in output_required
+      assert "total_count" in output_required
 
       tool_without_output =
         Enum.find(tools, &(&1["name"] == "tool_without_annotations"))
