@@ -109,6 +109,24 @@ defmodule Anubis.Server.Component.Resource do
   @callback uri() :: String.t()
 
   @doc """
+  Returns the `name` that identifies this resource.
+
+  Intended for programmatic or logical use, but used as a
+  display name in past specs or fallback (if title isn't present).
+  """
+  @callback name() :: String.t()
+
+  @doc """
+  Returns the title that identifies this resource.
+
+  Intended for UI and end-user contexts — optimized to be human-readable and easily understood,
+  even by those unfamiliar with domain-specific terminology.
+
+  If not provided, the name should be used for display.
+  """
+  @callback title() :: String.t()
+
+  @doc """
   Returns the MIME type of the resource content.
 
   Common MIME types:
@@ -145,6 +163,8 @@ defmodule Anubis.Server.Component.Resource do
               {:reply, response :: Response.t(), new_state :: Frame.t()}
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
+
+  @optional_callbacks title: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Resource

@@ -17,7 +17,11 @@ defmodule Anubis.Server.Component do
 
     behaviour_module = get_behaviour_module(type)
 
+    title = Keyword.get(opts, :title)
+
     uri = Keyword.get(opts, :uri)
+    basename = if uri && type == :resource, do: Path.basename(uri)
+    name = Keyword.get(opts, :name, basename)
     mime_type = Keyword.get(opts, :mime_type, "text/plain")
     annotations = Keyword.get(opts, :annotations)
 
@@ -45,6 +49,11 @@ defmodule Anubis.Server.Component do
       def __description__, do: @moduledoc
 
       if unquote(type) == :tool do
+        if title = unquote(title) do
+          @impl true
+          def title, do: title
+        end
+
         @impl true
         def input_schema do
           alias Anubis.Server.Component.Schema
@@ -59,6 +68,11 @@ defmodule Anubis.Server.Component do
       end
 
       if unquote(type) == :prompt do
+        if title = unquote(title) do
+          @impl true
+          def title, do: title
+        end
+
         @impl true
         def arguments do
           alias Anubis.Server.Component.Schema
@@ -70,6 +84,14 @@ defmodule Anubis.Server.Component do
       if unquote(type) == :resource do
         @impl true
         def uri, do: unquote(uri)
+
+        @impl true
+        def name, do: unquote(name)
+
+        if title = unquote(title) do
+          @impl true
+          def title, do: title
+        end
 
         @impl true
         def mime_type, do: unquote(mime_type)
