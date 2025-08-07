@@ -88,6 +88,7 @@ defmodule Anubis.Server.Component.Prompt do
 
   @type t :: %__MODULE__{
           name: String.t(),
+          title: String.t() | nil,
           description: String.t() | nil,
           arguments: map | nil,
           handler: module | nil,
@@ -96,11 +97,22 @@ defmodule Anubis.Server.Component.Prompt do
 
   defstruct [
     :name,
+    title: nil,
     description: nil,
     arguments: nil,
     handler: nil,
     validate_input: nil
   ]
+
+  @doc """
+  Returns the title that identifies this resource.
+
+  Intended for UI and end-user contexts — optimized to be human-readable and easily understood,
+  even by those unfamiliar with domain-specific terminology.
+
+  If not provided, the name should be used for display.
+  """
+  @callback title() :: String.t()
 
   @doc """
   Returns the list of arguments this prompt accepts.
@@ -159,6 +171,8 @@ defmodule Anubis.Server.Component.Prompt do
               {:reply, response :: Response.t(), new_state :: Frame.t()}
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
+
+  @optional_callbacks title: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Prompt

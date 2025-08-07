@@ -106,6 +106,17 @@ defmodule Anubis.Server.Component.Tool do
   @callback output_schema() :: schema()
 
   @doc """
+  Returns the title that identifies this resource.
+
+  Intended for UI and end-user contexts — optimized to be human-readable and easily understood,
+  even by those unfamiliar with domain-specific terminology.
+
+  If not provided, the name should be used for display, except if annotations.title is
+  defined, which takes precedence over `name` and `title`.
+  """
+  @callback title() :: String.t()
+
+  @doc """
   Returns optional annotations for the tool.
 
   Annotations provide additional metadata about the tool that may be used
@@ -159,7 +170,7 @@ defmodule Anubis.Server.Component.Tool do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks annotations: 0, output_schema: 0
+  @optional_callbacks annotations: 0, output_schema: 0, title: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Tool
