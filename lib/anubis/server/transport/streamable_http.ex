@@ -432,8 +432,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:noreply, state}
   end
 
-  def handle_info(_msg, state), do: {:noreply, state}
-
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{active_tasks: active_tasks} = state)
       when is_map_key(active_tasks, ref) do
     {task_info, active_tasks} = Map.pop(active_tasks, ref)
