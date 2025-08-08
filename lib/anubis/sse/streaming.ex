@@ -74,6 +74,13 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    def send_keep_alive(conn) do
+      case Plug.Conn.chunk(conn, ": keep-alive\n\n") do
+        {:ok, conn} -> {:ok, conn}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+
     # Private functions
 
     defp loop(conn, transport, session_id, event_counter) do
@@ -94,6 +101,12 @@ if Code.ensure_loaded?(Plug) do
               )
 
               conn
+          end
+
+        :sse_keep_alive ->
+          case send_keep_alive(conn) do
+            {:ok, conn} ->
+              loop(conn, transport, session_id, event_counter)
           end
 
         :close_sse ->
