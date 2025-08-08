@@ -431,12 +431,16 @@ defmodule Anubis.Server.Frame do
         fn params -> Peri.validate(raw_output, params) end
       end
 
+    annotations = opts[:annotations]
+    title = annotations[:title] || annotations["title"] || opts[:title] || name
+
     update_components(frame, %Tool{
       name: name,
       description: opts[:description],
       input_schema: Schema.to_json_schema(input_schema),
       output_schema: if(output_schema, do: Schema.to_json_schema(output_schema)),
-      annotations: opts[:annotations],
+      annotations: annotations,
+      title: title,
       validate_input: validate_input,
       validate_output: validate_output
     })
@@ -446,14 +450,16 @@ defmodule Anubis.Server.Frame do
   Registers a prompt definition.
   """
   @spec register_prompt(t, String.t(), list(prompt_opt)) :: t
-        when prompt_opt: {:description, String.t() | nil} | {:arguments, map | nil}
+        when prompt_opt: {:description, String.t() | nil} | {:arguments, map | nil} | {:title, String.t() | nil}
   def register_prompt(%__MODULE__{} = frame, name, opts) when is_binary(name) do
     arguments = Schema.normalize(opts[:arguments] || %{})
     raw_schema = Component.__clean_schema_for_peri__(arguments)
     validate_input = fn params -> Peri.validate(raw_schema, params) end
+    title = opts[:title] || name
 
     update_components(frame, %Prompt{
       name: name,
+      title: title,
       description: opts[:description],
       arguments: Schema.to_prompt_arguments(arguments),
       validate_input: validate_input
@@ -470,10 +476,12 @@ defmodule Anubis.Server.Frame do
                | {:description, String.t() | nil}
                | {:mime_type, String.t() | nil}
   def register_resource(%__MODULE__{} = frame, uri, opts) when is_binary(uri) do
+    name = opts[:name] || Path.basename(uri)
+
     update_components(frame, %Resource{
       uri: uri,
-      title: opts[:title],
-      name: opts[:name] || uri,
+      title: opts[:title] || name,
+      name: name,
       description: opts[:description],
       mime_type: opts[:mime_type] || "text/plain"
     })

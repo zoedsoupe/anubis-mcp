@@ -178,3 +178,163 @@ defmodule TestPrompts.LegacyPrompt do
     {:reply, Response.user_message(Response.prompt(), "hello"), frame}
   end
 end
+
+defmodule ToolWithAnnotations do
+  @moduledoc "A tool with annotations"
+
+  use Anubis.Server.Component,
+    type: :tool,
+    annotations: %{
+      "confidence" => 0.95,
+      "category" => "text-processing",
+      "tags" => ["nlp", "text", "analysis"]
+    }
+
+  alias Anubis.Server.Response
+
+  schema do
+    field(:text, {:required, :string}, description: "Text to process")
+  end
+
+  @impl true
+  def execute(%{text: text}, frame) do
+    {:reply, Response.text(Response.tool(), "Processed: #{text}"), frame}
+  end
+end
+
+defmodule ToolWithoutAnnotations do
+  @moduledoc "A tool without annotations"
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Anubis.Server.Response
+
+  schema do
+    field(:input, {:required, :string}, description: "Input value")
+  end
+
+  @impl true
+  def execute(%{input: input}, frame) do
+    {:reply, Response.text(Response.tool(), "Result: #{input}"), frame}
+  end
+end
+
+defmodule ToolWithCustomAnnotations do
+  @moduledoc "A tool with custom annotations implementation"
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Anubis.Server.Response
+
+  schema do
+    field(:data, {:required, :string}, description: "Data to process")
+  end
+
+  @impl true
+  def execute(%{data: data}, frame) do
+    {:reply, Response.text(Response.tool(), "Custom: #{data}"), frame}
+  end
+
+  @impl true
+  def annotations do
+    %{
+      "version" => "2.0",
+      "experimental" => true,
+      "capabilities" => %{
+        "streaming" => false,
+        "batch" => true
+      }
+    }
+  end
+end
+
+defmodule ToolWithOutputSchema do
+  @moduledoc "A tool with output schema"
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Anubis.Server.Response
+
+  schema do
+    field(:query, {:required, :string}, description: "Query to process")
+    field(:limit, :integer, description: "Result limit")
+  end
+
+  output_schema do
+    field(
+      :results,
+      {:required,
+       {:list,
+        %{
+          id: {:required, :string},
+          score: {:required, :float},
+          title: {:required, :string}
+        }}},
+      description: "Search results"
+    )
+
+    field(:total_count, {:required, :integer}, description: "Total number of results")
+    field(:query_time_ms, {:required, :float}, description: "Query execution time")
+  end
+
+  @impl true
+  def execute(%{query: query}, frame) do
+    results = %{
+      results: [
+        %{id: "1", score: 0.95, title: "Result for #{query}"},
+        %{id: "2", score: 0.87, title: "Another result"}
+      ],
+      total_count: 2,
+      query_time_ms: 12.5
+    }
+
+    {:reply, Response.structured(Response.tool(), results), frame}
+  end
+end
+
+defmodule ToolWithInvalidOutput do
+  @moduledoc "A tool that returns data not matching its output schema"
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Anubis.Server.Response
+
+  schema do
+    field(:input, {:required, :string})
+  end
+
+  output_schema do
+    field(:status, {:required, :string})
+    field(:count, {:required, :integer})
+  end
+
+  @impl true
+  def execute(%{input: _}, frame) do
+    # Intentionally return wrong type for count
+    invalid_data = %{
+      status: "ok",
+      # Wrong type!
+      count: "not a number"
+    }
+
+    {:reply, Response.structured(Response.tool(), invalid_data), frame}
+  end
+end
+
+defmodule ToolWithoutRequiredParams do
+  @moduledoc "A tool with no required parameters"
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Anubis.Server.Response
+
+  schema do
+    field(:optional_message, :string, description: "Optional message")
+  end
+
+  @impl true
+  def execute(params, frame) do
+    message = Map.get(params, :optional_message, "default message")
+    {:reply, Response.text(Response.tool(), "Tool executed: #{message}"), frame}
+  end
+end

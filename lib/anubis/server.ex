@@ -486,10 +486,17 @@ defmodule Anubis.Server do
 
   @doc false
   def __derive_component_name__(module) do
-    module
-    |> Module.split()
-    |> List.last()
-    |> Macro.underscore()
+    defined? = Anubis.exported?(module, :name, 0)
+    name = if defined?, do: module.name()
+
+    if is_nil(name) do
+      module
+      |> Module.split()
+      |> List.last()
+      |> Macro.underscore()
+    else
+      name
+    end
   end
 
   @doc false
@@ -499,11 +506,8 @@ defmodule Anubis.Server do
 
     quote do
       def __components__, do: Anubis.Server.parse_components(unquote(Macro.escape(components)))
-
       def __components__(:tool), do: Enum.filter(__components__(), &match?(%Tool{}, &1))
-
       def __components__(:prompt), do: Enum.filter(__components__(), &match?(%Prompt{}, &1))
-
       def __components__(:resource), do: Enum.filter(__components__(), &match?(%Resource{}, &1))
 
       @impl Anubis.Server
@@ -529,6 +533,8 @@ defmodule Anubis.Server do
   def parse_components({:tool, name, mod}) do
     annotations = if Anubis.exported?(mod, :annotations, 0), do: mod.annotations()
     output_schema = if Anubis.exported?(mod, :output_schema, 0), do: mod.output_schema()
+    title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+    title = determine_tool_title(annotations, title)
 
     validate_output =
       if output_schema do
@@ -549,6 +555,7 @@ defmodule Anubis.Server do
       [
         %Tool{
           name: name,
+          title: title,
           description: Component.get_description(mod),
           input_schema: mod.input_schema(),
           output_schema: output_schema,
@@ -564,6 +571,8 @@ defmodule Anubis.Server do
   end
 
   def parse_components({:prompt, name, mod}) do
+    title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+
     if Anubis.exported?(mod, :arguments, 0) do
       validate_input = fn params ->
         mod.__mcp_raw_schema__()
@@ -574,6 +583,7 @@ defmodule Anubis.Server do
       [
         %Prompt{
           name: name,
+          title: title,
           description: Component.get_description(mod),
           arguments: mod.arguments(),
           handler: mod,
@@ -586,11 +596,14 @@ defmodule Anubis.Server do
   end
 
   def parse_components({:resource, name, mod}) do
+    title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+
     if Anubis.exported?(mod, :uri, 0) do
       [
         %Resource{
           uri: mod.uri(),
           name: name,
+          title: title,
           description: Component.get_description(mod),
           mime_type: mod.mime_type(),
           handler: mod
@@ -600,6 +613,10 @@ defmodule Anubis.Server do
       []
     end
   end
+
+  defp determine_tool_title(%{"title" => title}, _) when is_binary(title), do: title
+  defp determine_tool_title(%{title: title}, _) when is_binary(title), do: title
+  defp determine_tool_title(_, title) when is_binary(title), do: title
 
   defp get_server_opts(module) do
     case Module.get_attribute(module, :anubis_server_opts, []) do
