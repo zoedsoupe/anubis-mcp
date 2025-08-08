@@ -107,6 +107,18 @@ if Code.ensure_loaded?(Plug) do
           case send_keep_alive(conn) do
             {:ok, conn} ->
               loop(conn, transport, session_id, event_counter)
+
+            {:error, reason} ->
+              Logging.transport_event(
+                "sse_keep_alive_failed",
+                %{
+                  session_id: session_id,
+                  reason: reason
+                },
+                level: :error
+              )
+
+              conn
           end
 
         :close_sse ->
