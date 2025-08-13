@@ -15,17 +15,17 @@ defmodule MyApp.AuthenticatedServer do
     version: "1.0.0",
     capabilities: [:tools]
 
-  def init(arg, frame) do
-    # Check API key from transport metadata
-    api_key = get_in(frame.transport, [:headers, "x-api-key"])
+  def validate_initialize(arg, frame) do
+    # Check Authorization header
+    auth_header = Anubis.Server.Frame.get_req_header(frame, "authorization")
 
-    case authenticate_api_key(api_key) do
+    case authenticate_api_key(auth_header) do
       {:ok, user} ->
         # Store user in frame assigns for later use
         {:ok, Map.put(frame, :assigns, %{user: user})}
 
-      :error ->
-        {:stop, :unauthorized}
+      _ ->
+        {:error, Anubis.MCP.Error.transport(:unauthorized)}
     end
   end
 

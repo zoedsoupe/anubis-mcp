@@ -237,7 +237,9 @@ defmodule Anubis.Server.Base do
       {:noreply, state}
     else
       {:error, err} ->
-        Logging.server_event("failed_send_notification", %{method: method, error: err}, level: :error)
+        Logging.server_event("failed_send_notification", %{method: method, error: err},
+          level: :error
+        )
 
         {:noreply, state}
     end
@@ -400,7 +402,8 @@ defmodule Anubis.Server.Base do
 
   # Request handling
 
-  defp handle_request(%{"params" => params} = request, session, state) when Message.is_initialize(request) do
+  defp handle_request(%{"params" => params} = request, session, state)
+       when Message.is_initialize(request) do
     %{
       "clientInfo" => client_info,
       "capabilities" => client_capabilities,
@@ -418,28 +421,50 @@ defmodule Anubis.Server.Base do
         client_capabilities
       )
 
-    result = %{
-      "protocolVersion" => protocol_version,
-      "serverInfo" => state.server_info,
-      "capabilities" => state.capabilities
-    }
-
     Logging.server_event("initializing", %{
       client_info: params["clientInfo"],
       client_capabilities: params["capabilities"],
       protocol_version: protocol_version
     })
 
-    Telemetry.execute(
-      Telemetry.event_server_response(),
-      %{system_time: System.system_time()},
-      %{method: "initialize", status: :success}
-    )
+    result =
+      if Anubis.exported?(state.module, :validate_initialize, 2),
+        do: state.module.validate_initialize(params, state.frame),
+        else: {:ok, state.frame}
 
-    {:reply, {:ok, Message.build_response(result, request["id"])}, state}
+    case result do
+      {:ok, frame} ->
+        Telemetry.execute(
+          Telemetry.event_server_response(),
+          %{system_time: System.system_time()},
+          %{method: "initialize", status: :success}
+        )
+
+        result = %{
+          "protocolVersion" => protocol_version,
+          "serverInfo" => state.server_info,
+          "capabilities" => state.capabilities
+        }
+
+        {:reply, {:ok, Message.build_response(result, request["id"])}, %{state | frame: frame}}
+
+      {:error, %Error{} = error, frame} ->
+        Telemetry.execute(
+          Telemetry.event_server_response(),
+          %{system_time: System.system_time()},
+          %{method: "initialize", status: :error}
+        )
+
+        {:reply, {:error, Message.build_error(Error.build_json_rpc(error), request["id"])},
+         %{state | frame: frame}}
+    end
   end
 
-  defp handle_request(%{"id" => request_id, "method" => "logging/setLevel"} = request, session, state)
+  defp handle_request(
+         %{"id" => request_id, "method" => "logging/setLevel"} = request,
+         session,
+         state
+       )
        when Server.is_supported_capability(state.capabilities, "logging") do
     level = request["params"]["level"]
     :ok = Session.set_log_level(session.name, level)
@@ -469,7 +494,11 @@ defmodule Anubis.Server.Base do
 
   # Notification handling
 
-  defp handle_notification(%{"method" => "notifications/initialized"}, session, %{module: module} = state) do
+  defp handle_notification(
+         %{"method" => "notifications/initialized"},
+         session,
+         %{module: module} = state
+       ) do
     Logging.server_event("client_initialized", %{session_id: session.id})
     :ok = Session.mark_initialized(session.name)
 
@@ -488,7 +517,11 @@ defmodule Anubis.Server.Base do
     {:noreply, %{state | frame: frame}}
   end
 
-  defp handle_notification(%{"method" => "notifications/cancelled"} = notification, session, state) do
+  defp handle_notification(
+         %{"method" => "notifications/cancelled"} = notification,
+         session,
+         state
+       ) do
     params = notification["params"] || %{}
     request_id = params["requestId"]
     reason = Map.get(params, "reason", "cancelled")
@@ -538,7 +571,10 @@ defmodule Anubis.Server.Base do
 
   # Helper functions
 
-  defp server_request(%{"id" => request_id, "method" => method} = request, %{module: module} = state) do
+  defp server_request(
+         %{"id" => request_id, "method" => method} = request,
+         %{module: module} = state
+       ) do
     case module.handle_request(request, state.frame) do
       {:reply, response, %Frame{} = frame} ->
         Telemetry.execute(
@@ -598,7 +634,8 @@ defmodule Anubis.Server.Base do
 
   @spec maybe_attach_session(session_id :: String.t(), map, t) ::
           {:ok, {session :: Session.t(), t}}
-  defp maybe_attach_session(session_id, context, %{sessions: sessions} = state) when is_map_key(sessions, session_id) do
+  defp maybe_attach_session(session_id, context, %{sessions: sessions} = state)
+       when is_map_key(sessions, session_id) do
     {session_name, _ref} = sessions[session_id]
     session = Session.get(session_name)
     state = reset_session_expiry(session_id, state)
@@ -606,7 +643,11 @@ defmodule Anubis.Server.Base do
     {:ok, {session, %{state | frame: populate_frame(state.frame, session, context, state)}}}
   end
 
-  defp maybe_attach_session(session_id, context, %{sessions: sessions, registry: registry} = state) do
+  defp maybe_attach_session(
+         session_id,
+         context,
+         %{sessions: sessions, registry: registry} = state
+       ) do
     session_name = registry.server_session(state.module, session_id)
 
     case SessionSupervisor.create_session(registry, state.module, session_id) do
@@ -690,7 +731,10 @@ defmodule Anubis.Server.Base do
     Process.send_after(self(), {:session_expired, session_id}, timeout)
   end
 
-  defp reset_session_expiry(session_id, %{expiry_timers: timers, session_idle_timeout: timeout} = state) do
+  defp reset_session_expiry(
+         session_id,
+         %{expiry_timers: timers, session_idle_timeout: timeout} = state
+       ) do
     if timer = Map.get(timers, session_id), do: Process.cancel_timer(timer)
 
     timer = schedule_session_expiry(session_id, timeout)
@@ -768,7 +812,9 @@ defmodule Anubis.Server.Base do
         {:noreply, state}
 
       {_request_info, updated_requests} ->
-        Logging.server_event("sampling_request_timeout", %{request_id: request_id}, level: :warning)
+        Logging.server_event("sampling_request_timeout", %{request_id: request_id},
+          level: :warning
+        )
 
         {:noreply, %{state | server_requests: updated_requests}}
     end
