@@ -76,7 +76,7 @@ defmodule TestTools.EventTool do
   alias Anubis.Server.Response
 
   schema do
-    field :event, required: true do
+    embeds_one :event, required: true do
       field :name, :string, required: true
       field :date, :date, required: true
       field :start_time, :time, required: true

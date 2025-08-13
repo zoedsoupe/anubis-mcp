@@ -1,6 +1,7 @@
 defmodule Anubis.Server.ComponentFieldMacroTest do
   use ExUnit.Case, async: true
 
+  alias Anubis.Server.Component
   alias TestTools.DeeplyNestedTool
   alias TestTools.LegacyTool
   alias TestTools.NestedFieldTool
@@ -150,14 +151,14 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
       defmodule CleanSyntaxTool do
         @moduledoc "Tool demonstrating clean syntax"
 
-        use Anubis.Server.Component, type: :tool
+        use Component, type: :tool
 
         schema do
           field(:title, {:required, :string}, description: "Title of the item")
 
           field(:priority, {:enum, ["low", "medium", "high"]}, description: "Priority level")
 
-          field :metadata do
+          embeds_one :metadata do
             field(:created_at, :string, format: "date-time")
             field(:tags, {:list, :string})
           end
@@ -184,6 +185,194 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
              ] == "date-time"
 
       assert json_schema["required"] == ["title"]
+    end
+  end
+
+  describe "GitHub issues integration tests with field macro" do
+    test "field constraints work end-to-end in actual tools" do
+      defmodule ConstraintTestTool do
+        @moduledoc "Tool for testing field constraints end-to-end"
+        use Component, type: :tool
+
+        alias Anubis.Server.Response
+
+        schema do
+          field :username, :string, required: true, min_length: 3, max_length: 20, description: "Username"
+
+          field :email, :string,
+            required: true,
+            regex: ~r/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+            description: "Email"
+
+          field :age, :integer, min: 18, max: 120, description: "Age"
+          field :role, {:enum, ["admin", "user", "guest"]}, required: true, description: "User role"
+          field :priority, :integer, min: 1, max: 10, description: "Priority level"
+        end
+
+        @impl true
+        def execute(params, frame) do
+          {:reply, Response.text(Response.tool(), "User: #{params.username}"), frame}
+        end
+      end
+
+      # Test JSON schema generation works correctly
+      json_schema = ConstraintTestTool.input_schema()
+
+      # Test string constraints
+      assert json_schema["properties"]["username"]["minLength"] == 3
+      assert json_schema["properties"]["username"]["maxLength"] == 20
+      assert json_schema["properties"]["email"]["pattern"] == "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+
+      # Test numeric constraints
+      assert json_schema["properties"]["age"]["minimum"] == 18
+      assert json_schema["properties"]["age"]["maximum"] == 120
+      assert json_schema["properties"]["priority"]["minimum"] == 1
+      assert json_schema["properties"]["priority"]["maximum"] == 10
+
+      # Test enum constraints
+      assert json_schema["properties"]["role"]["enum"] == ["admin", "user", "guest"]
+
+      # Test required fields
+      required_fields = json_schema["required"]
+      assert "username" in required_fields
+      assert "email" in required_fields
+      assert "role" in required_fields
+      refute "age" in required_fields
+      refute "priority" in required_fields
+
+      # Test validation works
+      valid_params = %{
+        username: "alice",
+        email: "alice@example.com",
+        age: 25,
+        role: "admin",
+        priority: 5
+      }
+
+      assert {:ok, _} = ConstraintTestTool.mcp_schema(valid_params)
+
+      # Test constraint violations
+      invalid_params = %{
+        # too short
+        username: "ab",
+        email: "invalid-email",
+        # too young
+        age: 17,
+        role: "invalid_role",
+        # too high
+        priority: 15
+      }
+
+      assert {:error, _} = ConstraintTestTool.mcp_schema(invalid_params)
+    end
+
+    test "enum fields generate correct schema structure matching johns10 issue" do
+      defmodule ComponentTypeTool do
+        @moduledoc "Tool matching the johns10 issue example"
+        use Component, type: :tool
+
+        alias Anubis.Server.Response
+
+        schema do
+          field :name, :string, required: true
+
+          field :type, :atom,
+            required: true,
+            enum: [:genserver, :context, :coordination_context, :schema, :repository, :task, :registry, :other]
+
+          field :module_name, :string, required: true
+          field :description, :string, required: false
+        end
+
+        @impl true
+        def execute(params, frame) do
+          {:reply, Response.text(Response.tool(), "Component: #{params.name}"), frame}
+        end
+      end
+
+      json_schema = ComponentTypeTool.input_schema()
+
+      # This was the exact issue: type field was empty object instead of having enum
+      refute json_schema["properties"]["type"] == %{}
+
+      assert json_schema["properties"]["type"]["enum"] == [
+               :genserver,
+               :context,
+               :coordination_context,
+               :schema,
+               :repository,
+               :task,
+               :registry,
+               :other
+             ]
+
+      # Required should be array format, not numbered object keys
+      assert is_list(json_schema["required"])
+      assert "name" in json_schema["required"]
+      assert "type" in json_schema["required"]
+      assert "module_name" in json_schema["required"]
+      refute "description" in json_schema["required"]
+
+      # Verify the structure matches expected MCP format
+      assert json_schema["type"] == "object"
+      assert Map.has_key?(json_schema, "properties")
+      assert Map.has_key?(json_schema, "required")
+    end
+
+    test "complex nested structures with constraints work correctly" do
+      defmodule ComplexConstraintTool do
+        @moduledoc "Tool with nested constraints"
+        use Component, type: :tool
+
+        alias Anubis.Server.Response
+
+        schema do
+          field :title, :string, required: true, min_length: 1, max_length: 100
+
+          embeds_one :settings, required: true do
+            field :environment, :string, required: true, enum: ["dev", "staging", "prod"]
+            field :timeout, :integer, min: 1000, max: 60_000
+            field :debug, :boolean
+          end
+
+          embeds_many :features do
+            field :name, :string, required: true, regex: ~r/^[a-z_]+$/
+            field :enabled, :boolean, required: true
+            field :config, :string, max_length: 200
+          end
+        end
+
+        @impl true
+        def execute(params, frame) do
+          {:reply, Response.text(Response.tool(), "Config: #{params.title}"), frame}
+        end
+      end
+
+      json_schema = ComplexConstraintTool.input_schema()
+
+      # Test root level constraints
+      assert json_schema["properties"]["title"]["minLength"] == 1
+      assert json_schema["properties"]["title"]["maxLength"] == 100
+
+      # Test nested object constraints
+      settings_props = json_schema["properties"]["settings"]["properties"]
+      assert settings_props["environment"]["enum"] == ["dev", "staging", "prod"]
+      assert settings_props["timeout"]["minimum"] == 1000
+      assert settings_props["timeout"]["maximum"] == 60_000
+
+      # Test array item constraints
+      features_props = json_schema["properties"]["features"]["items"]["properties"]
+      assert features_props["name"]["pattern"] == "^[a-z_]+$"
+      assert features_props["config"]["maxLength"] == 200
+
+      # Test nested required fields
+      assert json_schema["required"] == ["title", "settings"]
+      assert json_schema["properties"]["settings"]["required"] == ["environment"]
+      # Required fields order doesn't matter, just check both are present
+      required_fields = json_schema["properties"]["features"]["items"]["required"]
+      assert "name" in required_fields
+      assert "enabled" in required_fields
+      assert length(required_fields) == 2
     end
   end
 

@@ -590,8 +590,8 @@ defmodule Anubis.Server.Component.SchemaTest do
       normalized = Schema.normalize(schema)
 
       assert normalized == %{
-               text: {:mcp_field, {:string, {:max, 150}}, [description: "Sample text"]},
-               count: {:mcp_field, {:integer, {:range, {1, 100}}}, [description: "Count value"]}
+               text: {:mcp_field, :string, [max: 150, description: "Sample text"]},
+               count: {:mcp_field, :integer, [min: 1, max: 100, description: "Count value"]}
              }
     end
 
@@ -644,7 +644,7 @@ defmodule Anubis.Server.Component.SchemaTest do
                  {:mcp_field,
                   %{
                     name: :string,
-                    bio: {:mcp_field, {:string, {:max, 500}}, []}
+                    bio: {:mcp_field, :string, [max: 500]}
                   }, [description: "User profile"]}
              }
     end
@@ -703,7 +703,7 @@ defmodule Anubis.Server.Component.SchemaTest do
       normalized = Schema.normalize(schema)
 
       assert normalized == %{
-               limit: {:mcp_field, {:integer, {:range, {1, 100}}}, [default: 10, description: "Page limit"]}
+               limit: {:mcp_field, :integer, [min: 1, max: 100, default: 10, description: "Page limit"]}
              }
     end
   end
@@ -774,6 +774,175 @@ defmodule Anubis.Server.Component.SchemaTest do
 
       assert {:error, errors} = validator.(%{email: "test@example.com", age: 200})
       assert length(errors) > 0
+    end
+  end
+
+  describe "GitHub issues regression tests" do
+    test "issue honungsburk: string length constraints work in JSON schema generation" do
+      schema = %{
+        username: {:mcp_field, :string, min_length: 3, max_length: 20, description: "Username"},
+        bio: {:mcp_field, :string, max_length: 500, description: "Bio"},
+        code: {:mcp_field, :string, min_length: 1, description: "Code"}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      assert result["properties"]["username"]["minLength"] == 3
+      assert result["properties"]["username"]["maxLength"] == 20
+      assert result["properties"]["bio"]["maxLength"] == 500
+      assert result["properties"]["code"]["minLength"] == 1
+    end
+
+    test "issue honungsburk: regex constraints work in JSON schema generation" do
+      schema = %{
+        email: {:string, regex: ~r/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/},
+        phone: {:string, regex: ~r/^\+?[\d\s\-\(\)]{10,}$/}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      assert result["properties"]["email"]["pattern"] == "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+      assert result["properties"]["phone"]["pattern"] == "^\\+?[\\d\\s\\-\\(\\)]{10,}$"
+    end
+
+    test "issue honungsburk: numeric constraints work in JSON schema generation" do
+      schema = %{
+        age: {:integer, min: 18, max: 120},
+        price: {:float, min: 0.01, max: 999_999.99},
+        score: {:integer, min: 0}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      assert result["properties"]["age"]["minimum"] == 18
+      assert result["properties"]["age"]["maximum"] == 120
+      assert result["properties"]["price"]["minimum"] == 0.01
+      assert result["properties"]["price"]["maximum"] == 999_999.99
+      assert result["properties"]["score"]["minimum"] == 0
+      refute Map.has_key?(result["properties"]["score"], "maximum")
+    end
+
+    test "issue johns10: enum constraints generate proper JSON schema with values" do
+      schema = %{
+        type: {:enum, [:genserver, :context, :coordination_context, :schema, :repository, :task, :registry, :other]},
+        status: {:enum, ["active", "inactive", "pending"]},
+        priority: {:required, {:enum, ["low", "medium", "high"]}}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Main issue: enum values should be present in JSON schema
+      assert result["properties"]["type"]["enum"] == [
+               :genserver,
+               :context,
+               :coordination_context,
+               :schema,
+               :repository,
+               :task,
+               :registry,
+               :other
+             ]
+
+      assert result["properties"]["status"]["enum"] == ["active", "inactive", "pending"]
+      assert result["properties"]["priority"]["enum"] == ["low", "medium", "high"]
+
+      # Ensure properties are not empty objects
+      refute result["properties"]["type"] == %{}
+      refute result["properties"]["status"] == %{}
+      refute result["properties"]["priority"] == %{}
+
+      # Required array should be proper array, not numbered keys
+      assert result["required"] == ["priority"]
+      refute is_map(result["required"])
+    end
+
+    test "issue johns10: enum with type specification works correctly" do
+      schema = %{
+        category: {:enum, [1, 2, 3], :integer},
+        level: {:enum, ["beginner", "intermediate", "advanced"], :string}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      assert result["properties"]["category"]["enum"] == [1, 2, 3]
+      assert result["properties"]["category"]["type"] == "integer"
+      assert result["properties"]["level"]["enum"] == ["beginner", "intermediate", "advanced"]
+      assert result["properties"]["level"]["type"] == "string"
+    end
+
+    test "complex constraints with mcp_field work correctly" do
+      schema = %{
+        username:
+          {:mcp_field, :string, [min_length: 3, max_length: 20, regex: ~r/^[a-zA-Z0-9_]+$/, description: "Username"]},
+        age: {:mcp_field, :integer, [min: 13, max: 120, description: "Age in years"]},
+        role: {:mcp_field, {:enum, ["admin", "user", "guest"]}, [description: "User role"]}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Test all constraints are applied
+      assert result["properties"]["username"]["minLength"] == 3
+      assert result["properties"]["username"]["maxLength"] == 20
+      assert result["properties"]["username"]["pattern"] == "^[a-zA-Z0-9_]+$"
+      assert result["properties"]["username"]["description"] == "Username"
+
+      assert result["properties"]["age"]["minimum"] == 13
+      assert result["properties"]["age"]["maximum"] == 120
+      assert result["properties"]["age"]["description"] == "Age in years"
+
+      assert result["properties"]["role"]["enum"] == ["admin", "user", "guest"]
+      assert result["properties"]["role"]["description"] == "User role"
+    end
+
+    test "mixed constraint types with required fields work correctly" do
+      schema = %{
+        name: {:required, :string, min_length: 2, max_length: 50},
+        type: {:required, {:enum, ["tool", "prompt", "resource"]}},
+        timeout: {:integer, min: 1000, max: 60_000},
+        pattern: {:string, regex: ~r/^[A-Z][a-z]+$/},
+        enabled: {:boolean, default: true}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Check required fields are in array format
+      assert "name" in result["required"]
+      assert "type" in result["required"]
+      assert length(result["required"]) == 2
+
+      # Check constraints are preserved
+      assert result["properties"]["name"]["minLength"] == 2
+      assert result["properties"]["name"]["maxLength"] == 50
+      assert result["properties"]["type"]["enum"] == ["tool", "prompt", "resource"]
+      assert result["properties"]["timeout"]["minimum"] == 1000
+      assert result["properties"]["timeout"]["maximum"] == 60_000
+      assert result["properties"]["pattern"]["pattern"] == "^[A-Z][a-z]+$"
+
+      # Default values should not appear in JSON schema
+      refute Map.has_key?(result["properties"]["enabled"], "default")
+    end
+
+    test "edge case: empty enum list is handled gracefully" do
+      schema = %{
+        empty_enum: {:enum, []},
+        normal_field: :string
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      assert result["properties"]["empty_enum"]["enum"] == []
+      assert result["properties"]["normal_field"]["type"] == "string"
+    end
+
+    test "edge case: regex with special characters is properly escaped" do
+      schema = %{
+        special_pattern: {:string, regex: ~r/^[\w\-\.]+@[\w\-\.]+\.[a-zA-Z]{2,}$/}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Check that the regex pattern is properly escaped for JSON Schema
+      assert result["properties"]["special_pattern"]["pattern"] == "^[\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]{2,}$"
     end
   end
 end

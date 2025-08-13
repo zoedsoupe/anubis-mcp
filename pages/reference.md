@@ -195,26 +195,41 @@ schema do
     required: true,
     min_length: 1,
     max_length: 100,
-    format: ~r/pattern/
+    regex: ~r/pattern/,
+    description: "A string field"
 
   field :number_field, :number,
     min: 0,
-    max: 100
+    max: 100,
+    description: "A number field"
 
   field :integer_field, :integer,
-    min: 0
+    min: 0,
+    max: 1000,
+    description: "An integer field"
 
   field :boolean_field, :boolean,
-    default: false
+    default: false,
+    description: "A boolean field"
 
-  field :enum_field, :string,
-    values: ["option1", "option2"]
+  field :enum_field, {:enum, ["option1", "option2", "option3"]},
+    required: true,
+    description: "An enum field"
 
-  field :array_field, {:array, :string},
-    min_items: 1,
-    max_items: 10
+  field :list_field, {:list, :string},
+    description: "A list of strings"
 
-  field :map_field, :map
+  # Nested objects using embeds_one
+  embeds_one :profile, required: true do
+    field :name, :string, required: true
+    field :age, :integer, min: 0, max: 150
+  end
+
+  # Arrays of objects using embeds_many
+  embeds_many :tags do
+    field :name, :string, required: true
+    field :value, :string
+  end
 end
 ```
 
