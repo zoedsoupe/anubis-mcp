@@ -199,41 +199,12 @@ defmodule Anubis.Server.Component do
         field :avatar_url, :string, format: "uri"
       end
   """
-  defmacro field(name, type \\ nil, opts \\ [])
-
-  defmacro field(name, opts, do: block) when is_list(opts) and opts != [] do
-    build_nested_field(name, opts, block)
-  end
-
-  defmacro field(name, nil, do: block) do
-    build_nested_field(name, [], block)
-  end
-
-  defmacro field(name, [do: block], []) do
-    build_nested_field(name, [], block)
-  end
-
-  defmacro field(name, type, opts) when not is_nil(type) and is_list(opts) do
+  defmacro field(name, type, opts \\ []) when not is_nil(type) and is_list(opts) do
     {required, remaining_opts} = Keyword.pop(opts, :required, false)
     type = if required, do: {:required, type}, else: type
 
     quote do
       {unquote(name), {:mcp_field, unquote(type), unquote(remaining_opts)}}
-    end
-  end
-
-  defp build_nested_field(name, opts, block) do
-    nested_content =
-      case block do
-        {:__block__, _, expressions} ->
-          {:%{}, [], expressions}
-
-        single_expr ->
-          {:%{}, [], [single_expr]}
-      end
-
-    quote do
-      {unquote(name), {:mcp_field, unquote(nested_content), unquote(opts)}}
     end
   end
 
@@ -391,13 +362,73 @@ defmodule Anubis.Server.Component do
   @doc false
   def __clean_schema_for_peri__(schema) when is_map(schema) do
     Map.new(schema, fn
-      {key, {:mcp_field, type, _opts}} -> {key, __clean_schema_for_peri__(type)}
+      {key, {:mcp_field, type, opts}} -> {key, __convert_mcp_field_to_peri__(type, opts)}
       {key, nested} when is_map(nested) -> {key, __clean_schema_for_peri__(nested)}
       {key, value} -> {key, __inject_transforms__(value)}
     end)
   end
 
   def __clean_schema_for_peri__(schema), do: __inject_transforms__(schema)
+
+  defp __convert_mcp_field_to_peri__(type, opts) do
+    {constraints, metadata} = __extract_peri_constraints__(opts)
+
+    # Extract base type and required flag
+    {base_type, is_required} =
+      case type do
+        {:required, inner_type} -> {inner_type, true}
+        inner_type -> {inner_type, false}
+      end
+
+    # Handle :enum type specially
+    constrained_type =
+      case base_type do
+        :enum ->
+          values = Keyword.get(metadata, :values, [])
+          {:enum, values}
+
+        _ ->
+          # Normal constraint handling
+          case constraints do
+            [] -> base_type
+            [single] -> {base_type, single}
+            multiple -> {base_type, multiple}
+          end
+      end
+
+    # Wrap with required if needed
+    final_type =
+      if is_required do
+        {:required, constrained_type}
+      else
+        constrained_type
+      end
+
+    __inject_transforms__(final_type)
+  end
+
+  defp __extract_peri_constraints__(opts) do
+    constraints =
+      []
+      |> maybe_add_constraint(opts, :min_length, :min)
+      |> maybe_add_constraint(opts, :max_length, :max)
+      |> maybe_add_constraint(opts, :regex, :regex)
+      |> maybe_add_constraint(opts, :min, :gte)
+      |> maybe_add_constraint(opts, :max, :lte)
+      |> maybe_add_constraint(opts, :enum, :enum)
+      |> Enum.reverse()
+
+    # Keep :values in metadata for enum types, don't treat it as a constraint
+    metadata = Keyword.drop(opts, [:min, :max, :min_length, :max_length, :regex, :enum])
+    {constraints, metadata}
+  end
+
+  defp maybe_add_constraint(constraints, opts, opt_key, peri_key) do
+    case Keyword.get(opts, opt_key) do
+      nil -> constraints
+      value -> [{peri_key, value} | constraints]
+    end
+  end
 
   defp __inject_transforms__({type, {:default, default}}) when type in ~w(date datetime naive_datetime time)a do
     base = __inject_transforms__(type)

@@ -8,14 +8,14 @@ defmodule TestTools.NestedFieldTool do
   schema do
     field :name, {:required, :string}, description: "Full name"
 
-    field :address, description: "Mailing address" do
+    embeds_one :address, description: "Mailing address" do
       field :street, {:required, :string}
       field :city, {:required, :string}
       field :state, :string
       field :zip, :string, format: "postal-code"
     end
 
-    field :contact do
+    embeds_one :contact do
       field :email, :string, format: "email", description: "Contact email"
       field :phone, :string, format: "phone"
     end
@@ -35,7 +35,7 @@ defmodule TestTools.SingleNestedFieldTool do
   alias Anubis.Server.Response
 
   schema do
-    field :user, description: "User information" do
+    embeds_one :user, description: "User information" do
       field :id, {:required, :string}, format: "uuid"
     end
   end
@@ -54,13 +54,13 @@ defmodule TestTools.DeeplyNestedTool do
   alias Anubis.Server.Response
 
   schema do
-    field :organization do
+    embeds_one :organization do
       field :name, {:required, :string}
 
-      field :admin, description: "Organization admin" do
+      embeds_one :admin, description: "Organization admin" do
         field :name, {:required, :string}
 
-        field :permissions do
+        embeds_one :permissions do
           field :read, {:required, :boolean}
           field :write, {:required, :boolean}
           field :delete, :boolean
@@ -147,7 +147,7 @@ defmodule TestPrompts.NestedPrompt do
   alias Anubis.Server.Response
 
   schema do
-    field :config, description: "Configuration options" do
+    embeds_one :config, description: "Configuration options" do
       field :model, {:required, :string}, description: "Model to use"
       field :temperature, :float, description: "Temperature setting"
     end

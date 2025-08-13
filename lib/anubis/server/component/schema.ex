@@ -21,6 +21,8 @@ defmodule Anubis.Server.Component.Schema do
   def to_json_schema(nil), do: %{"type" => "object"}
 
   def to_json_schema(schema) when is_map(schema) do
+    schema = normalize(schema)
+
     properties =
       Map.new(schema, fn {key, type} -> {to_string(key), convert_type(type)} end)
 
@@ -67,14 +69,9 @@ defmodule Anubis.Server.Component.Schema do
   defp convert_type({:required, type}), do: convert_type(type)
 
   defp convert_type({:mcp_field, type, opts}) when is_list(opts) do
-    base_schema = convert_type(type)
-
-    Enum.reduce(opts, base_schema, fn
-      {:format, format}, schema -> Map.put(schema, "format", format)
-      {:description, desc}, schema -> Map.put(schema, "description", desc)
-      {:type, json_type}, schema -> Map.put(schema, "type", to_string(json_type))
-      _, schema -> schema
-    end)
+    type
+    |> convert_type()
+    |> then(fn s -> Enum.reduce(opts, s, &parse_type_opt(type, &1, &2)) end)
   end
 
   defp convert_type(:string), do: %{"type" => "string"}
@@ -82,6 +79,9 @@ defmodule Anubis.Server.Component.Schema do
   defp convert_type(:float), do: %{"type" => "number"}
   defp convert_type(:boolean), do: %{"type" => "boolean"}
   defp convert_type(:any), do: %{}
+
+  # Handle bare :enum type (will get values and type from opts via parse_type_opt)
+  defp convert_type(:enum), do: %{}
 
   defp convert_type(:date), do: %{"type" => "string", "format" => "date"}
   defp convert_type(:time), do: %{"type" => "string", "format" => "time"}
@@ -198,6 +198,66 @@ defmodule Anubis.Server.Component.Schema do
 
   defp convert_type(_unknown), do: %{}
 
+  defp parse_type_opt(_type, {:format, format}, schema) do
+    Map.put(schema, "format", format)
+  end
+
+  defp parse_type_opt(_type, {:description, desc}, schema) do
+    Map.put(schema, "description", desc)
+  end
+
+  defp parse_type_opt(_type, {:type, json_type}, schema) do
+    Map.put(schema, "type", to_string(json_type))
+  end
+
+  defp parse_type_opt(_type, {:min_length, min}, schema) do
+    Map.put(schema, "minLength", min)
+  end
+
+  defp parse_type_opt(_type, {:max_length, max}, schema) do
+    Map.put(schema, "maxLength", max)
+  end
+
+  defp parse_type_opt(_type, {:regex, %Regex{source: pattern}}, schema) do
+    Map.put(schema, "pattern", pattern)
+  end
+
+  defp parse_type_opt(_type, {:min, min}, schema) do
+    Map.put(schema, "minimum", min)
+  end
+
+  defp parse_type_opt(_type, {:max, max}, schema) do
+    Map.put(schema, "maximum", max)
+  end
+
+  defp parse_type_opt(_type, {:enum, values}, schema) do
+    Map.put(schema, "enum", values)
+  end
+
+  defp parse_type_opt(:enum, {:values, values}, schema) do
+    schema
+    |> Map.put("enum", values)
+    # Default to string if type not specified
+    |> Map.put_new("type", "string")
+  end
+
+  defp parse_type_opt({:required, :enum}, {:values, values}, schema) do
+    schema
+    |> Map.put("enum", values)
+    # Default to string if type not specified
+    |> Map.put_new("type", "string")
+  end
+
+  defp parse_type_opt(:enum, {:type, type}, schema) do
+    Map.put(schema, "type", to_string(type))
+  end
+
+  defp parse_type_opt({:required, :enum}, {:type, type}, schema) do
+    Map.put(schema, "type", to_string(type))
+  end
+
+  defp parse_type_opt(_type, _opt, schema), do: schema
+
   defp required?({:required, _}), do: true
   defp required?({:mcp_field, type, _opts}), do: required?(type)
   defp required?(_), do: false
@@ -243,15 +303,20 @@ defmodule Anubis.Server.Component.Schema do
     {:mcp_field, {:required, type}, opts}
   end
 
-  defp normalize_field({type, opts}) when is_list(opts) do
-    {metadata, constraints} = split_opts(opts)
+  defp normalize_field({:enum, values}) when is_list(values) do
+    {:enum, values}
+  end
 
-    if Enum.empty?(constraints) do
-      {:mcp_field, type, metadata}
-    else
-      base_type = build_constrained_type(type, constraints)
-      {:mcp_field, base_type, metadata}
-    end
+  defp normalize_field({:either, {type1, type2}}) do
+    {:either, {type1, type2}}
+  end
+
+  defp normalize_field({:oneof, types}) when is_list(types) do
+    {:oneof, types}
+  end
+
+  defp normalize_field({type, opts}) when is_list(opts) do
+    {:mcp_field, type, opts}
   end
 
   defp normalize_field({:object, fields}) when is_map(fields) do
@@ -272,57 +337,6 @@ defmodule Anubis.Server.Component.Schema do
 
   defp normalize_field({:mcp_field, _, _} = field), do: field
   defp normalize_field(nested) when is_map(nested), do: normalize(nested)
+  defp normalize_field({_type, _spec} = tuple), do: tuple
   defp normalize_field(other), do: other
-
-  defp split_opts(opts) do
-    Keyword.split(opts, [:description, :format, :default, :type])
-  end
-
-  defp build_constrained_type(type, []), do: type
-
-  defp build_constrained_type(type, [{key, value}]) do
-    {type, {key, value}}
-  end
-
-  defp build_constrained_type(:string, constraints) do
-    case {Keyword.get(constraints, :min), Keyword.get(constraints, :max)} do
-      {nil, max} when not is_nil(max) -> {:string, {:max, max}}
-      {min, nil} when not is_nil(min) -> {:string, {:min, min}}
-      _ -> :string
-    end
-  end
-
-  defp build_constrained_type(:integer, constraints) do
-    case {Keyword.get(constraints, :min), Keyword.get(constraints, :max)} do
-      {min, max} when not is_nil(min) and not is_nil(max) ->
-        {:integer, {:range, {min, max}}}
-
-      {nil, max} when not is_nil(max) ->
-        {:integer, {:max, max}}
-
-      {min, nil} when not is_nil(min) ->
-        {:integer, {:min, min}}
-
-      _ ->
-        :integer
-    end
-  end
-
-  defp build_constrained_type(:float, constraints) do
-    case {Keyword.get(constraints, :min), Keyword.get(constraints, :max)} do
-      {min, max} when not is_nil(min) and not is_nil(max) ->
-        {:float, {:range, {min, max}}}
-
-      {nil, max} when not is_nil(max) ->
-        {:float, {:max, max}}
-
-      {min, nil} when not is_nil(min) ->
-        {:float, {:min, min}}
-
-      _ ->
-        :float
-    end
-  end
-
-  defp build_constrained_type(type, _constraints), do: type
 end
