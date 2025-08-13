@@ -944,5 +944,30 @@ defmodule Anubis.Server.Component.SchemaTest do
       # Check that the regex pattern is properly escaped for JSON Schema
       assert result["properties"]["special_pattern"]["pattern"] == "^[\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]{2,}$"
     end
+
+    test "natural enum syntax: field :name, :enum, type: :string, values: [...] works correctly" do
+      schema = %{
+        status: {:mcp_field, :enum, [type: :string, values: ["active", "inactive", "pending"], description: "Status"]},
+        priority:
+          {:mcp_field, {:required, :enum}, [type: :string, values: ["low", "medium", "high"], description: "Priority"]},
+        category: {:mcp_field, :enum, [type: :integer, values: [1, 2, 3], description: "Category"]}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Test string enum
+      assert result["properties"]["status"]["enum"] == ["active", "inactive", "pending"]
+      assert result["properties"]["status"]["type"] == "string"
+      assert result["properties"]["status"]["description"] == "Status"
+
+      # Test required enum
+      assert result["properties"]["priority"]["enum"] == ["low", "medium", "high"]
+      assert result["properties"]["priority"]["type"] == "string"
+      assert result["required"] == ["priority"]
+
+      # Test integer enum
+      assert result["properties"]["category"]["enum"] == [1, 2, 3]
+      assert result["properties"]["category"]["type"] == "integer"
+    end
   end
 end

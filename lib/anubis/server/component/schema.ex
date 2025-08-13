@@ -80,6 +80,9 @@ defmodule Anubis.Server.Component.Schema do
   defp convert_type(:boolean), do: %{"type" => "boolean"}
   defp convert_type(:any), do: %{}
 
+  # Handle bare :enum type (will get values and type from opts via parse_type_opt)
+  defp convert_type(:enum), do: %{}
+
   defp convert_type(:date), do: %{"type" => "string", "format" => "date"}
   defp convert_type(:time), do: %{"type" => "string", "format" => "time"}
   defp convert_type(:datetime), do: %{"type" => "string", "format" => "date-time"}
@@ -229,6 +232,28 @@ defmodule Anubis.Server.Component.Schema do
 
   defp parse_type_opt(_type, {:enum, values}, schema) do
     Map.put(schema, "enum", values)
+  end
+
+  defp parse_type_opt(:enum, {:values, values}, schema) do
+    schema
+    |> Map.put("enum", values)
+    # Default to string if type not specified
+    |> Map.put_new("type", "string")
+  end
+
+  defp parse_type_opt({:required, :enum}, {:values, values}, schema) do
+    schema
+    |> Map.put("enum", values)
+    # Default to string if type not specified
+    |> Map.put_new("type", "string")
+  end
+
+  defp parse_type_opt(:enum, {:type, type}, schema) do
+    Map.put(schema, "type", to_string(type))
+  end
+
+  defp parse_type_opt({:required, :enum}, {:type, type}, schema) do
+    Map.put(schema, "type", to_string(type))
   end
 
   defp parse_type_opt(_type, _opt, schema), do: schema

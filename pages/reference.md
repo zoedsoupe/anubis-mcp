@@ -212,9 +212,11 @@ schema do
     default: false,
     description: "A boolean field"
 
-  field :enum_field, {:enum, ["option1", "option2", "option3"]},
+  field :enum_field, :enum,
     required: true,
-    description: "An enum field"
+    description: "An enum field",
+    type: :string,
+    values: ~w(option1 option2 option3)
 
   field :list_field, {:list, :string},
     description: "A list of strings"

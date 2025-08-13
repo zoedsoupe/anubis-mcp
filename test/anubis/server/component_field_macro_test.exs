@@ -374,6 +374,53 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
       assert "enabled" in required_fields
       assert length(required_fields) == 2
     end
+
+    test "natural enum syntax works with field macro" do
+      defmodule NaturalEnumTool do
+        @moduledoc "Tool demonstrating natural enum syntax"
+        use Component, type: :tool
+
+        alias Anubis.Server.Response
+
+        schema do
+          field :status, :enum,
+            type: :string,
+            values: ["draft", "published", "archived"],
+            required: true,
+            description: "Post status"
+
+          field :priority, :enum, type: :integer, values: [1, 2, 3, 4, 5], description: "Priority level"
+          field :category, :enum, values: ["tech", "business", "personal"], description: "Category (defaults to string)"
+        end
+
+        @impl true
+        def execute(params, frame) do
+          {:reply, Response.text(Response.tool(), "Status: #{params.status}"), frame}
+        end
+      end
+
+      json_schema = NaturalEnumTool.input_schema()
+
+      # Test string enum with explicit type
+      assert json_schema["properties"]["status"]["enum"] == ["draft", "published", "archived"]
+      assert json_schema["properties"]["status"]["type"] == "string"
+      assert json_schema["properties"]["status"]["description"] == "Post status"
+
+      # Test integer enum
+      assert json_schema["properties"]["priority"]["enum"] == [1, 2, 3, 4, 5]
+      assert json_schema["properties"]["priority"]["type"] == "integer"
+
+      # Test enum with default string type
+      assert json_schema["properties"]["category"]["enum"] == ["tech", "business", "personal"]
+      assert json_schema["properties"]["category"]["type"] == "string"
+
+      # Test required
+      assert json_schema["required"] == ["status"]
+
+      # Test validation works
+      assert {:ok, _} = NaturalEnumTool.mcp_schema(%{status: "draft", priority: 3, category: "tech"})
+      assert {:error, _} = NaturalEnumTool.mcp_schema(%{status: "invalid"})
+    end
   end
 
   describe "backward compatibility with legacy schemas" do

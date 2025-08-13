@@ -371,7 +371,7 @@ defmodule Anubis.Server.Component do
   def __clean_schema_for_peri__(schema), do: __inject_transforms__(schema)
 
   defp __convert_mcp_field_to_peri__(type, opts) do
-    {constraints, _metadata} = __extract_peri_constraints__(opts)
+    {constraints, metadata} = __extract_peri_constraints__(opts)
 
     # Extract base type and required flag
     {base_type, is_required} =
@@ -380,12 +380,20 @@ defmodule Anubis.Server.Component do
         inner_type -> {inner_type, false}
       end
 
-    # Build the constrained type 
+    # Handle :enum type specially
     constrained_type =
-      case constraints do
-        [] -> base_type
-        [single] -> {base_type, single}
-        multiple -> {base_type, multiple}
+      case base_type do
+        :enum ->
+          values = Keyword.get(metadata, :values, [])
+          {:enum, values}
+
+        _ ->
+          # Normal constraint handling
+          case constraints do
+            [] -> base_type
+            [single] -> {base_type, single}
+            multiple -> {base_type, multiple}
+          end
       end
 
     # Wrap with required if needed
@@ -410,6 +418,7 @@ defmodule Anubis.Server.Component do
       |> maybe_add_constraint(opts, :enum, :enum)
       |> Enum.reverse()
 
+    # Keep :values in metadata for enum types, don't treat it as a constraint
     metadata = Keyword.drop(opts, [:min, :max, :min_length, :max_length, :regex, :enum])
     {constraints, metadata}
   end
