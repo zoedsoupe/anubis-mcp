@@ -1,6 +1,7 @@
 defmodule Anubis.Server.ComponentFieldMacroTest do
   use ExUnit.Case, async: true
 
+  alias Anubis.Server.Component
   alias TestTools.DeeplyNestedTool
   alias TestTools.LegacyTool
   alias TestTools.NestedFieldTool
@@ -150,7 +151,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
       defmodule CleanSyntaxTool do
         @moduledoc "Tool demonstrating clean syntax"
 
-        use Anubis.Server.Component, type: :tool
+        use Component, type: :tool
 
         schema do
           field(:title, {:required, :string}, description: "Title of the item")
@@ -191,7 +192,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
     test "field constraints work end-to-end in actual tools" do
       defmodule ConstraintTestTool do
         @moduledoc "Tool for testing field constraints end-to-end"
-        use Anubis.Server.Component, type: :tool
+        use Component, type: :tool
 
         alias Anubis.Server.Response
 
@@ -268,7 +269,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
     test "enum fields generate correct schema structure matching johns10 issue" do
       defmodule ComponentTypeTool do
         @moduledoc "Tool matching the johns10 issue example"
-        use Anubis.Server.Component, type: :tool
+        use Component, type: :tool
 
         alias Anubis.Server.Response
 
@@ -321,7 +322,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
     test "complex nested structures with constraints work correctly" do
       defmodule ComplexConstraintTool do
         @moduledoc "Tool with nested constraints"
-        use Anubis.Server.Component, type: :tool
+        use Component, type: :tool
 
         alias Anubis.Server.Response
 
@@ -377,7 +378,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
     test "natural enum syntax works with field macro" do
       defmodule NaturalEnumTool do
         @moduledoc "Tool demonstrating natural enum syntax"
-        use Anubis.Server.Component, type: :tool
+        use Component, type: :tool
 
         alias Anubis.Server.Response
 
