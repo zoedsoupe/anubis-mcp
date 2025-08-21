@@ -278,6 +278,10 @@ defmodule ToolWithOutputSchema do
   end
 
   @impl true
+  def execute(%{query: "tool error"}, frame) do
+    {:reply, Response.error(Response.tool(), "Tool error"), frame}
+  end
+
   def execute(%{query: query}, frame) do
     results = %{
       results: [

@@ -252,6 +252,22 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
       assert result["isError"] == false
     end
 
+    test "tool error response skips output schema validation", %{
+      server: server,
+      session_id: session_id
+    } do
+      request =
+        build_request("tools/call", %{
+          "name" => "tool_with_output_schema",
+          "arguments" => %{"query" => "tool error"}
+        })
+
+      {:ok, response_string} =
+        GenServer.call(server, {:request, request, session_id, %{}})
+
+      assert {:ok, [%{"result" => %{"isError" => true}}]} = Message.decode(response_string)
+    end
+
     test "tool without output schema works normally", %{
       server: server,
       session_id: session_id
