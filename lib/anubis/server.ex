@@ -108,6 +108,16 @@ defmodule Anubis.Server do
   @type server_capabilities :: map()
 
   @doc """
+  Validates the client's initialization request.
+
+  This callback is invoked during the MCP handshake to validate the client's initialization request.
+  It receives the client's information and the current frame, allowing you to check if the client is
+  allowed to connect to the server (e.g., check for authentication).
+  """
+  @callback validate_initialize(client_info :: map(), Frame.t()) ::
+              {:ok, Frame.t()} | {:error, mcp_error(), Frame.t()}
+
+  @doc """
   Called after a client requests a `initialize` request.
 
   This callback is invoked while the MCP handshake starts and so the client may not sent
@@ -287,7 +297,8 @@ defmodule Anubis.Server do
   """
   @callback handle_call(request :: term, from :: GenServer.from(), Frame.t()) ::
               {:reply, reply :: term, Frame.t()}
-              | {:reply, reply :: term, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
+              | {:reply, reply :: term, Frame.t(),
+                 timeout() | :hibernate | {:continue, arg :: term}}
               | {:noreply, Frame.t()}
               | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, reply :: term, Frame.t()}
@@ -467,7 +478,7 @@ defmodule Anubis.Server do
 
       # Register with auto-derived name
       component MyServer.Tools.Calculator
-      
+
       # Register with custom name
       component MyServer.Tools.FileManager, name: "files"
   """
@@ -480,7 +491,8 @@ defmodule Anubis.Server do
               "Use `use Anubis.Server.Component, type: :tool/:prompt/:resource`"
       end
 
-      @components {Component.get_type(module), opts[:name] || Anubis.Server.__derive_component_name__(module), module}
+      @components {Component.get_type(module),
+                   opts[:name] || Anubis.Server.__derive_component_name__(module), module}
     end
   end
 
@@ -679,7 +691,8 @@ defmodule Anubis.Server do
     )
   end
 
-  def parse_capability({capability, opts}, %{} = capabilities) when is_server_capability(capability) do
+  def parse_capability({capability, opts}, %{} = capabilities)
+      when is_server_capability(capability) do
     list_changed? = opts[:list_changed?]
 
     capabilities
@@ -847,7 +860,7 @@ defmodule Anubis.Server do
       ]
 
       model_preferences = %{"costPriority" => 1.0, "speedPriority" => 0.1, "hints" => [%{"name" => "claude"}]}
-      
+
       :ok = Anubis.Server.send_sampling_request(frame, messages,
         model_preferences: model_preferences,
         system_prompt: "You are a helpful assistant",

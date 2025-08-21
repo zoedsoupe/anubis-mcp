@@ -158,7 +158,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   @spec handle_message(GenServer.server(), String.t(), map() | list(map), map()) ::
           {:ok, binary() | nil} | {:error, term()}
   def handle_message(transport, session_id, message, context) do
-    GenServer.call(transport, {:handle_message, session_id, message, context})
+    GenServer.call(
+      transport,
+      {:handle_message, session_id, message, context},
+      get_in(context, [:assigns, :call_timeout]) || 5_000
+    )
   end
 
   @doc """
@@ -172,7 +176,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   def handle_message_for_sse(transport, session_id, message, context) do
     GenServer.call(
       transport,
-      {:handle_message_for_sse, session_id, message, context}
+      {:handle_message_for_sse, session_id, message, context},
+      get_in(context, [:assigns, :call_timeout]) || 5_000
     )
   end
 
@@ -250,7 +255,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def handle_call({:handle_message, session_id, message, context}, from, state) when is_map(message) do
+  def handle_call({:handle_message, session_id, message, context}, from, state)
+      when is_map(message) do
     server = state.registry.whereis_server(state.server)
     timeout = state.request_timeout
 
@@ -280,7 +286,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def handle_call({:handle_message_for_sse, session_id, message, context}, from, state) when is_map(message) do
+  def handle_call({:handle_message_for_sse, session_id, message, context}, from, state)
+      when is_map(message) do
     server = state.registry.whereis_server(state.server)
     timeout = state.request_timeout
 
@@ -347,7 +354,14 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:reply, :ok, state}
   end
 
-  defp forward_request_to_server(server, message, session_id, context, timeout, has_sse_handler \\ false) do
+  defp forward_request_to_server(
+         server,
+         message,
+         session_id,
+         context,
+         timeout,
+         has_sse_handler \\ false
+       ) do
     msg = {:request, message, session_id, context}
 
     case GenServer.call(server, msg, timeout) do
