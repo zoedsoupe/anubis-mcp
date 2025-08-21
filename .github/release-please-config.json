@@ -66,13 +66,13 @@
       "glob": false
     },
     {
-      "type": "generic", 
+      "type": "generic",
       "path": "README.md",
       "glob": false
     },
     {
       "type": "generic",
-      "path": "pages/installation.md", 
+      "path": "pages/introduction.md",
       "glob": false
     }
   ],
