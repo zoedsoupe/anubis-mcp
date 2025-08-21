@@ -75,8 +75,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}},
-    {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
-    {:keep_alive_interval, {:integer, {:default, to_timeout(second: 30)}}}
+    {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}}
   ])
 
   @doc """
@@ -209,15 +208,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       registry: opts.registry,
       request_timeout: opts.request_timeout,
       task_supervisor: opts.task_supervisor,
-      keep_alive_interval: opts.keep_alive_interval,
       # Map of session_id => {pid, monitor_ref}
       sse_handlers: %{},
       active_tasks: %{}
     }
-
-    # Start keep-alive timer
-    timer_ref = Process.send_after(self(), :keep_alive, opts.keep_alive_interval)
-    state = Map.put(state, :keep_alive_timer, timer_ref)
 
     Logger.metadata(mcp_transport: :streamable_http, mcp_server: server)
 
@@ -415,22 +409,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:noreply, %{state | active_tasks: active_tasks}}
   end
 
-  # Handle keep-alive timer
-  def handle_info(:keep_alive, %{keep_alive_interval: interval, sse_handlers: handlers} = state) do
-    for {_session_id, {pid, _ref}} <- handlers do
-      send(pid, :sse_keep_alive)
-    end
-
-    # Restart timer for next interval
-    timer_ref = Process.send_after(self(), :keep_alive, interval)
-    state = Map.put(state, :keep_alive_timer, timer_ref)
-
-    Logging.transport_event("keep_alive_sent", %{
-      active_handlers: map_size(handlers)
-    })
-
-    {:noreply, state}
-  end
+  def handle_info({_ref, _}, state), do: {:noreply, state}
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{active_tasks: active_tasks} = state)
       when is_map_key(active_tasks, ref) do
@@ -470,12 +449,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def terminate(reason, state) do
-    # Cancel keep-alive timer if it exists
-    if Map.has_key?(state, :keep_alive_timer) do
-      Process.cancel_timer(state.keep_alive_timer)
-    end
-
+  def terminate(reason, _state) do
     Telemetry.execute(
       Telemetry.event_transport_terminate(),
       %{system_time: System.system_time()},
