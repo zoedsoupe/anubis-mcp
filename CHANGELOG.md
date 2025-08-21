@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.0...v0.14.1) (2025-08-21)
+
+
+### Documentation
+
+* rewrite introduction/home documentation page ([34baf39](https://github.com/zoedsoupe/anubis-mcp/commit/34baf3907e7e50b490398f48c32a782d213c36e9))
+
+
+### Miscellaneous Chores
+
+* update example projects elixir deps, use fixed otp version and stable version for CLI release ([b362e54](https://github.com/zoedsoupe/anubis-mcp/commit/b362e54594d1551856436eb401a394be33dbf3a6))
+
+
+### Continuous Integration
+
+* fix zig version for CLI release and locally on flake ([e7ed2b4](https://github.com/zoedsoupe/anubis-mcp/commit/e7ed2b4aa94cef5edf5968f30c24e5b1e4aac81e))
+
 ## [0.14.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.1...v0.14.0) (2025-08-21)
 
 
