@@ -5,7 +5,7 @@ defmodule Incomer.MixProject do
     [
       app: :incomer,
       version: "0.1.0",
-      elixir: "~> 1.19-rc",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
