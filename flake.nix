@@ -22,16 +22,6 @@
         in
           f pkgs
       );
-
-    zig = pkgs:
-      pkgs.zig.overrideAttrs (old: rec {
-        version = "0.14.0";
-        src = pkgs.fetchFromGitHub {
-          inherit (old.src) owner repo;
-          rev = version;
-          hash = "sha256-VyteIp5ZRt6qNcZR68KmM7CvN2GYf8vj5hP+gHLkuVk=";
-        };
-      });
   in {
     devShells = forAllSystems (pkgs: {
       default = pkgs.mkShell {
@@ -42,7 +32,7 @@
           uv
           just
           go
-          (zig pkgs)
+          zig
           _7zz
           xz
           nodejs
@@ -60,7 +50,7 @@
         buildInputs = with pkgs; [
           elixir-bin.latest
           erlang
-          (zig pkgs)
+          zig
           _7zz
           xz
           git
