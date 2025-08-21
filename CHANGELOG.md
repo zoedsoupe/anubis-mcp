@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.1...v0.14.0) (2025-08-21)
+
+
+### Features
+
+* `resources/templates/list` method for clients ([a6eb210](https://github.com/zoedsoupe/anubis-mcp/commit/a6eb210af4b6913d8a8480e5247002c2b15f511c))
+
+
+### Bug Fixes
+
+* align docs and parsing of server component schema-field definition options ([#12](https://github.com/zoedsoupe/anubis-mcp/issues/12)) ([cb2df76](https://github.com/zoedsoupe/anubis-mcp/commit/cb2df761e05beacf2beb3d5e94bf56329c203cc7))
+* correctly pass server call timeout options ([a49f497](https://github.com/zoedsoupe/anubis-mcp/commit/a49f4973545860e98fa056655ff229df70c70749))
+* explicit handle title for components ([#9](https://github.com/zoedsoupe/anubis-mcp/issues/9)) ([1adfed2](https://github.com/zoedsoupe/anubis-mcp/commit/1adfed2f0e18a4cd2dc7d013556455a155a8ff7f))
+* output schemas should not validate on error resps ([#15](https://github.com/zoedsoupe/anubis-mcp/issues/15)) ([b5faaad](https://github.com/zoedsoupe/anubis-mcp/commit/b5faaad5c409b3616273d5bee822d609ef35803b))
+
+
+### Reverts
+
+* "Add keep-alive messages to the StreamableHTTP transport ([#11](https://github.com/zoedsoupe/anubis-mcp/issues/11))" ([8ea5a3c](https://github.com/zoedsoupe/anubis-mcp/commit/8ea5a3c8edd31394b4f47cb3e4f73f06d8d12fed))
+
+
+### Miscellaneous Chores
+
+* rename hermes folders/files to anubis ([#5](https://github.com/zoedsoupe/anubis-mcp/issues/5)) ([239ee3f](https://github.com/zoedsoupe/anubis-mcp/commit/239ee3f611fd9ba3a8234ee8155da1cb9a8b89c7))
+
 ## [0.13.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.0...v0.13.1) (2025-07-31)
 
 
