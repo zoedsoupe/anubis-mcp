@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "mix"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    target-branch: "main"
+    reviewers:
+      - "zoedsoupe"
+    assignees:
+      - "zoedsoupe"
+    commit-message:
+      prefix: "deps:"
+      include: "scope"
