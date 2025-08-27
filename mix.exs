@@ -53,7 +53,7 @@ defmodule Anubis.MixProject do
       {:burrito, "~> 1.0", optional: true},
       {:plug, "~> 1.18", optional: true},
       {:mox, "~> 1.2", only: :test},
-      {:mimic, "~> 1.7", only: :test},
+      {:mimic, "~> 2.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:cowboy, "~> 2.10", only: :test},
       {:styler, "~> 1.4", only: [:dev, :test], runtime: false},
