@@ -668,28 +668,20 @@ defmodule Anubis.Server do
     subscribe? = opts[:subscribe?]
     list_changed? = opts[:list_changed?]
 
-    capabilities
-    |> Map.put("resources", %{})
-    |> then(&if(is_nil(subscribe?), do: &1, else: Map.put(&1, :subscribe, subscribe?)))
-    |> then(
-      &if(is_nil(list_changed?),
-        do: &1,
-        else: Map.put(&1, :listChanged, list_changed?)
-      )
-    )
+    resources_config =
+      %{}
+      |> then(&if(is_nil(subscribe?), do: &1, else: Map.put(&1, :subscribe, subscribe?)))
+      |> then(&if(is_nil(list_changed?), do: &1, else: Map.put(&1, :listChanged, list_changed?)))
+
+    Map.put(capabilities, "resources", resources_config)
   end
 
   def parse_capability({capability, opts}, %{} = capabilities) when is_server_capability(capability) do
     list_changed? = opts[:list_changed?]
 
-    capabilities
-    |> Map.put(to_string(capability), %{})
-    |> then(
-      &if(is_nil(list_changed?),
-        do: &1,
-        else: Map.put(&1, :listChanged, list_changed?)
-      )
-    )
+    capability_config = if is_nil(list_changed?), do: %{}, else: %{listChanged: list_changed?}
+
+    Map.put(capabilities, to_string(capability), capability_config)
   end
 
   @doc false
