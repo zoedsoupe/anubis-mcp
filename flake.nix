@@ -44,7 +44,7 @@
     packages = forAllSystems (pkgs: {
       default = pkgs.stdenv.mkDerivation {
         pname = "anubis-mcp";
-        version = "0.14.0"; # x-release-please-version
+        version = "0.14.1"; # x-release-please-version
         src = ./.;
 
         buildInputs = with pkgs; [
