@@ -239,8 +239,15 @@ defmodule Anubis.Server.Transport.STDIO do
     )
 
     case Message.decode(data) do
-      {:ok, messages} ->
-        process_message(messages, state)
+      {:ok, messages} when is_list(messages) ->
+        # Handle list of messages - process each one individually
+        Enum.each(messages, fn message ->
+          process_message(message, state)
+        end)
+
+      {:ok, message} ->
+        # Handle single message for backwards compatibility
+        process_message(message, state)
 
       {:error, reason} ->
         Logging.transport_event("parse_error", %{reason: reason}, level: :error)
