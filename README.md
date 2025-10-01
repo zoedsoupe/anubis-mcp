@@ -96,6 +96,17 @@ Named after Anubis, the Egyptian god of the underworld and guide to the afterlif
 
 The name also carries personal significance - after my journey through the corporate underworld ended unexpectedly, this project was reborn from the ashes of its predecessor, ready to guide developers through their own MCP adventures. Sometimes you need a deity of transitions to help you... transition. 🏳️‍⚧️
 
+## Sponsors
+
+Thanks to our amazing sponsors for supporting this project!
+
+<p align="center">
+  <a href="https://www.coderabbit.ai/?utm_source=oss&utm_medium=github&utm_campaign=zoedsoupe">
+    <img src="https://avatars.githubusercontent.com/u/132028505?s=200&v=4" alt="Coderabbit Sponsor Logo" height="80"/>
+  </a>
+</p>
+
+
 ## Documentation
 
 For detailed guides and examples, visit the [official documentation](https://hexdocs.pm/anubis_mcp).
