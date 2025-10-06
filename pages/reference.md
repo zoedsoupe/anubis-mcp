@@ -28,7 +28,6 @@ use Anubis.Client, options
 - `{:stdio, command: "cmd", args: ["arg1", "arg2"]}`
 - `{:streamable_http, url: "http://localhost:8000/mcp"}`
 - `{:websocket, url: "ws://localhost:8000/ws"}`
-- `{:sse, base_url: "http://localhost:8000"}`
 
 ### Client Functions
 

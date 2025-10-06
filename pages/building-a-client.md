@@ -132,9 +132,6 @@ transport: {:streamable_http, base_url: "http://localhost:8000"}
 
 # WebSocket for real-time
 transport: {:websocket, base_url: "ws://localhost:8000"}
-
-# Server-Sent Events
-transport: {:sse, base_url: "http://localhost:8000"}
 ```
 
 Which transport should you choose?
@@ -142,7 +139,6 @@ Which transport should you choose?
 - **STDIO**: Perfect for local tools and subprocess isolation
 - **HTTP**: Great for remote services and web APIs
 - **WebSocket**: When you need bidirectional real-time communication
-- **SSE**: For servers that push updates to clients (deprecated)
 
 ## Advanced Patterns
 

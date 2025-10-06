@@ -2,7 +2,6 @@ defmodule Mix.Interactive.Commands do
   @moduledoc false
 
   alias Anubis.MCP.Response
-  alias Anubis.Transport.SSE
   alias Anubis.Transport.STDIO
   alias Anubis.Transport.StreamableHTTP
   alias Mix.Interactive
@@ -305,11 +304,6 @@ defmodule Mix.Interactive.Commands do
     IO.puts("  #{UI.colors().info}Client Info:#{UI.colors().reset} #{inspect(state.client_info)}")
   end
 
-  defp print_transport_details(%{layer: SSE} = transport_info) do
-    transport_pid = transport_info[:name] || SSE
-    print_sse_details(transport_pid)
-  end
-
   defp print_transport_details(%{layer: STDIO} = transport_info) do
     transport_pid = transport_info[:name] || STDIO
     print_stdio_details(transport_pid)
@@ -322,16 +316,6 @@ defmodule Mix.Interactive.Commands do
 
   defp print_transport_details(transport_info) do
     IO.puts("  #{UI.colors().info}Transport:#{UI.colors().reset} #{inspect(transport_info)}")
-  end
-
-  defp print_sse_details(transport_pid) do
-    if Process.alive?(transport_pid) do
-      transport_state = :sys.get_state(transport_pid)
-
-      IO.puts("  #{UI.colors().info}Server URL:#{UI.colors().reset} #{transport_state[:server_url]}")
-
-      IO.puts("  #{UI.colors().info}SSE URL:#{UI.colors().reset} #{transport_state[:sse_url]}")
-    end
   end
 
   defp print_stdio_details(transport_pid) do

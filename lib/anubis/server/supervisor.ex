@@ -5,14 +5,12 @@ defmodule Anubis.Server.Supervisor do
 
   alias Anubis.Server.Base
   alias Anubis.Server.Session
-  alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.STDIO
   alias Anubis.Server.Transport.StreamableHTTP
 
-  @type sse :: {:sse, keyword()}
   @type stream_http :: {:streamable_http, keyword()}
 
-  @type transport :: :stdio | stream_http | sse | StubTransport
+  @type transport :: :stdio | stream_http | StubTransport
 
   @type start_option ::
           {:transport, transport}
@@ -131,19 +129,6 @@ defmodule Anubis.Server.Supervisor do
     name = registry.transport(server, :streamable_http)
     opts = Keyword.merge(opts, name: name, server: server, registry: registry)
     {StreamableHTTP, opts}
-  end
-
-  defp parse_transport_child({:sse, opts}, server, registry) do
-    IO.warn(
-      "The :sse transport option is deprecated as of MCP specification 2025-03-26. " <>
-        "Please use {:streamable_http, opts} instead. " <>
-        "The SSE transport is maintained only for backward compatibility with MCP protocol version 2024-11-05.",
-      []
-    )
-
-    name = registry.transport(server, :sse)
-    opts = Keyword.merge(opts, name: name, server: server, registry: registry)
-    {SSE, opts}
   end
 
   if Mix.env() == :test do

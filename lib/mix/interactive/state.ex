@@ -2,7 +2,6 @@ defmodule Mix.Interactive.State do
   @moduledoc false
 
   alias Anubis.Client.Request
-  alias Anubis.Transport.SSE
   alias Anubis.Transport.STDIO
   alias Anubis.Transport.StreamableHTTP
   alias Mix.Interactive.UI
@@ -152,9 +151,6 @@ defmodule Mix.Interactive.State do
       transport_state = :sys.get_state(transport_pid)
 
       case transport_layer do
-        SSE ->
-          print_sse_transport_state(transport_pid, transport_state, verbose)
-
         STDIO ->
           print_stdio_transport_state(transport_pid, transport_state, verbose)
 
@@ -179,52 +175,6 @@ defmodule Mix.Interactive.State do
     IO.puts(
       "\n#{UI.colors().error}Transport State (#{inspect(transport_layer)}):#{UI.colors().reset} Not available (invalid process identifier)"
     )
-  end
-
-  defp print_sse_transport_state(pid, state, verbose) do
-    IO.puts("\n#{UI.colors().success}SSE Transport State (#{inspect(pid)}):#{UI.colors().reset}")
-
-    IO.puts("  #{UI.colors().info}Server URL:#{UI.colors().reset} #{state[:server_url]}")
-
-    IO.puts("  #{UI.colors().info}SSE URL:#{UI.colors().reset} #{state[:sse_url]}")
-
-    print_sse_connection_status(state)
-    print_sse_stream_task(state)
-
-    if verbose do
-      # Print additional transport details in verbose mode
-      if map_size(state[:headers] || %{}) > 0 do
-        IO.puts("  #{UI.colors().info}Headers:#{UI.colors().reset}")
-        print_map(state[:headers], 4)
-      end
-
-      if state[:transport_opts] do
-        IO.puts("  #{UI.colors().info}Transport Options:#{UI.colors().reset} #{inspect(state[:transport_opts])}")
-      end
-
-      if state[:http_options] do
-        IO.puts("  #{UI.colors().info}HTTP Options:#{UI.colors().reset} #{inspect(state[:http_options])}")
-      end
-    end
-  end
-
-  defp print_sse_connection_status(state) do
-    if state[:message_url] do
-      IO.puts("  #{UI.colors().info}Message URL:#{UI.colors().reset} #{state[:message_url]}")
-
-      IO.puts("  #{UI.colors().success}Status:#{UI.colors().reset} Connected")
-    else
-      IO.puts("  #{UI.colors().warning}Status:#{UI.colors().reset} Connecting/Not connected")
-    end
-  end
-
-  defp print_sse_stream_task(state) do
-    if state[:stream_task] do
-      task = state[:stream_task]
-      status = if Process.alive?(task.pid), do: "alive", else: "dead"
-
-      IO.puts("  #{UI.colors().info}Stream Task:#{UI.colors().reset} #{inspect(task.pid)} (#{status})")
-    end
   end
 
   defp print_stdio_transport_state(pid, state, verbose) do

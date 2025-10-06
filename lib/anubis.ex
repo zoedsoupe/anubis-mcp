@@ -3,31 +3,27 @@ defmodule Anubis do
 
   import Peri
 
-  alias Anubis.Server.Transport.SSE, as: ServerSSE
   alias Anubis.Server.Transport.STDIO, as: ServerSTDIO
   alias Anubis.Server.Transport.StreamableHTTP, as: ServerStreamableHTTP
-  alias Anubis.Transport.SSE, as: ClientSSE
   alias Anubis.Transport.STDIO, as: ClientSTDIO
   alias Anubis.Transport.StreamableHTTP, as: ClientStreamableHTTP
 
   @client_transports if Mix.env() == :test,
                        do: [
                          ClientSTDIO,
-                         ClientSSE,
                          ClientStreamableHTTP,
                          StubTransport,
                          Anubis.MockTransport
                        ],
-                       else: [ClientSTDIO, ClientSSE, ClientStreamableHTTP]
+                       else: [ClientSTDIO, ClientStreamableHTTP]
 
   @server_transports if Mix.env() == :test,
                        do: [
                          ServerSTDIO,
                          ServerStreamableHTTP,
-                         ServerSSE,
                          StubTransport
                        ],
-                       else: [ServerSTDIO, ServerStreamableHTTP, ServerSSE]
+                       else: [ServerSTDIO, ServerStreamableHTTP]
 
   defschema :client_transport,
     layer: {:required, {:enum, @client_transports}},
