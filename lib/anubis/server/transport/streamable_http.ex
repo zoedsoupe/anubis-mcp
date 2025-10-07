@@ -77,7 +77,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:server, {:required, Anubis.get_schema(:process_name)}},
     {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:registry, {:atom, {:default, Anubis.Server.Registry}}},
-    {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}}
+    {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
+    {:keepalive, {:boolean, {:default, true}}},
+    {:keepalive_interval, {:integer, {:default, 5_000}}}
   ])
 
   @doc """
@@ -210,8 +212,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       sse_handlers: %{},
       active_tasks: %{},
       # keepalive
-      keepalive_interval: opts[:keepalive_interval] || 5_000,
-      keepalive_enabled: opts[:keepalive] || true
+      keepalive_interval: opts.keepalive_interval,
+      keepalive_enabled: opts.keepalive
     }
 
     if should_keepalive?(state) do
@@ -274,7 +276,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
           type: :handle_message,
           session_id: session_id,
           from: from,
-          task_timeout: task_timeout_ref
+          task_timeout: task_timeout_ref,
+          task: task
         }
 
         {:noreply, put_in(state.active_tasks[task.ref], task_info)}
@@ -304,7 +307,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
         session_id: session_id,
         from: from,
         has_sse_handler: sse_handler?,
-        task_timeout: task_timeout_ref
+        task_timeout: task_timeout_ref,
+        task: task
       }
 
       {:noreply, put_in(state.active_tasks[task.ref], task_info)}
@@ -416,6 +420,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:ok, error_json} = Error.to_json_rpc(timeout_error, ID.generate_error_id())
 
     GenServer.reply(task_info.from, {:error, error_json})
+    if task = task_info.task, do: Task.shutdown(task, :brutal_kill)
 
     Logging.transport_event(
       "task_timeout",
