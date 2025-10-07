@@ -34,7 +34,7 @@ if Code.ensure_loaded?(Plug) do
 
     - `:server` - The server process name (required)
     - `:session_header` - Custom header name for session ID (default: "mcp-session-id")
-    - `:timeout` - Request timeout in milliseconds (default: 30000)
+    - `:request_timeout` - Request timeout in milliseconds (default: 30000)
     - `:registry` - The registry to use. See `Anubis.Server.Registry.Adapter` for more information (default: Elixir's Registry implementation)
 
     ## Security Features
@@ -64,6 +64,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.ID
     alias Anubis.MCP.Message
     alias Anubis.Server.Transport.StreamableHTTP
+    alias Anubis.Server.Transport.StreamableHTTP.RequestParams
     alias Anubis.SSE.Streaming
     alias Plug.Conn.Unfetched
 
@@ -80,10 +81,9 @@ if Code.ensure_loaded?(Plug) do
       registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
       transport = registry.transport(server, :streamable_http)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
-      timeout = Keyword.get(opts, :timeout, @default_timeout)
-      call_timeout = Keyword.get(opts, :call_timeout, @default_timeout)
+      request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
 
-      %{transport: transport, session_header: session_header, timeout: timeout, call_timeout: call_timeout}
+      %{transport: transport, session_header: session_header, timeout: request_timeout}
     end
 
     @impl Plug
@@ -98,13 +98,13 @@ if Code.ensure_loaded?(Plug) do
 
     # GET request handler - establishes SSE connection
 
-    defp handle_get(conn, %{transport: transport, session_header: session_header, call_timeout: call_timeout}) do
+    defp handle_get(conn, %{transport: transport, session_header: session_header} = opts) do
       if wants_sse?(conn) do
         session_id = get_or_create_session_id(conn, session_header)
 
-        case StreamableHTTP.register_sse_handler(transport, session_id, call_timeout: call_timeout) do
+        case StreamableHTTP.register_sse_handler(transport, session_id) do
           :ok ->
-            start_sse_streaming(conn, transport, session_id, session_header)
+            start_sse_streaming(conn, Map.put(opts, :session_id, session_id))
 
           {:error, reason} ->
             Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
@@ -130,7 +130,17 @@ if Code.ensure_loaded?(Plug) do
           session_id: session_id
         })
 
-        process_message(message, conn, transport, session_id, context, session_header, opts.call_timeout)
+        process_message(
+          conn,
+          RequestParams.new(
+            message: message,
+            transport: transport,
+            session_id: session_id,
+            context: context,
+            session_header: session_header,
+            timeout: opts.timeout
+          )
+        )
       else
         {:error, :invalid_accept_header} ->
           send_error(
@@ -157,22 +167,13 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp process_message(message, conn, transport, session_id, context, session_header, call_timeout)
-         when is_map(message) do
+    defp process_message(conn, %{message: message} = params) when is_map(message) do
       if Message.is_request(message) do
-        handle_request_with_possible_sse(
-          conn,
-          transport,
-          session_id,
-          message,
-          context,
-          session_header,
-          call_timeout
-        )
+        handle_request_with_possible_sse(conn, params)
       else
         # Notification
-        transport
-        |> StreamableHTTP.handle_message(session_id, message, context, call_timeout: call_timeout)
+        params
+        |> StreamableHTTP.handle_message()
         |> format_notification_response(conn)
       end
     end
@@ -215,91 +216,54 @@ if Code.ensure_loaded?(Plug) do
 
     # Handle requests that might need SSE streaming
 
-    defp handle_request_with_possible_sse(conn, transport, session_id, body, context, session_header, call_timeout) do
+    defp handle_request_with_possible_sse(conn, params) do
       if wants_sse?(conn) do
-        handle_sse_request(
-          conn,
-          transport,
-          session_id,
-          body,
-          context,
-          session_header,
-          call_timeout
-        )
+        handle_sse_request(conn, params)
       else
-        handle_json_request(
-          conn,
-          transport,
-          session_id,
-          body,
-          context,
-          session_header,
-          call_timeout
-        )
+        handle_json_request(conn, params)
       end
     end
 
-    defp handle_sse_request(conn, transport, session_id, body, context, session_header, call_timeout) do
-      case StreamableHTTP.handle_message_for_sse(
-             transport,
-             session_id,
-             body,
-             context,
-             call_timeout: call_timeout
-           ) do
+    defp handle_sse_request(conn, params) do
+      case StreamableHTTP.handle_message_for_sse(params) do
         {:sse, response} ->
-          route_sse_response(
-            conn,
-            transport,
-            session_id,
-            response,
-            body,
-            context,
-            session_header,
-            call_timeout
-          )
+          route_sse_response(conn, response, params)
 
         {:ok, response} ->
           conn
           |> put_resp_content_type("application/json")
-          |> maybe_add_session_header(session_header, session_id)
+          |> maybe_add_session_header(params.session_header, params.session_id)
           |> send_resp(200, response)
 
         {:error, error} ->
-          handle_request_error(conn, error, body)
+          handle_request_error(conn, error, params.message)
       end
     end
 
-    defp handle_json_request(conn, transport, session_id, body, context, session_header, call_timeout) do
-      case StreamableHTTP.handle_message(transport, session_id, body, context, call_timeout: call_timeout) do
+    defp handle_json_request(conn, params) do
+      case StreamableHTTP.handle_message(params) do
         {:ok, response} ->
           conn
           |> put_resp_content_type("application/json")
-          |> maybe_add_session_header(session_header, session_id)
+          |> maybe_add_session_header(params.session_header, params.session_id)
           |> send_resp(200, response)
 
         {:error, error} ->
-          handle_request_error(conn, error, body)
+          handle_request_error(conn, error, params.message)
       end
     end
 
-    defp route_sse_response(conn, transport, session_id, response, body, context, session_header, call_timeout) do
-      if handler_pid = StreamableHTTP.get_sse_handler(transport, session_id, call_timeout: call_timeout) do
+    defp route_sse_response(conn, response, params) do
+      %{transport: transport, session_id: session_id} = params
+
+      if handler_pid = StreamableHTTP.get_sse_handler(transport, session_id) do
         send(handler_pid, {:sse_message, response})
 
         conn
         |> put_resp_content_type("application/json")
         |> send_resp(202, "{}")
       else
-        establish_sse_for_request(
-          conn,
-          transport,
-          session_id,
-          body,
-          context,
-          session_header,
-          call_timeout
-        )
+        establish_sse_for_request(conn, params)
       end
     end
 
@@ -317,11 +281,13 @@ if Code.ensure_loaded?(Plug) do
       )
     end
 
-    defp establish_sse_for_request(conn, transport, session_id, body, context, session_header, call_timeout) do
-      case StreamableHTTP.register_sse_handler(transport, session_id, call_timeout: call_timeout) do
+    defp establish_sse_for_request(conn, params) do
+      %{transport: transport, session_id: session_id} = params
+
+      case StreamableHTTP.register_sse_handler(transport, session_id) do
         :ok ->
-          start_background_request(transport, session_id, body, context, call_timeout)
-          start_sse_streaming(conn, transport, session_id, session_header)
+          start_background_request(params)
+          start_sse_streaming(conn, params)
 
         {:error, reason} ->
           Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
@@ -329,16 +295,16 @@ if Code.ensure_loaded?(Plug) do
           send_jsonrpc_error(
             conn,
             Error.protocol(:internal_error, %{reason: reason}),
-            extract_request_id(body)
+            extract_request_id(params.message)
           )
       end
     end
 
-    defp start_background_request(transport, session_id, body, context, call_timeout) do
+    defp start_background_request(params) do
       self_pid = self()
 
       Task.start(fn ->
-        case StreamableHTTP.handle_message(transport, session_id, body, context, call_timeout: call_timeout) do
+        case StreamableHTTP.handle_message(params) do
           {:ok, response} when is_binary(response) ->
             send(self_pid, {:sse_message, response})
 
@@ -352,9 +318,11 @@ if Code.ensure_loaded?(Plug) do
       end)
     end
 
-    defp start_sse_streaming(conn, transport, session_id, session_header) do
+    defp start_sse_streaming(conn, params) do
+      %{transport: transport, session_id: session_id} = params
+
       conn
-      |> put_resp_header(session_header, session_id)
+      |> put_resp_header(params.session_header, session_id)
       |> Streaming.prepare_connection()
       |> Streaming.start(transport, session_id,
         on_close: fn ->

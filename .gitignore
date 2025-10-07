@@ -47,3 +47,8 @@ result
 # Claude
 /.claude/
 /rag/
+
+# LSP
+/.lexical/
+/.expert/
+/.elixir-tools/

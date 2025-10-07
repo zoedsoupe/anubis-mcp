@@ -51,7 +51,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   import Peri
 
+  alias Anubis.MCP.Error
+  alias Anubis.MCP.ID
   alias Anubis.MCP.Message
+  alias Anubis.Server.Transport.StreamableHTTP.RequestParams
   alias Anubis.Telemetry
   alias Anubis.Transport.Behaviour, as: Transport
 
@@ -64,21 +67,19 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   - `:server` - The server process (required)
   - `:name` - Name for registering the GenServer (required)
-  - `:call_timeout` - Timeout for internal GenServer calls in milliseconds (default: 10 minutes)
   """
   @type option ::
           {:server, GenServer.server()}
           | {:name, GenServer.name()}
-          | {:call_timeout, pos_integer()}
           | GenServer.option()
 
   defschema(:parse_options, [
     {:server, {:required, Anubis.get_schema(:process_name)}},
     {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:registry, {:atom, {:default, Anubis.Server.Registry}}},
-    {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}},
     {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
-    {:call_timeout, {:integer, {:default, to_timeout(second: 30)}}}
+    {:keepalive, {:boolean, {:default, true}}},
+    {:keepalive_interval, {:integer, {:default, 5_000}}}
   ])
 
   @doc """
@@ -108,10 +109,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     * `{:error, reason}` otherwise
   """
   @impl Transport
-  @spec send_message(GenServer.server(), binary(), keyword()) :: :ok | {:error, term()}
-  def send_message(transport, message, opts \\ []) when is_binary(message) do
-    timeout = Keyword.get(opts, :call_timeout, 5000)
-    GenServer.call(transport, {:send_message, message}, timeout)
+  @spec send_message(GenServer.server(), binary()) :: :ok | {:error, term()}
+  def send_message(transport, message) when is_binary(message) do
+    GenServer.call(transport, {:send_message, message}, 5000)
   end
 
   @doc """
@@ -137,11 +137,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   Called by the Plug when establishing an SSE connection.
   The calling process becomes the SSE handler for the session.
   """
-  @spec register_sse_handler(GenServer.server(), String.t(), keyword()) ::
-          :ok | {:error, term()}
-  def register_sse_handler(transport, session_id, opts \\ []) do
-    timeout = Keyword.get(opts, :call_timeout, 5000)
-    GenServer.call(transport, {:register_sse_handler, session_id, self()}, timeout)
+  @spec register_sse_handler(GenServer.server(), String.t()) :: :ok | {:error, term()}
+  def register_sse_handler(transport, session_id) do
+    GenServer.call(transport, {:register_sse_handler, session_id, self()}, 5000)
   end
 
   @doc """
@@ -159,11 +157,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   Called by the Plug when a message is received via HTTP POST.
   """
-  @spec handle_message(GenServer.server(), String.t(), map() | list(map), map(), keyword()) ::
-          {:ok, binary() | nil} | {:error, term()}
-  def handle_message(transport, session_id, message, context, opts \\ []) do
-    timeout = Keyword.get(opts, :call_timeout, 5000)
-    GenServer.call(transport, {:handle_message, session_id, message, context}, timeout)
+  @spec handle_message(RequestParams.t()) :: {:ok, binary() | nil} | {:error, term()}
+  def handle_message(%RequestParams{transport: transport} = params) do
+    timeout = params.timeout + 1_000
+    GenServer.call(transport, {:handle_message, params}, timeout)
   end
 
   @doc """
@@ -172,16 +169,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   This allows the Plug to know whether to stream the response via SSE
   or return it as a regular HTTP response.
   """
-  @spec handle_message_for_sse(GenServer.server(), String.t(), map(), map(), keyword()) ::
+  @spec handle_message_for_sse(RequestParams.t()) ::
           {:ok, binary()} | {:sse, binary()} | {:error, term()}
-  def handle_message_for_sse(transport, session_id, message, context, opts \\ []) do
-    timeout = Keyword.get(opts, :call_timeout, 5000)
-
-    GenServer.call(
-      transport,
-      {:handle_message_for_sse, session_id, message, context},
-      timeout
-    )
+  def handle_message_for_sse(%RequestParams{transport: transport} = params) do
+    timeout = params.timeout + 1_000
+    GenServer.call(transport, {:handle_message_for_sse, params}, timeout)
   end
 
   @doc """
@@ -190,10 +182,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   Returns the pid of the process handling SSE for this session,
   or nil if no SSE connection exists.
   """
-  @spec get_sse_handler(GenServer.server(), String.t(), keyword()) :: pid() | nil
-  def get_sse_handler(transport, session_id, opts \\ []) do
-    timeout = Keyword.get(opts, :call_timeout, 5000)
-    GenServer.call(transport, {:get_sse_handler, session_id}, timeout)
+  @spec get_sse_handler(GenServer.server(), String.t()) :: pid() | nil
+  def get_sse_handler(transport, session_id) do
+    GenServer.call(transport, {:get_sse_handler, session_id})
   end
 
   @doc """
@@ -216,13 +207,18 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     state = %{
       server: server,
       registry: opts.registry,
-      request_timeout: opts.request_timeout,
-      call_timeout: opts.call_timeout,
       task_supervisor: opts.task_supervisor,
       # Map of session_id => {pid, monitor_ref}
       sse_handlers: %{},
-      active_tasks: %{}
+      active_tasks: %{},
+      # keepalive
+      keepalive_interval: opts.keepalive_interval,
+      keepalive_enabled: opts.keepalive
     }
+
+    if should_keepalive?(state) do
+      schedule_keepalive(state.keepalive_interval)
+    end
 
     Logger.metadata(mcp_transport: :streamable_http, mcp_server: server)
 
@@ -255,12 +251,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def handle_call({:handle_message, session_id, message, context}, from, state) when is_map(message) do
+  def handle_call({:handle_message, %{message: message} = params}, from, state) when is_map(message) do
+    %{session_id: session_id, context: context, timeout: timeout} = params
     server = state.registry.whereis_server(state.server)
-    timeout = state.request_timeout
 
     cond do
-      Message.is_notification(message) ->
+      Message.is_notification(params.message) ->
         GenServer.cast(server, {:notification, message, session_id, context})
         {:reply, {:ok, nil}, state}
 
@@ -270,14 +266,18 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
       true ->
         task =
-          Task.Supervisor.async(state.task_supervisor, fn ->
-            forward_request_to_server(server, message, session_id, context, timeout)
+          Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+            forward_request_to_server(server, params)
           end)
+
+        task_timeout_ref = Process.send_after(self(), {:task_timeout, task.ref}, timeout)
 
         task_info = %{
           type: :handle_message,
           session_id: session_id,
-          from: from
+          from: from,
+          task_timeout: task_timeout_ref,
+          task: task
         }
 
         {:noreply, put_in(state.active_tasks[task.ref], task_info)}
@@ -285,9 +285,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def handle_call({:handle_message_for_sse, session_id, message, context}, from, state) when is_map(message) do
+  def handle_call({:handle_message_for_sse, %{message: message} = params}, from, state) when is_map(message) do
+    %{session_id: session_id, context: context, timeout: timeout} = params
     server = state.registry.whereis_server(state.server)
-    timeout = state.request_timeout
 
     if Message.is_notification(message) do
       GenServer.cast(server, {:notification, message, session_id, context})
@@ -296,22 +296,19 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       sse_handler? = Map.has_key?(state.sse_handlers, session_id)
 
       task =
-        Task.Supervisor.async(state.task_supervisor, fn ->
-          forward_request_to_server(
-            server,
-            message,
-            session_id,
-            context,
-            timeout,
-            sse_handler?
-          )
+        Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+          forward_request_to_server(server, params, sse_handler?)
         end)
+
+      task_timeout_ref = Process.send_after(self(), {:task_timeout, task.ref}, timeout)
 
       task_info = %{
         type: :handle_message_for_sse,
         session_id: session_id,
         from: from,
-        has_sse_handler: sse_handler?
+        has_sse_handler: sse_handler?,
+        task_timeout: task_timeout_ref,
+        task: task
       }
 
       {:noreply, put_in(state.active_tasks[task.ref], task_info)}
@@ -352,10 +349,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:reply, :ok, state}
   end
 
-  defp forward_request_to_server(server, message, session_id, context, timeout, has_sse_handler \\ false) do
-    msg = {:request, message, session_id, context}
+  defp forward_request_to_server(server, params, has_sse_handler \\ false) do
+    msg = {:request, params.message, params.session_id, params.context}
 
-    case GenServer.call(server, msg, timeout) do
+    case GenServer.call(server, msg, params.timeout) do
       {:ok, response} when has_sse_handler ->
         {:sse, response}
 
@@ -365,7 +362,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       {:error, reason} ->
         Logging.transport_event(
           "server_error",
-          %{reason: reason, session_id: session_id},
+          %{reason: reason, session_id: params.session_id},
           level: :error
         )
 
@@ -411,9 +408,41 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   # Handle successful task completion
   @impl GenServer
+  def handle_info({:task_timeout, ref}, %{active_tasks: active_tasks} = state) when is_map_key(active_tasks, ref) do
+    {task_info, active_tasks} = Map.pop(active_tasks, ref)
+
+    timeout_error =
+      Error.protocol(:internal_error, %{
+        message: "Request timeout - tool execution exceeded limit",
+        session_id: task_info.session_id
+      })
+
+    {:ok, error_json} = Error.to_json_rpc(timeout_error, ID.generate_error_id())
+
+    GenServer.reply(task_info.from, {:error, error_json})
+    if task = task_info.task, do: Task.shutdown(task, :brutal_kill)
+
+    Logging.transport_event(
+      "task_timeout",
+      %{
+        session_id: task_info.session_id
+      },
+      level: :warning
+    )
+
+    {:noreply, %{state | active_tasks: active_tasks}}
+  end
+
+  def handle_info({:task_timeout, _ref}, state), do: {:noreply, state}
+
   def handle_info({ref, result}, %{active_tasks: active_tasks} = state)
       when is_reference(ref) and is_map_key(active_tasks, ref) do
     {task_info, active_tasks} = Map.pop(active_tasks, ref)
+
+    if Map.has_key?(task_info, :timeout_ref) do
+      Process.cancel_timer(task_info.task_timeout)
+    end
+
     GenServer.reply(task_info.from, result)
     Process.demonitor(ref, [:flush])
 
@@ -455,7 +484,20 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:noreply, %{state | sse_handlers: sse_handlers}}
   end
 
-  def handle_info(_msg, state) do
+  def handle_info(:send_keepalive, state) do
+    for {_session_id, {pid, _ref}} <- state.sse_handlers do
+      send(pid, :sse_keepalive)
+    end
+
+    if should_keepalive?(state) do
+      schedule_keepalive(state.keepalive_interval)
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info(msg, state) do
+    Logging.transport_event("unknown handle_info message", msg, level: :warning)
     {:noreply, state}
   end
 
@@ -468,5 +510,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     )
 
     :ok
+  end
+
+  defp schedule_keepalive(interval) do
+    Process.send_after(self(), :send_keepalive, interval)
+  end
+
+  defp should_keepalive?(state) do
+    state.keepalive_enabled and not Enum.empty?(state.sse_handlers)
   end
 end

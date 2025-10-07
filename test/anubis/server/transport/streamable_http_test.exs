@@ -4,6 +4,7 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
   import ExUnit.CaptureLog
 
   alias Anubis.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Transport.StreamableHTTP.RequestParams
 
   setup :with_default_registry
 
@@ -60,7 +61,16 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
       message = build_request("ping", %{})
 
-      StreamableHTTP.handle_message_for_sse(transport, session_id, message, %{})
+      params = %RequestParams{
+        transport: transport,
+        session_id: session_id,
+        message: message,
+        context: %{},
+        session_header: nil,
+        timeout: 5
+      }
+
+      StreamableHTTP.handle_message_for_sse(params)
 
       # Clean up to avoid logs after test ends
       capture_log(fn ->
