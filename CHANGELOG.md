@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.0...v0.14.1) (2025-10-07)
+
+
+### Bug Fixes
+
+* correct capability parsing to nest options under capability keys ([#31](https://github.com/zoedsoupe/anubis-mcp/issues/31)) ([9946027](https://github.com/zoedsoupe/anubis-mcp/commit/9946027072aee81297ee3c6c10e75acbb1328ae3))
+* correctly handle timeouts and keepalive ([#41](https://github.com/zoedsoupe/anubis-mcp/issues/41)) ([2f44840](https://github.com/zoedsoupe/anubis-mcp/commit/2f448404601799a061c9971bee69222d9c7bf927))
+
+
+### Documentation
+
+* rewrite introduction/home documentation page ([34baf39](https://github.com/zoedsoupe/anubis-mcp/commit/34baf3907e7e50b490398f48c32a782d213c36e9))
+
+
+### Miscellaneous Chores
+
+* add sponsors section with coderabbit ([f04f8bb](https://github.com/zoedsoupe/anubis-mcp/commit/f04f8bb100eb03602fd59716936ce2353040f4b2))
+* update example projects elixir deps, use fixed otp version and stable version for CLI release ([b362e54](https://github.com/zoedsoupe/anubis-mcp/commit/b362e54594d1551856436eb401a394be33dbf3a6))
+
+
+### Continuous Integration
+
+* fix zig version for CLI release and locally on flake ([e7ed2b4](https://github.com/zoedsoupe/anubis-mcp/commit/e7ed2b4aa94cef5edf5968f30c24e5b1e4aac81e))
+
 ## [0.14.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.1...v0.14.0) (2025-08-21)
 
 
