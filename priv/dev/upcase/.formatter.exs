@@ -1,5 +1,5 @@
 # Used by "mix format"
 [
   inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"],
-  import_deps: [:plug, :hermes_mcp]
+  import_deps: [:plug, :anubis_mcp]
 ]

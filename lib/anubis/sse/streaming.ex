@@ -78,6 +78,9 @@ if Code.ensure_loaded?(Plug) do
 
     defp loop(conn, transport, session_id, event_counter) do
       receive do
+        :sse_keepalive ->
+          loop(keep_alive(conn), transport, session_id, event_counter + 1)
+
         {:sse_message, message} when is_binary(message) ->
           case send_event(conn, message, event_counter) do
             {:ok, conn} ->
@@ -116,6 +119,10 @@ if Code.ensure_loaded?(Plug) do
 
           loop(conn, transport, session_id, event_counter)
       end
+    end
+
+    defp keep_alive(conn) do
+      Plug.Conn.chunk(conn, ": keepalive\n\n")
     end
   end
 end
