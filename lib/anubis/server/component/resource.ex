@@ -10,30 +10,30 @@ defmodule Anubis.Server.Component.Resource do
 
       defmodule MyServer.Resources.Documentation do
         @behaviour Anubis.Server.Behaviour.Resource
-        
+
         alias Anubis.Server.Frame
-        
+
         @impl true
         def uri, do: "file:///docs/readme.md"
-        
+
         @impl true
         def name, do: "Project README"
-        
+
         @impl true
         def description, do: "The main documentation for this project"
-        
+
         @impl true
         def mime_type, do: "text/markdown"
-        
+
         @impl true
         def read(_params, frame) do
           case File.read("README.md") do
-            {:ok, content} -> 
+            {:ok, content} ->
               # Can track access in frame
               new_frame = Frame.assign(frame, :last_resource_access, DateTime.utc_now())
               {:ok, content, new_frame}
-              
-            {:error, reason} -> 
+
+            {:error, reason} ->
               {:error, "Failed to read README: \#{inspect(reason)}"}
           end
         end
@@ -43,19 +43,19 @@ defmodule Anubis.Server.Component.Resource do
 
       defmodule MyServer.Resources.SystemStatus do
         @behaviour Anubis.Server.Behaviour.Resource
-        
+
         @impl true
         def uri, do: "system://status"
-        
+
         @impl true
         def name, do: "System Status"
-        
+
         @impl true
         def description, do: "Current system status and metrics"
-        
+
         @impl true
         def mime_type, do: "application/json"
-        
+
         @impl true
         def read(_params, frame) do
           status = %{
@@ -64,7 +64,7 @@ defmodule Anubis.Server.Component.Resource do
             user_id: frame.assigns[:user_id],
             timestamp: DateTime.utc_now()
           }
-          
+
           {:ok, Jason.encode!(status), frame}
         end
       end
@@ -78,23 +78,23 @@ defmodule Anubis.Server.Component.Resource do
   @type content :: binary() | String.t()
 
   @type t :: %__MODULE__{
-          uri: String.t(),
+          uri: String.t() | nil,
+          uri_template: String.t() | nil,
           name: String.t(),
           description: String.t() | nil,
           mime_type: String.t(),
           handler: module | nil,
-          title: String.t() | nil,
-          uri_template: String.t() | nil
+          title: String.t() | nil
         }
 
   defstruct [
     :uri,
+    :uri_template,
     :name,
     description: nil,
     mime_type: "text/plain",
     handler: nil,
-    title: nil,
-    uri_template: nil
+    title: nil
   ]
 
   @doc """
@@ -105,8 +105,20 @@ defmodule Anubis.Server.Component.Resource do
   - `file://` for file-based resources
   - `http://` or `https://` for web resources
   - Custom schemes for application-specific resources
+
+  Note: Either `uri/0` or `uri_template/0` must be implemented, but not both.
   """
   @callback uri() :: String.t()
+
+  @doc """
+  Returns the URI template that identifies this resource template.
+
+  URI templates follow RFC 6570 syntax and allow parameterized resource URIs.
+  For example: `file:///{path}` or `db:///{table}/{id}`
+
+  Note: Either `uri/0` or `uri_template/0` must be implemented, but not both.
+  """
+  @callback uri_template() :: String.t()
 
   @doc """
   Returns the `name` that identifies this resource.
@@ -164,7 +176,7 @@ defmodule Anubis.Server.Component.Resource do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks title: 0
+  @optional_callbacks title: 0, uri: 0, uri_template: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Resource

@@ -39,21 +39,42 @@ defmodule Anubis.Server.Handlers.Resources do
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_read(%{"params" => %{"uri" => uri}}, frame, server) when is_binary(uri) do
     resources = Handlers.get_server_resources(server, frame)
+    templates = Handlers.get_server_resource_templates(server, frame)
 
-    if resource = find_resource_module(resources, uri) do
-      read_single_resource(server, resource, frame)
-    else
-      payload = %{message: "Resource not found: #{uri}"}
-      error = Error.resource(:not_found, payload)
-      {:error, error, frame}
+    case find_static_resource(resources, uri) do
+      %Resource{} = resource ->
+        read_single_resource(server, resource, uri, frame)
+
+      nil ->
+        try_resource_templates(templates, server, uri, frame)
     end
   end
 
   # Private functions
 
-  defp find_resource_module(resources, uri), do: Enum.find(resources, &(&1.uri == uri))
+  defp find_static_resource(resources, uri), do: Enum.find(resources, &(&1.uri == uri))
 
-  defp read_single_resource(server, %Resource{handler: nil, uri: uri, mime_type: mime_type}, frame) do
+  defp try_resource_templates([], _server, uri, frame) do
+    payload = %{message: "Resource not found: #{uri}"}
+    error = Error.resource(:not_found, payload)
+    {:error, error, frame}
+  end
+
+  defp try_resource_templates([template | rest], server, uri, frame) do
+    case read_single_resource(server, template, uri, frame) do
+      {:error, %Error{code: -32_002}, _frame} ->
+        # Try templates sequentially until one matches or all fail
+        try_resource_templates(rest, server, uri, frame)
+
+      result ->
+        # Either success or a different error (e.g., permission denied, file not found)
+        # Return immediately - don't try other templates
+        result
+    end
+  end
+
+  # For resources without a handler module, delegate to server's handle_resource_read/2
+  defp read_single_resource(server, %Resource{handler: nil, mime_type: mime_type}, uri, frame) do
     case server.handle_resource_read(uri, frame) do
       {:reply, %Response{} = response, frame} ->
         content = Response.to_protocol(response, uri, mime_type)
@@ -68,7 +89,7 @@ defmodule Anubis.Server.Handlers.Resources do
     end
   end
 
-  defp read_single_resource(_server, %Resource{handler: handler, uri: uri, mime_type: mime_type}, frame) do
+  defp read_single_resource(_server, %Resource{handler: handler, mime_type: mime_type}, uri, frame) do
     case handler.read(%{"uri" => uri}, frame) do
       {:reply, %Response{} = response, frame} ->
         content = Response.to_protocol(response, uri, mime_type)

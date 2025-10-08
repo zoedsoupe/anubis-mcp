@@ -23,7 +23,7 @@ defmodule Anubis.Server.Frame do
       All header names are downcased.
     * `query_params` - the request query params as a map, example: `%{"session" => "abc123"}`.
       Returns `nil` if query params were not fetched by the Plug pipeline.
-    * `remote_ip` - the IP of the client, example: `{151, 236, 219, 228}`. 
+    * `remote_ip` - the IP of the client, example: `{151, 236, 219, 228}`.
       This field is set by the transport layer.
     * `scheme` - the request scheme as an atom, example: `:https`
     * `host` - the requested host as a binary, example: `"api.example.com"`
@@ -467,7 +467,9 @@ defmodule Anubis.Server.Frame do
   end
 
   @doc """
-  Registers a resource definition. THis also supports resource templates (via URI templates).
+  Registers a resource definition with a fixed URI.
+
+  For parameterized resources, use `register_resource_template/3` instead.
   """
   @spec register_resource(t, String.t(), list(resource_opt)) :: t
         when resource_opt:
@@ -480,6 +482,39 @@ defmodule Anubis.Server.Frame do
 
     update_components(frame, %Resource{
       uri: uri,
+      title: opts[:title] || name,
+      name: name,
+      description: opts[:description],
+      mime_type: opts[:mime_type] || "text/plain"
+    })
+  end
+
+  @doc """
+  Registers a resource template definition using a URI template (RFC 6570).
+
+  URI templates allow parameterized resources like `file:///{path}` or `db:///{table}/{id}`.
+
+  ## Examples
+
+      frame = Frame.register_resource_template(frame, "file:///{path}",
+        name: "project_files",
+        title: "Project Files",
+        description: "Access files in the project directory"
+      )
+  """
+  @spec register_resource_template(t, String.t(), list(resource_template_opt)) :: t
+        when resource_template_opt:
+               {:title, String.t() | nil}
+               | {:name, String.t()}
+               | {:description, String.t() | nil}
+               | {:mime_type, String.t() | nil}
+  def register_resource_template(%__MODULE__{} = frame, uri_template, opts) when is_binary(uri_template) do
+    # name is required as it serves as a semantic identifier for the template.
+    # Unlike static resources, templates like "file:///{path}" cannot derive meaningful names.
+    name = Keyword.fetch!(opts, :name)
+
+    update_components(frame, %Resource{
+      uri_template: uri_template,
       title: opts[:title] || name,
       name: name,
       description: opts[:description],

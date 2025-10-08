@@ -1,6 +1,19 @@
 defmodule Upcase.Server do
   @moduledoc """
   A simple MCP server that upcases input text.
+
+  ## Features
+
+  - Tools: Text transformation (upcase, analyze)
+  - Prompts: Text transformation templates
+  - Resources: Static and template-based resources
+
+  ## Resource Templates
+
+  This server demonstrates both compile-time and runtime resource template registration:
+
+  - `FileTemplate` - Compile-time registration via `component/1` macro
+  - `environment_variables` - Runtime registration via `register_resource_template/3` in `init/2`
   """
 
   use Anubis.Server, capabilities: [:tools, :resources, :prompts]
@@ -23,6 +36,7 @@ defmodule Upcase.Server do
   component(Upcase.Tools.AnalyzeText)
   component(Upcase.Prompts.TextTransform)
   component(Upcase.Resources.Examples)
+  component(Upcase.Resources.FileTemplate)
 
   @impl true
   def init(client_info, frame) do
@@ -35,6 +49,11 @@ defmodule Upcase.Server do
      |> register_tool("timeout",
        description: "tests the server timeout",
        input_schema: %{interval: {:required, :integer}}
+     )
+     |> register_resource_template("env:///{variable}",
+       name: "environment_variables",
+       description: "Access environment variables dynamically",
+       mime_type: "text/plain"
      )}
   end
 
@@ -52,6 +71,21 @@ defmodule Upcase.Server do
     Process.sleep(interval)
     IO.puts("slept!")
     {:reply, Response.text(Response.tool(), "slept for #{interval}"), frame}
+  end
+
+  @impl true
+  def handle_resource_read("env:///" <> variable, frame) do
+    case System.get_env(variable) do
+      nil ->
+        {:error, Anubis.MCP.Error.resource(:not_found, %{variable: variable}), frame}
+
+      value ->
+        {:reply, Response.text(Response.resource(), value), frame}
+    end
+  end
+
+  def handle_resource_read(_uri, frame) do
+    {:error, Anubis.MCP.Error.resource(:not_found, %{}), frame}
   end
 
   defp schedule_hello do
