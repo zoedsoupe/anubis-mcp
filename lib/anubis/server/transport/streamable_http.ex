@@ -62,6 +62,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @type t :: GenServer.server()
 
+  @type request_t :: %RequestParams{
+          transport: GenServer.server(),
+          session_id: String.t() | nil,
+          session_header: String.t(),
+          timeout: pos_integer(),
+          context: map() | nil,
+          message: map() | binary() | nil
+        }
+
   @typedoc """
   StreamableHTTP transport options
 
@@ -157,7 +166,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   Called by the Plug when a message is received via HTTP POST.
   """
-  @spec handle_message(RequestParams.t()) :: {:ok, binary() | nil} | {:error, term()}
+  @spec handle_message(request_t) :: {:ok, binary() | nil} | {:error, term()}
   def handle_message(%RequestParams{transport: transport} = params) do
     timeout = params.timeout + 1_000
     GenServer.call(transport, {:handle_message, params}, timeout)
@@ -169,7 +178,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   This allows the Plug to know whether to stream the response via SSE
   or return it as a regular HTTP response.
   """
-  @spec handle_message_for_sse(RequestParams.t()) ::
+  @spec handle_message_for_sse(request_t) ::
           {:ok, binary()} | {:sse, binary()} | {:error, term()}
   def handle_message_for_sse(%RequestParams{transport: transport} = params) do
     timeout = params.timeout + 1_000
