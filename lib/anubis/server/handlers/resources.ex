@@ -67,13 +67,12 @@ defmodule Anubis.Server.Handlers.Resources do
         try_resource_templates(rest, server, uri, frame)
 
       result ->
-        # Either success or a different error (e.g., permission denied, file not found)
+        # Either success or a different error (e.g., permission denied)
         # Return immediately - don't try other templates
         result
     end
   end
 
-  # For resources without a handler module, delegate to server's handle_resource_read/2
   defp read_single_resource(server, %Resource{handler: nil, mime_type: mime_type}, uri, frame) do
     case server.handle_resource_read(uri, frame) do
       {:reply, %Response{} = response, frame} ->
