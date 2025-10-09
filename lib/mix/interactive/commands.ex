@@ -17,6 +17,7 @@ defmodule Mix.Interactive.Commands do
     "list_prompts" => "List server prompts",
     "get_prompt" => "Get a server prompt with arguments (JSON or @filepath)",
     "list_resources" => "List server resources",
+    "list_resource_templates" => "List server resource templates",
     "read_resource" => "Read a server resource",
     "initialize" => "Retry server connection initialization",
     "show_state" => "Show internal state of client and transport",
@@ -47,6 +48,10 @@ defmodule Mix.Interactive.Commands do
 
   def process_command("list_resources", client, loop_fn) do
     list_resources(client, loop_fn)
+  end
+
+  def process_command("list_resource_templates", client, loop_fn) do
+    list_resource_templates(client, loop_fn)
   end
 
   def process_command("read_resource", client, loop_fn) do
@@ -194,6 +199,21 @@ defmodule Mix.Interactive.Commands do
     case Anubis.Client.Base.list_resources(client, timeout_opts) do
       {:ok, %Response{result: %{"resources" => resources}}} ->
         UI.print_items("resources", resources, "uri")
+
+      {:error, reason} ->
+        UI.print_error(reason)
+    end
+
+    loop_fn.()
+  end
+
+  defp list_resource_templates(client, loop_fn) do
+    IO.puts("\n#{UI.colors().info}Fetching resource templates...#{UI.colors().reset}")
+    timeout_opts = prompt_for_timeout()
+
+    case Anubis.Client.Base.list_resource_templates(client, timeout_opts) do
+      {:ok, %Response{result: %{"resourceTemplates" => templates}}} ->
+        UI.print_items("resource templates", templates, "name")
 
       {:error, reason} ->
         UI.print_error(reason)

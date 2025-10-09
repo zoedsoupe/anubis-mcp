@@ -94,6 +94,9 @@ defmodule Mix.Interactive.UI do
         title == "resources" ->
           print_resource_details(item)
 
+        title == "resource templates" ->
+          print_resource_template_details(item)
+
         true ->
           nil
       end
@@ -154,6 +157,21 @@ defmodule Mix.Interactive.UI do
 
     if Map.has_key?(resource, "name") && resource["name"] != resource["uri"] do
       IO.puts("    #{@colors.info}Name:#{@colors.reset} #{resource["name"]}")
+    end
+  end
+
+  defp print_resource_template_details(template) when is_map(template) do
+    if Map.has_key?(template, "uriTemplate") do
+      IO.puts("    #{@colors.info}URI Template:#{@colors.reset} #{template["uriTemplate"]}")
+    end
+
+    if Map.has_key?(template, "mimeType") do
+      IO.puts("    #{@colors.info}Type:#{@colors.reset} #{template["mimeType"]}")
+    end
+
+    # Show title if it differs from the name
+    if Map.has_key?(template, "title") && template["title"] != template["name"] do
+      IO.puts("    #{@colors.info}Title:#{@colors.reset} #{template["title"]}")
     end
   end
 end

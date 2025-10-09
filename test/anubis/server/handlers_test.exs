@@ -1,6 +1,7 @@
 defmodule Anubis.Server.HandlersTest do
   use ExUnit.Case, async: true
 
+  alias Anubis.Server.Component
   alias Anubis.Server.Component.Prompt
   alias Anubis.Server.Component.Resource
   alias Anubis.Server.Component.Tool
@@ -304,6 +305,176 @@ defmodule Anubis.Server.HandlersTest do
       assert length(response["resourceTemplates"]) == 1
       refute Map.has_key?(response, "nextCursor")
       assert [%{name: "template_2"}] = response["resourceTemplates"]
+    end
+  end
+
+  describe "get_server_resource_templates/2" do
+    test "returns only templates, not static resources" do
+      frame = Frame.new()
+      templates = Handlers.get_server_resource_templates(MockServer, frame)
+
+      assert length(templates) == 2
+      assert Enum.all?(templates, & &1.uri_template)
+      assert Enum.all?(templates, &is_nil(&1.uri))
+    end
+  end
+
+  describe "resources/read with templates" do
+    defmodule TestResourceTemplate do
+      @moduledoc "Test resource template component"
+
+      use Component,
+        type: :resource,
+        uri_template: "test:///{category}/{id}",
+        name: "test_template",
+        description: "Test resource template",
+        mime_type: "application/json"
+
+      alias Anubis.MCP.Error
+      alias Anubis.Server.Response
+
+      @impl true
+      def read(%{"uri" => "test:///" <> rest}, frame) do
+        case String.split(rest, "/") do
+          [category, id] ->
+            data = %{category: category, id: id}
+            {:reply, Response.json(Response.resource(), data), frame}
+
+          _ ->
+            {:error, Error.resource(:not_found, %{message: "Invalid URI format"}), frame}
+        end
+      end
+
+      def read(_params, frame) do
+        {:error, Error.resource(:not_found, %{message: "URI doesn't match template"}), frame}
+      end
+    end
+
+    defmodule TestServer do
+      @moduledoc false
+
+      use Anubis.Server,
+        name: "Test Server",
+        version: "1.0.0",
+        capabilities: [:resources]
+
+      component(TestResourceTemplate)
+    end
+
+    setup do
+      frame = Frame.new()
+      {:ok, frame: frame}
+    end
+
+    test "matches URI against template and calls handler", %{frame: frame} do
+      request = %{
+        "method" => "resources/read",
+        "params" => %{"uri" => "test:///products/123"}
+      }
+
+      {:reply, response, _frame} = Handlers.handle(request, TestServer, frame)
+
+      assert response["contents"]
+      assert [content] = response["contents"]
+      assert content["uri"] == "test:///products/123"
+      assert content["mimeType"] == "application/json"
+
+      assert String.contains?(content["text"], ~s("category":"products"))
+      assert String.contains?(content["text"], ~s("id":"123"))
+    end
+
+    test "returns not_found when URI doesn't match template", %{frame: frame} do
+      request = %{
+        "method" => "resources/read",
+        "params" => %{"uri" => "other:///something"}
+      }
+
+      {:error, error, _frame} = Handlers.handle(request, TestServer, frame)
+
+      assert error.code == -32_002
+      assert error.reason == :resource_not_found
+    end
+  end
+
+  describe "multiple templates" do
+    defmodule FileTemplate do
+      @moduledoc false
+      use Component,
+        type: :resource,
+        uri_template: "file:///{path}",
+        name: "files"
+
+      alias Anubis.MCP.Error
+      alias Anubis.Server.Response
+
+      @impl true
+      def read(%{"uri" => "file:///" <> path}, frame) do
+        {:reply, Response.text(Response.resource(), "File: #{path}"), frame}
+      end
+
+      def read(_params, frame) do
+        {:error, Error.resource(:not_found, %{}), frame}
+      end
+    end
+
+    defmodule DbTemplate do
+      @moduledoc false
+      use Component,
+        type: :resource,
+        uri_template: "db:///{table}/{id}",
+        name: "database"
+
+      alias Anubis.MCP.Error
+      alias Anubis.Server.Response
+
+      @impl true
+      def read(%{"uri" => "db:///" <> rest}, frame) do
+        {:reply, Response.text(Response.resource(), "DB: #{rest}"), frame}
+      end
+
+      def read(_params, frame) do
+        {:error, Error.resource(:not_found, %{}), frame}
+      end
+    end
+
+    defmodule MultiTemplateServer do
+      @moduledoc false
+      use Anubis.Server,
+        name: "Multi Template Server",
+        version: "1.0.0",
+        capabilities: [:resources]
+
+      component(FileTemplate)
+      component(DbTemplate)
+    end
+
+    setup do
+      frame = Frame.new()
+      {:ok, frame: frame}
+    end
+
+    test "tries templates sequentially until one matches", %{frame: frame} do
+      request = %{
+        "method" => "resources/read",
+        "params" => %{"uri" => "file:///README.md"}
+      }
+
+      {:reply, response, _frame} = Handlers.handle(request, MultiTemplateServer, frame)
+
+      assert [content] = response["contents"]
+      assert content["text"] == "File: README.md"
+    end
+
+    test "tries next template when first doesn't match", %{frame: frame} do
+      request = %{
+        "method" => "resources/read",
+        "params" => %{"uri" => "db:///users/456"}
+      }
+
+      {:reply, response, _frame} = Handlers.handle(request, MultiTemplateServer, frame)
+
+      assert [content] = response["contents"]
+      assert content["text"] == "DB: users/456"
     end
   end
 

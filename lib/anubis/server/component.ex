@@ -20,6 +20,7 @@ defmodule Anubis.Server.Component do
     title = Keyword.get(opts, :title)
 
     uri = Keyword.get(opts, :uri)
+    uri_template = Keyword.get(opts, :uri_template)
     basename = if uri && type == :resource, do: Path.basename(uri)
     name = Keyword.get(opts, :name, basename)
     mime_type = Keyword.get(opts, :mime_type, "text/plain")
@@ -82,8 +83,17 @@ defmodule Anubis.Server.Component do
       end
 
       if unquote(type) == :resource do
-        @impl true
-        def uri, do: unquote(uri)
+        if unquote(uri) do
+          @impl true
+          def uri, do: unquote(uri)
+          defoverridable uri: 0
+        end
+
+        if unquote(uri_template) do
+          @impl true
+          def uri_template, do: unquote(uri_template)
+          defoverridable uri_template: 0
+        end
 
         @impl true
         def name, do: unquote(name)
@@ -96,7 +106,7 @@ defmodule Anubis.Server.Component do
         @impl true
         def mime_type, do: unquote(mime_type)
 
-        defoverridable uri: 0, mime_type: 0
+        defoverridable mime_type: 0
       end
     end
   end
