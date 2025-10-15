@@ -75,6 +75,7 @@ defmodule Anubis.Transport.StreamableHTTP do
           | {:transport_opts, keyword}
           | {:http_options, Finch.request_opts()}
           | {:enable_sse, boolean()}
+          | {:timeout, timeout()}
           | GenServer.option()
 
   defschema(:options_schema, %{
@@ -85,7 +86,8 @@ defmodule Anubis.Transport.StreamableHTTP do
     headers: {:map, {:default, %{}}},
     transport_opts: {:any, {:default, []}},
     http_options: {:any, {:default, []}},
-    enable_sse: {:boolean, {:default, false}}
+    enable_sse: {:boolean, {:default, false}},
+    timeout: {:integer, {:default, 60_000}}
   })
 
   @impl Transport
@@ -97,7 +99,13 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   @impl Transport
   def send_message(pid \\ __MODULE__, message) when is_binary(message) do
-    GenServer.call(pid, {:send, message})
+    timeout = GenServer.call(pid, :get_timeout)
+    GenServer.call(pid, {:send, message}, timeout)
+  end
+
+  @impl GenServer
+  def handle_call(:get_timeout, _from, state) do
+    {:reply, state.timeout, state}
   end
 
   @impl Transport
@@ -120,7 +128,8 @@ defmodule Anubis.Transport.StreamableHTTP do
       enable_sse: Map.get(opts, :enable_sse, false),
       sse_task: nil,
       last_event_id: nil,
-      active_request: nil
+      active_request: nil,
+      timeout: opts.timeout
     }
 
     emit_telemetry(:init, state)
