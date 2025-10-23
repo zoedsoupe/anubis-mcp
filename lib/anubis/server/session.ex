@@ -3,6 +3,8 @@ defmodule Anubis.Server.Session do
 
   use Agent, restart: :transient
 
+  require Logger
+
   @type t :: %__MODULE__{
           protocol_version: String.t() | nil,
           initialized: boolean(),
@@ -29,13 +31,27 @@ defmodule Anubis.Server.Session do
 
   @doc """
   Starts a new session agent with initial state.
+
+  If a session store is configured and the session exists in storage,
+  it will be restored. Otherwise, a new session is created.
   """
   @spec start_link(keyword()) :: Agent.on_start()
   def start_link(opts \\ []) do
     session_id = Keyword.fetch!(opts, :session_id)
     name = Keyword.fetch!(opts, :name)
+    server_module = Keyword.get(opts, :server_module)
 
-    Agent.start_link(fn -> new(id: session_id, name: name) end, name: name)
+    initial_state =
+      case maybe_restore_session(session_id, name, server_module) do
+        {:ok, state} ->
+          Logger.info("Restored session #{session_id} from store")
+          state
+
+        {:error, _reason} ->
+          new(id: session_id, name: name)
+      end
+
+    Agent.start_link(fn -> initial_state end, name: name)
   end
 
   @doc """
@@ -64,16 +80,20 @@ defmodule Anubis.Server.Session do
   1. Sets the negotiated protocol version
   2. Stores client information and capabilities
   3. Marks the server as initialized
+  4. Persists the session if a store is configured
   """
   @spec update_from_initialization(GenServer.name(), String.t(), map, map) :: :ok
   def update_from_initialization(session, negotiated_version, client_info, capabilities) do
     Agent.update(session, fn state ->
-      %{
+      new_state = %{
         state
         | protocol_version: negotiated_version,
           client_info: client_info,
           client_capabilities: capabilities
       }
+
+      maybe_persist_session(new_state)
+      new_state
     end)
   end
 
@@ -82,7 +102,11 @@ defmodule Anubis.Server.Session do
   """
   @spec mark_initialized(GenServer.name()) :: :ok
   def mark_initialized(session) do
-    Agent.update(session, fn state -> %{state | initialized: true} end)
+    Agent.update(session, fn state ->
+      new_state = %{state | initialized: true}
+      maybe_persist_session(new_state)
+      new_state
+    end)
   end
 
   @doc """
@@ -138,6 +162,91 @@ defmodule Anubis.Server.Session do
   @spec get_pending_requests(GenServer.name()) :: map()
   def get_pending_requests(session) do
     Agent.get(session, & &1.pending_requests)
+  end
+
+  # Private persistence functions
+
+  defp maybe_restore_session(session_id, name, server_module) do
+    case get_store() do
+      nil ->
+        Logger.debug("No session store configured, creating new session #{session_id}")
+        {:error, :no_store}
+
+      store ->
+        Logger.debug("Attempting to restore session #{session_id} from store")
+
+        case store.load(session_id, server: server_module) do
+          {:ok, state_map} ->
+            Logger.debug("Successfully loaded session #{session_id} from store", %{
+              initialized: Map.get(state_map, :initialized, false),
+              protocol_version: Map.get(state_map, :protocol_version)
+            })
+
+            # Restore the session struct from the persisted map
+            state = struct(__MODULE__, state_map)
+            # Update the name field to match the current process
+            {:ok, %{state | name: name}}
+
+          {:error, :not_found} = error ->
+            Logger.debug("Session #{session_id} not found in store, will create new session")
+            error
+
+          error ->
+            Logger.debug("Failed to load session #{session_id} from store: #{inspect(error)}")
+            error
+        end
+    end
+  end
+
+  defp maybe_persist_session(%__MODULE__{} = state) do
+    case get_store() do
+      nil ->
+        Logger.debug("No store configured, skipping persistence for session #{state.id}")
+        :ok
+
+      store ->
+        Logger.debug("Persisting session #{state.id} to store")
+        # Convert struct to map and remove runtime fields
+        state_map =
+          state
+          |> Map.from_struct()
+          # Don't persist process names
+          |> Map.delete(:name)
+
+        case store.save(state.id, state_map, []) do
+          :ok ->
+            Logger.debug("Successfully persisted session #{state.id}")
+            :ok
+
+          {:error, reason} ->
+            Logger.warning("Failed to persist session #{state.id}: #{inspect(reason)}")
+            :ok
+        end
+    end
+  end
+
+  defp get_store do
+    case Application.get_env(:anubis_mcp, :session_store) do
+      nil ->
+        nil
+
+      config ->
+        # Check if session store is enabled
+        if Keyword.get(config, :enabled, false) do
+          adapter = Keyword.get(config, :adapter)
+
+          if adapter && Code.ensure_loaded?(adapter) do
+            Logger.debug("Using session store adapter: #{inspect(adapter)}")
+            adapter
+          else
+            Logger.warning("Session store enabled but adapter not available: #{inspect(adapter)}")
+            nil
+          end
+        else
+          Logger.debug("Session store configured but not enabled")
+          nil
+        end
+    end
   end
 end
 

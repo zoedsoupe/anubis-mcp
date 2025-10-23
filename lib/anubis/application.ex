@@ -12,7 +12,7 @@ defmodule Anubis.Application do
     children =
       [
         {Finch, name: Anubis.Finch, pools: %{default: [size: 15]}}
-      ]
+      ] ++ maybe_start_session_store()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -24,6 +24,42 @@ defmodule Anubis.Application do
       {:ok, pid}
     else
       {:ok, pid}
+    end
+  end
+
+  defp maybe_start_session_store do
+    case Application.get_env(:anubis_mcp, :session_store) do
+      nil ->
+        []
+
+      config ->
+        # Check if session store is enabled
+        if Keyword.get(config, :enabled, false) do
+          adapter = Keyword.get(config, :adapter)
+
+          if adapter && Code.ensure_loaded?(adapter) do
+            require Logger
+
+            Logger.info("Starting session store: #{inspect(adapter)}", %{
+              enabled: true,
+              adapter: adapter,
+              ttl: Keyword.get(config, :ttl),
+              namespace: Keyword.get(config, :namespace)
+            })
+
+            [{adapter, config}]
+          else
+            require Logger
+
+            Logger.warning("Session store enabled but adapter not available: #{inspect(adapter)}")
+            []
+          end
+        else
+          require Logger
+
+          Logger.debug("Session store configured but not enabled")
+          []
+        end
     end
   end
 end

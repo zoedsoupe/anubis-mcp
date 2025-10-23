@@ -82,8 +82,14 @@ if Code.ensure_loaded?(Plug) do
       transport = registry.transport(server, :streamable_http)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
+      call_timeout = Keyword.get(opts, :call_timeout, @default_timeout)
 
-      %{transport: transport, session_header: session_header, timeout: request_timeout}
+      %{
+        transport: transport,
+        session_header: session_header,
+        timeout: request_timeout,
+        call_timeout: call_timeout
+      }
     end
 
     @impl Plug
