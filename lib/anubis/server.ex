@@ -112,7 +112,7 @@ defmodule Anubis.Server do
 
   This callback is invoked while the MCP handshake starts and so the client may not sent
   the `notifications/initialized` message yet. For checking if the notification was already sent
-  and the MCP handshare was successfully completed, you can call the `initialized?/1` function.
+  and the MCP handshake was successfully completed, you can call the `initialized?/1` function.
 
   It receives the client's information and
   the current frame, allowing you to perform client-specific setup, validate capabilities,
@@ -467,7 +467,7 @@ defmodule Anubis.Server do
 
       # Register with auto-derived name
       component MyServer.Tools.Calculator
-      
+
       # Register with custom name
       component MyServer.Tools.FileManager, name: "files"
   """
@@ -597,20 +597,36 @@ defmodule Anubis.Server do
 
   def parse_components({:resource, name, mod}) do
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+    has_uri = Anubis.exported?(mod, :uri, 0)
+    has_uri_template = Anubis.exported?(mod, :uri_template, 0)
 
-    if Anubis.exported?(mod, :uri, 0) do
-      [
-        %Resource{
-          uri: mod.uri(),
-          name: name,
-          title: title,
-          description: Component.get_description(mod),
-          mime_type: mod.mime_type(),
-          handler: mod
-        }
-      ]
-    else
-      []
+    cond do
+      has_uri ->
+        [
+          %Resource{
+            uri: mod.uri(),
+            name: name,
+            title: title,
+            description: Component.get_description(mod),
+            mime_type: mod.mime_type(),
+            handler: mod
+          }
+        ]
+
+      has_uri_template ->
+        [
+          %Resource{
+            uri_template: mod.uri_template(),
+            name: name,
+            title: title,
+            description: Component.get_description(mod),
+            mime_type: mod.mime_type(),
+            handler: mod
+          }
+        ]
+
+      true ->
+        []
     end
   end
 
@@ -839,7 +855,7 @@ defmodule Anubis.Server do
       ]
 
       model_preferences = %{"costPriority" => 1.0, "speedPriority" => 0.1, "hints" => [%{"name" => "claude"}]}
-      
+
       :ok = Anubis.Server.send_sampling_request(frame, messages,
         model_preferences: model_preferences,
         system_prompt: "You are a helpful assistant",
