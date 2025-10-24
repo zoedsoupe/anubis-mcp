@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.1...v0.15.0) (2025-10-24)
+
+
+### Features
+
+* allow template resources registration ([#43](https://github.com/zoedsoupe/anubis-mcp/issues/43)) ([9af9b8d](https://github.com/zoedsoupe/anubis-mcp/commit/9af9b8dcf4368ba981b667acc86b47b45a7d8ff4))
+
 ## [0.14.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.0...v0.14.1) (2025-10-07)
 
 
