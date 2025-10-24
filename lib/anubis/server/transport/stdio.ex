@@ -77,9 +77,8 @@ defmodule Anubis.Server.Transport.STDIO do
     * `{:error, reason}` otherwise
   """
   @impl Transport
-  @spec send_message(GenServer.server(), binary()) :: :ok | {:error, term()}
-  def send_message(transport, message) when is_binary(message) do
-    GenServer.cast(transport, {:send, message})
+  def send_message(transport, message, opts) when is_binary(message) do
+    GenServer.call(transport, {:send, message}, opts[:timeout])
   end
 
   @doc """
@@ -262,7 +261,9 @@ defmodule Anubis.Server.Transport.STDIO do
     else
       case GenServer.call(server, {:request, message, "stdio", context}, timeout) do
         {:ok, response} when is_binary(response) ->
-          send_message(self(), response)
+          # send_message(self(), response)
+          # NOTE: will be fixed soon, we need to rewrite stdio for server
+          :ok
 
         {:error, reason} ->
           Logging.transport_event("server_error", %{reason: reason}, level: :error)

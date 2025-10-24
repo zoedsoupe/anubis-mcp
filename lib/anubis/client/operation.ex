@@ -55,4 +55,7 @@ defmodule Anubis.Client.Operation do
       timeout: Map.get(attrs, :timeout) || @default_timeout
     }
   end
+
+  @doc "Used when no #{__MODULE__} is on scope"
+  def default_timeout, do: @default_timeout
 end
