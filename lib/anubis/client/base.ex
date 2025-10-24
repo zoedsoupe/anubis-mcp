@@ -1595,7 +1595,7 @@ defmodule Anubis.Client.Base do
 
   defp send_sampling_response(id, response, state) do
     transport = state.transport
-    :ok = transport.layer.send_message(transport.name, response)
+    :ok = transport.layer.send_message(transport.name, response, timeout: state.timeout)
 
     Telemetry.execute(
       Telemetry.event_client_response(),
@@ -1607,7 +1607,7 @@ defmodule Anubis.Client.Base do
   defp send_sampling_error(id, message, code, reason, %{transport: transport} = state) do
     error = %Error{code: -1, message: message, data: %{"reason" => reason}}
     {:ok, response} = Error.to_json_rpc(error, id)
-    :ok = transport.layer.send_message(transport.name, response)
+    :ok = transport.layer.send_message(transport.name, response, timeout: state.timeout)
 
     Logging.client_event(
       "sampling_error",

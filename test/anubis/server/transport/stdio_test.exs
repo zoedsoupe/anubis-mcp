@@ -32,7 +32,7 @@ defmodule Anubis.Server.Transport.STDIOTest do
       message = "test message"
 
       assert capture_io(pid, fn ->
-               assert :ok = STDIO.send_message(pid, message)
+               assert :ok = STDIO.send_message(pid, message, timeout: 5000)
                Process.sleep(50)
              end) =~ "test message"
 

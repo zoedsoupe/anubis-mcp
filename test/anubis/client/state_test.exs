@@ -12,7 +12,8 @@ defmodule Anubis.Client.StateTest do
         client_info: %{"name" => "TestClient", "version" => "1.0.0"},
         capabilities: %{"resources" => %{}},
         protocol_version: "2024-11-05",
-        transport: %{layer: :fake_transport, name: :fake_name}
+        transport: %{layer: :fake_transport, name: :fake_name},
+        timeout: 30_000
       }
 
       state = State.new(opts)
@@ -21,6 +22,7 @@ defmodule Anubis.Client.StateTest do
       assert state.capabilities == %{"resources" => %{}}
       assert state.protocol_version == "2024-11-05"
       assert state.transport == %{layer: :fake_transport, name: :fake_name}
+      assert state.timeout == 30_000
       assert state.pending_requests == %{}
       assert state.progress_callbacks == %{}
       assert state.log_callback == nil
@@ -330,7 +332,8 @@ defmodule Anubis.Client.StateTest do
       client_info: %{"name" => "TestClient", "version" => "1.0.0"},
       capabilities: %{},
       protocol_version: "2024-11-05",
-      transport: %{layer: :fake_transport, name: :fake_name}
+      transport: %{layer: :fake_transport, name: :fake_name},
+      timeout: 30_000
     }
   end
 end

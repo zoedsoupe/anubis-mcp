@@ -87,7 +87,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      assert :ok = StreamableHTTP.send_message(transport, ping_message)
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
       Process.sleep(100)
 
@@ -121,7 +121,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       Process.sleep(100)
 
       notification = ~s|{"jsonrpc":"2.0","method":"notifications/initialized"}|
-      assert :ok = StreamableHTTP.send_message(transport, notification)
+      assert :ok = StreamableHTTP.send_message(transport, notification, timeout: 5000)
 
       Process.sleep(100)
 
@@ -155,7 +155,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      assert :ok = StreamableHTTP.send_message(transport, ping_message)
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
       Process.sleep(200)
 
@@ -185,7 +185,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       Process.sleep(100)
 
       assert {:error, {:http_error, 500, "Internal Server Error"}} =
-               StreamableHTTP.send_message(transport, "test message")
+               StreamableHTTP.send_message(transport, "test message", timeout: 5000)
 
       StreamableHTTP.shutdown(transport)
       StubClient.clear_messages()
@@ -211,7 +211,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       Process.sleep(100)
 
       assert {:error, {:unsupported_content_type, "text/html"}} =
-               StreamableHTTP.send_message(transport, "test message")
+               StreamableHTTP.send_message(transport, "test message", timeout: 5000)
 
       StreamableHTTP.shutdown(transport)
       StubClient.clear_messages()
@@ -251,7 +251,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      assert :ok = StreamableHTTP.send_message(transport, ping_message)
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
       Process.sleep(100)
 
@@ -305,14 +305,14 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, first_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      assert :ok = StreamableHTTP.send_message(transport, first_message)
+      assert :ok = StreamableHTTP.send_message(transport, first_message, timeout: 5000)
 
       Process.sleep(100)
 
       {:ok, second_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "2")
 
-      assert :ok = StreamableHTTP.send_message(transport, second_message)
+      assert :ok = StreamableHTTP.send_message(transport, second_message, timeout: 5000)
 
       Process.sleep(100)
 
@@ -353,7 +353,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      assert :ok = StreamableHTTP.send_message(transport, ping_message)
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
       Process.sleep(100)
 
@@ -387,7 +387,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      assert :ok = StreamableHTTP.send_message(transport, ping_message)
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
       Process.sleep(100)
 
@@ -414,7 +414,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       Process.sleep(100)
 
       assert {:error, _reason} =
-               StreamableHTTP.send_message(transport, "test message")
+               StreamableHTTP.send_message(transport, "test message", timeout: 5000)
 
       StreamableHTTP.shutdown(transport)
       StubClient.clear_messages()
