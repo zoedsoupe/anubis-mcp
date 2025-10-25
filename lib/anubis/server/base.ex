@@ -235,7 +235,7 @@ defmodule Anubis.Server.Base do
 
   def handle_info({:send_notification, method, params}, state) do
     with {:ok, notification} <- encode_notification(method, params),
-         :ok <- send_to_transport(state.transport, notification, timeout: state.timeout, timeout: state.timeout) do
+         :ok <- send_to_transport(state.transport, notification, timeout: state.timeout) do
       {:noreply, state}
     else
       {:error, err} ->

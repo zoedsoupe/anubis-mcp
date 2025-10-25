@@ -112,6 +112,8 @@ defmodule Anubis.Client.Base do
           optional(:sampling | String.t()) => %{}
         }
 
+  @default_operation_timeout to_timeout(second: 30)
+
   @typedoc """
   MCP client initialization options
 
@@ -137,7 +139,7 @@ defmodule Anubis.Client.Base do
     {:client_info, {:required, :map}},
     {:capabilities, {:required, :map}},
     {:protocol_version, {:string, {:default, @default_protocol_version}}},
-    {:timeout, {:integer, {:default, Operation.default_timeout()}}}
+    {:timeout, {:integer, {:default, @default_operation_timeout}}}
   ])
 
   @doc """
@@ -419,7 +421,8 @@ defmodule Anubis.Client.Base do
     operation =
       Operation.new(%{
         method: "logging/setLevel",
-        params: %{"level" => level}
+        params: %{"level" => level},
+        timeout: @default_operation_timeout
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -974,7 +977,8 @@ defmodule Anubis.Client.Base do
     operation =
       Operation.new(%{
         method: "initialize",
-        params: params
+        params: params,
+        timeout: state.timeout
       })
 
     {request_id, updated_state} =

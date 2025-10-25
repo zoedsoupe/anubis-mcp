@@ -60,7 +60,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
     end
   end
 
-  describe "send_message/2" do
+  describe "send_message/3" do
     test "sends HTTP POST request with JSON response", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       {:ok, stub_client} = StubClient.start_link()
