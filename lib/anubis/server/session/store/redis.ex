@@ -3,7 +3,7 @@ defmodule Anubis.Server.Session.Store.Redis do
   Redis-based session store implementation.
 
   Uses Redix for Redis communication and provides persistent session storage
-  with automatic expiration, atomic updates, and secure token validation.
+  with automatic expiration and connection pooling.
 
   ## Configuration
 
@@ -18,10 +18,9 @@ defmodule Anubis.Server.Session.Store.Redis do
   ## Features
 
   - Automatic session expiration using Redis TTL
-  - Atomic operations using Redis transactions
+  - Last-write-wins semantics for session updates
   - Connection pooling for high concurrency
   - Namespace support for multi-tenant deployments
-  - Secure token generation and validation
   """
 
   @behaviour Anubis.Server.Session.Store
@@ -125,14 +124,14 @@ defmodule Anubis.Server.Session.Store.Redis do
           pool_size: pool_size
         }
 
-        Anubis.Logging.log(:info, "Redis session store started successfully",
+        Logging.log(:info, "Redis session store started successfully",
           namespace: namespace,
           pool_size: pool_size,
           ttl: ttl,
           redis_url: redis_url
         )
 
-        Anubis.Logging.server_event("redis_store_started", %{
+        Logging.server_event("redis_store_started", %{
           namespace: namespace,
           pool_size: pool_size,
           ttl: ttl
@@ -141,7 +140,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:ok, state}
 
       {:error, reason} = error ->
-        Anubis.Logging.log(:error, "Failed to start Redis session store", reason: inspect(reason))
+        Logging.log(:error, "Failed to start Redis session store", reason: inspect(reason))
 
         {:stop, error}
     end
@@ -158,7 +157,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, :ok, state}
 
       {:error, reason} = error ->
-        Anubis.Logging.log(:error, "Failed to persist session",
+        Logging.log(:error, "Failed to persist session",
           session_id: session_id,
           error: reason
         )
@@ -179,7 +178,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, error, state}
 
       {:error, reason} = error ->
-        Anubis.Logging.log(:error, "Failed to load session #{session_id}", error: reason)
+        Logging.log(:error, "Failed to load session #{session_id}", error: reason)
 
         {:reply, error, state}
     end
@@ -196,7 +195,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, :ok, state}
 
       {:error, reason} ->
-        Anubis.Logging.log(:error, "Failed to delete session",
+        Logging.log(:error, "Failed to delete session",
           session_id: session_id,
           error: reason
         )
@@ -221,7 +220,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, {:ok, session_ids}, state}
 
       {:error, reason} = error ->
-        Anubis.Logging.log(:error, "Failed to list sessions from store", error: reason)
+        Logging.log(:error, "Failed to list sessions from store", error: reason)
 
         {:reply, error, state}
     end
@@ -241,7 +240,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, {:error, :not_found}, state}
 
       {:error, reason} ->
-        Anubis.Logging.log(:error, "Failed to update TTL for session",
+        Logging.log(:error, "Failed to update TTL for session",
           session_id: session_id,
           error: reason
         )
@@ -263,7 +262,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, error, state}
 
       {:error, reason} = error ->
-        Anubis.Logging.log(:error, "Failed to update session",
+        Logging.log(:error, "Failed to update session",
           session_id: session_id,
           error: reason
         )
