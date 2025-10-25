@@ -18,7 +18,7 @@ defmodule Anubis.Client.BaseTest do
 
   describe "start_link/1" do
     test "starts the client with proper initialization" do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         assert String.contains?(message, "initialize")
         assert String.contains?(message, "protocolVersion")
         assert String.contains?(message, "capabilities")
@@ -46,7 +46,7 @@ defmodule Anubis.Client.BaseTest do
     setup :initialized_client
 
     test "ping sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "ping"
         assert decoded["params"] == %{}
@@ -69,7 +69,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "list_resources sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         assert decoded["params"] == %{}
@@ -99,7 +99,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "list_resource_templates sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/templates/list"
         assert decoded["params"] == %{}
@@ -129,7 +129,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "list_resources with cursor", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         assert decoded["params"] == %{"cursor" => "next-page"}
@@ -162,7 +162,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "read_resource sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/read"
         assert decoded["params"] == %{"uri" => "test://uri"}
@@ -192,7 +192,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "list_prompts sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "prompts/list"
         assert decoded["params"] == %{}
@@ -222,7 +222,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "get_prompt sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "prompts/get"
 
@@ -262,7 +262,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "list_tools sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/list"
         assert decoded["params"] == %{}
@@ -292,7 +292,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "call_tool sends correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
 
@@ -330,7 +330,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "handles domain error responses as {:ok, response}", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
 
@@ -376,7 +376,7 @@ defmodule Anubis.Client.BaseTest do
     setup :initialized_client
 
     test "ping sends correct request since it is always supported", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "ping"
         assert decoded["params"] == %{}
@@ -411,7 +411,7 @@ defmodule Anubis.Client.BaseTest do
     setup :initialized_client
 
     test "handles error response", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "ping"
         :ok
@@ -434,7 +434,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "handles transport error", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, _message ->
+      expect(Anubis.MockTransport, :send_message, fn _, _, _ ->
         {:error, :connection_closed}
       end)
 
@@ -446,7 +446,7 @@ defmodule Anubis.Client.BaseTest do
 
   describe "capability management" do
     test "merge_capabilities correctly merges capabilities" do
-      expect(Anubis.MockTransport, :send_message, fn _, _message -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _message, _ -> :ok end)
 
       client =
         start_supervised!(
@@ -542,7 +542,7 @@ defmodule Anubis.Client.BaseTest do
     test "request with progress token includes it in params", %{client: client} do
       progress_token = "request_token_test"
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
 
@@ -594,7 +594,7 @@ defmodule Anubis.Client.BaseTest do
          }
 
     test "set_log_level sends the correct request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "logging/setLevel"
         assert decoded["params"]["level"] == "info"
@@ -626,7 +626,7 @@ defmodule Anubis.Client.BaseTest do
       ref = %{"type" => "ref/prompt", "name" => "code_review"}
       argument = %{"name" => "language", "value" => "py"}
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "completion/complete"
         assert decoded["params"]["ref"]["type"] == "ref/prompt"
@@ -669,7 +669,7 @@ defmodule Anubis.Client.BaseTest do
       ref = %{"type" => "ref/resource", "uri" => "file:///path/to/file.txt"}
       argument = %{"name" => "encoding", "value" => "ut"}
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "completion/complete"
         assert decoded["params"]["ref"]["type"] == "ref/resource"
@@ -738,14 +738,14 @@ defmodule Anubis.Client.BaseTest do
     test "sends initialized notification after init" do
       Anubis.MockTransport
       # the handle_continue
-      |> expect(:send_message, fn _, message ->
+      |> expect(:send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "initialize"
         assert decoded["jsonrpc"] == "2.0"
         :ok
       end)
       # the send_notification
-      |> expect(:send_message, fn _, message ->
+      |> expect(:send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/initialized"
         :ok
@@ -775,7 +775,7 @@ defmodule Anubis.Client.BaseTest do
     setup :initialized_client
 
     test "handles cancelled notification from server", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
         :ok
@@ -803,7 +803,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "client can cancel a request", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         :ok
@@ -816,7 +816,7 @@ defmodule Anubis.Client.BaseTest do
       request_id = get_request_id(client, "resources/list")
       assert request_id
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["requestId"] == request_id
@@ -847,7 +847,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "cancel_all_requests cancels all pending requests", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, 2, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, 2, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] in ["resources/list", "tools/list"]
         :ok
@@ -862,7 +862,7 @@ defmodule Anubis.Client.BaseTest do
       pending_count = map_size(state.pending_requests)
       assert pending_count == 2
 
-      expect(Anubis.MockTransport, :send_message, 2, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, 2, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["reason"] == "batch cancellation"
@@ -887,13 +887,13 @@ defmodule Anubis.Client.BaseTest do
     test "request timeout sends cancellation notification", %{client: client} do
       test_timeout = 50
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         :ok
       end)
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["reason"] == "timeout"
@@ -918,14 +918,14 @@ defmodule Anubis.Client.BaseTest do
          %{client: client} do
       test_timeout = 50
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         Process.sleep(test_timeout + 10)
         :ok
       end)
 
-      expect(Anubis.MockTransport, :send_message, fn _, _ -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
 
       Process.flag(:trap_exit, true)
 
@@ -942,13 +942,13 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "client.close sends cancellation for pending requests", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "resources/list"
         :ok
       end)
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "notifications/cancelled"
         assert decoded["params"]["reason"] == "client closed"
@@ -1099,7 +1099,7 @@ defmodule Anubis.Client.BaseTest do
 
       request_id = "server_req_123"
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1181,7 +1181,7 @@ defmodule Anubis.Client.BaseTest do
         "modelPreferences" => %{}
       }
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1218,7 +1218,7 @@ defmodule Anubis.Client.BaseTest do
         "modelPreferences" => %{}
       }
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1256,7 +1256,7 @@ defmodule Anubis.Client.BaseTest do
       request_id = "server_sampling_req_789"
       params = %{"messages" => [], "modelPreferences" => %{}}
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1294,7 +1294,7 @@ defmodule Anubis.Client.BaseTest do
       request_id = "server_sampling_req_999"
       params = %{"messages" => [], "modelPreferences" => %{}}
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["id"] == request_id
@@ -1325,7 +1325,7 @@ defmodule Anubis.Client.BaseTest do
 
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
     test "sends notification when adding a root", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["method"] == "notifications/roots/list_changed"
@@ -1348,7 +1348,7 @@ defmodule Anubis.Client.BaseTest do
 
       Process.sleep(50)
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["method"] == "notifications/roots/list_changed"
@@ -1380,7 +1380,7 @@ defmodule Anubis.Client.BaseTest do
 
       Process.sleep(50)
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["jsonrpc"] == "2.0"
         assert decoded["method"] == "notifications/roots/list_changed"
@@ -1409,7 +1409,7 @@ defmodule Anubis.Client.BaseTest do
     setup :initialized_client
 
     test "validates tool call output when structuredContent is present", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/list"
         :ok
@@ -1438,7 +1438,7 @@ defmodule Anubis.Client.BaseTest do
       send_response(client, response)
       assert {:ok, _} = Task.await(list_task)
 
-      expect(Anubis.MockTransport, :send_message, fn _, message ->
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
         decoded = JSON.decode!(message)
         assert decoded["method"] == "tools/call"
         assert decoded["params"]["name"] == "get_weather"
@@ -1480,7 +1480,7 @@ defmodule Anubis.Client.BaseTest do
       assert {:ok, response} = Task.await(call_task)
       assert response.result["structuredContent"] == valid_structured
 
-      expect(Anubis.MockTransport, :send_message, fn _, _ -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
 
       invalid_task =
         Task.async(fn ->
@@ -1515,7 +1515,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "handles tools with complex outputSchema", %{client: client} do
-      expect(Anubis.MockTransport, :send_message, fn _, _ -> :ok end)
+      expect(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
 
       task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
       Process.sleep(50)

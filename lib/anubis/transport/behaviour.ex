@@ -11,11 +11,9 @@ defmodule Anubis.Transport.Behaviour do
   @type reason :: term() | Error.t()
 
   @callback start_link(keyword()) :: GenServer.on_start()
-  @callback send_message(t(), message()) :: :ok | {:error, reason()}
-  @callback send_message(t(), message(), keyword()) :: :ok | {:error, reason()}
+  @callback send_message(t(), message(), list(opt)) :: :ok | {:error, reason()}
+            when opt: {:timeout, pos_integer()}
   @callback shutdown(t()) :: :ok | {:error, reason()}
-
-  @optional_callbacks send_message: 3
 
   @doc """
   Returns the list of MCP protocol versions supported by this transport.

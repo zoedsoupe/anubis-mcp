@@ -14,6 +14,7 @@ defmodule Anubis.Client.State do
           server_capabilities: map() | nil,
           server_info: map() | nil,
           protocol_version: String.t(),
+          timeout: pos_integer(),
           transport: map(),
           pending_requests: %{String.t() => Request.t()},
           progress_callbacks: %{String.t() => Base.progress_callback()},
@@ -28,6 +29,7 @@ defmodule Anubis.Client.State do
     :capabilities,
     :server_capabilities,
     :server_info,
+    :timeout,
     :protocol_version,
     :transport,
     pending_requests: %{},
@@ -43,7 +45,8 @@ defmodule Anubis.Client.State do
       client_info: opts.client_info,
       capabilities: opts.capabilities,
       protocol_version: opts.protocol_version,
-      transport: opts.transport
+      transport: opts.transport,
+      timeout: opts.timeout
     }
   end
 

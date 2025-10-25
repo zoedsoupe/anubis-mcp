@@ -118,9 +118,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     * `{:error, reason}` otherwise
   """
   @impl Transport
-  @spec send_message(GenServer.server(), binary()) :: :ok | {:error, term()}
-  def send_message(transport, message) when is_binary(message) do
-    GenServer.call(transport, {:send_message, message}, 5000)
+  def send_message(transport, message, opts) when is_binary(message) do
+    GenServer.call(transport, {:send_message, message}, opts[:timeout])
   end
 
   @doc """

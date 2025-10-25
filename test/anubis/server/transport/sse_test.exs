@@ -126,7 +126,7 @@ defmodule Anubis.Server.Transport.SSETest do
       assert_receive :registered, 1000
 
       message = "broadcast message"
-      assert :ok = SSE.send_message(transport, message)
+      assert :ok = SSE.send_message(transport, message, timeout: 5000)
 
       # Both handlers should receive the message
       assert_receive {:sse_message, ^message}

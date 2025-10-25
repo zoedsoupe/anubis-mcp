@@ -6,7 +6,7 @@ defmodule MockTransport do
   def start_link(_opts), do: {:ok, self()}
 
   @impl true
-  def send_message(_, _), do: :ok
+  def send_message(_, _, _opts \\ [timeout: 1_000]), do: :ok
 
   @impl true
   def shutdown(_), do: :ok

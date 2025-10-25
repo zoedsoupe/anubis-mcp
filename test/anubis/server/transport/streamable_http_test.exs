@@ -123,9 +123,9 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       end)
     end
 
-    test "send_message/2 works", %{transport: transport} do
+    test "send_message/3 works", %{transport: transport} do
       message = "test message"
-      assert :ok = StreamableHTTP.send_message(transport, message)
+      assert :ok = StreamableHTTP.send_message(transport, message, timeout: 5000)
     end
 
     test "shutdown/1 gracefully shuts down", %{transport: transport} do

@@ -73,8 +73,8 @@ defmodule Anubis.Transport.STDIO do
   end
 
   @impl Transport
-  def send_message(pid \\ __MODULE__, message) when is_binary(message) do
-    GenServer.call(pid, {:send, message})
+  def send_message(pid \\ __MODULE__, message, opts) when is_binary(message) do
+    GenServer.call(pid, {:send, message}, opts[:timeout])
   end
 
   @impl Transport
