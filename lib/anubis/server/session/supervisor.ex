@@ -25,7 +25,16 @@ defmodule Anubis.Server.Session.Supervisor do
     server = Keyword.fetch!(opts, :server)
     registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
     name = registry.supervisor(@kind, server)
-    DynamicSupervisor.start_link(__MODULE__, server, name: name)
+
+    case DynamicSupervisor.start_link(__MODULE__, {server, registry}, name: name) do
+      {:ok, _pid} = success ->
+        # Restore sessions from store if configured
+        restore_sessions(server, registry)
+        success
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -47,7 +56,7 @@ defmodule Anubis.Server.Session.Supervisor do
       {:ok, session_pid} = Session.Supervisor.create_session(MyRegistry, MyServer, "session-123")
 
       # Attempting to create duplicate session
-      {:error, {:already_started, ^session_pid}} = 
+      {:error, {:already_started, ^session_pid}} =
         Session.Supervisor.create_session(MyRegistry, MyServer, "session-123")
   """
   def create_session(registry \\ Anubis.Server.Registry, server, session_id) do
@@ -56,7 +65,7 @@ defmodule Anubis.Server.Session.Supervisor do
 
     DynamicSupervisor.start_child(
       name,
-      {Session, session_id: session_id, name: session_name}
+      {Session, session_id: session_id, name: session_name, server_module: server}
     )
   end
 
@@ -91,7 +100,64 @@ defmodule Anubis.Server.Session.Supervisor do
   end
 
   @impl DynamicSupervisor
-  def init(_init_arg) do
+  def init({_server, _registry}) do
     DynamicSupervisor.init(strategy: :one_for_one)
+  end
+
+  # Private functions
+
+  defp restore_sessions(server, registry) do
+    case get_store() do
+      nil ->
+        Anubis.Logging.log(:debug, "No session store configured, skipping session restoration", [])
+
+        :ok
+
+      store ->
+        Anubis.Logging.log(:debug, "Checking for sessions to restore from store", server: server)
+
+        case store.list_active(server: server) do
+          {:ok, session_ids} ->
+            if length(session_ids) > 0 do
+              Anubis.Logging.log(:info, "Restoring sessions", count: length(session_ids), server: server)
+
+              Enum.each(session_ids, fn session_id ->
+                Anubis.Logging.log(:debug, "Creating session process for restored session", session_id: session_id)
+
+                create_session(registry, server, session_id)
+              end)
+            else
+              Anubis.Logging.log(:debug, "No sessions found to restore for server", server: server)
+            end
+
+            :ok
+
+          {:error, reason} ->
+            Anubis.Logging.log(:warning, "Failed to list active sessions from store", server: server, reason: reason)
+
+            :ok
+        end
+    end
+  end
+
+  defp get_store do
+    case Application.get_env(:anubis_mcp, :session_store) do
+      nil ->
+        nil
+
+      config ->
+        # Check if session store is enabled
+        if Keyword.get(config, :enabled, false) do
+          adapter = Keyword.get(config, :adapter)
+
+          if adapter && Code.ensure_loaded?(adapter) do
+            adapter
+          else
+            Anubis.Logging.log(:warning, "Session store enabled but adapter not available", adapter: inspect(adapter))
+
+            nil
+          end
+        end
+    end
   end
 end

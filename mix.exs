@@ -49,6 +49,7 @@ defmodule Anubis.MixProject do
       {:finch, "~> 0.19"},
       {:peri, "0.6.0"},
       {:telemetry, "~> 1.2"},
+      {:redix, "~> 1.5", optional: true},
       {:gun, "~> 2.2", optional: true},
       {:burrito, "~> 1.0", optional: true},
       {:plug, "~> 1.18", optional: true},
