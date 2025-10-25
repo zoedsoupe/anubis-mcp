@@ -193,8 +193,13 @@ defmodule Anubis.Server.Session do
               []
             )
 
+            state_map_atomized =
+              Map.new(state_map, fn {k, v} ->
+                {String.to_atom(k), v}
+              end)
+
             # Restore the session struct from the persisted map
-            state = struct(__MODULE__, state_map)
+            state = struct(__MODULE__, state_map_atomized)
             # Update the name field to match the current process
             {:ok, %{state | name: name}}
 
@@ -208,7 +213,11 @@ defmodule Anubis.Server.Session do
             error
 
           error ->
-            Anubis.Logging.log(:debug, "Failed to load session #{inspect(session_id)} from store", [])
+            Anubis.Logging.log(
+              :debug,
+              "Failed to load session #{inspect(session_id)} from store",
+              []
+            )
 
             error
         end
