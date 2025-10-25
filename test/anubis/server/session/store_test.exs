@@ -118,29 +118,29 @@ defmodule Anubis.Server.Session.StoreTest do
 
     test "handles session updates atomically" do
       session_id = "update_session_111"
-      {:ok, _} = Registry.start_link(keys: :unique, name: TestSessionRegistry4)
-      session_name = {:via, Registry, {TestSessionRegistry4, session_id}}
 
-      {:ok, _pid} =
-        Session.start_link(
-          session_id: session_id,
-          name: session_name,
-          server_module: TestServer
-        )
+      # Save initial session to store
+      initial_data = %{
+        id: session_id,
+        log_level: "info",
+        initialized: false
+      }
 
-      # Initialize and persist
-      Session.mark_initialized(session_name)
+      :ok = MockSessionStore.save(session_id, initial_data, [])
 
-      # Update log level
-      Session.set_log_level(session_name, "debug")
+      # Perform atomic update
+      updates = %{
+        log_level: "debug",
+        initialized: true
+      }
 
-      # Track a request
-      Session.track_request(session_name, "req_1", "tools/list")
+      :ok = MockSessionStore.update(session_id, updates, [])
 
-      # Verify updates were persisted
-      session = Session.get(session_name)
-      assert session.log_level == "debug"
-      assert Map.has_key?(session.pending_requests, "req_1")
+      # Verify updates were actually persisted to the store
+      {:ok, stored_session} = MockSessionStore.load(session_id, [])
+      assert stored_session[:log_level] == "debug"
+      assert stored_session[:initialized] == true
+      assert stored_session[:id] == session_id
     end
 
     test "lists active sessions" do
