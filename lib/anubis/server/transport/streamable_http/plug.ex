@@ -368,8 +368,17 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp determine_session_id(_conn, _header, message) when Message.is_initialize(message) do
-      ID.generate_session_id()
+    defp determine_session_id(conn, session_header, message) when Message.is_initialize(message) do
+      # For initialize messages, check if client provided a session ID to resume
+      case get_req_header(conn, session_header) do
+        [session_id] when is_binary(session_id) and session_id != "" ->
+          # Client wants to resume existing session - use their ID
+          session_id
+
+        _ ->
+          # No session ID provided - generate new one for fresh session
+          ID.generate_session_id()
+      end
     end
 
     defp determine_session_id(conn, session_header, _message) do
