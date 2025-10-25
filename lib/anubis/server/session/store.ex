@@ -144,7 +144,7 @@ defmodule Anubis.Server.Session.Store do
 
   ## Parameters
     * `session_id` - Unique identifier for the session
-    * `ttl_seconds` - New TTL in seconds
+    * `ttl_ms` - New TTL in milliseconds
     * `opts` - Additional options
 
   ## Returns
@@ -152,7 +152,7 @@ defmodule Anubis.Server.Session.Store do
     * `{:error, :not_found}` - Session doesn't exist
     * `{:error, reason}` - Failed to update TTL
   """
-  @callback update_ttl(session_id, ttl_seconds :: pos_integer(), opts) :: :ok | error
+  @callback update_ttl(session_id, ttl_ms :: pos_integer(), opts) :: :ok | error
 
   @doc """
   Performs atomic update of session state.
