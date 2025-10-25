@@ -56,7 +56,7 @@ defmodule Anubis.Server.Session.Supervisor do
       {:ok, session_pid} = Session.Supervisor.create_session(MyRegistry, MyServer, "session-123")
 
       # Attempting to create duplicate session
-      {:error, {:already_started, ^session_pid}} = 
+      {:error, {:already_started, ^session_pid}} =
         Session.Supervisor.create_session(MyRegistry, MyServer, "session-123")
   """
   def create_session(registry \\ Anubis.Server.Registry, server, session_id) do
@@ -109,33 +109,32 @@ defmodule Anubis.Server.Session.Supervisor do
   defp restore_sessions(server, registry) do
     case get_store() do
       nil ->
-        require Logger
+        Anubis.Logging.log(:debug, "No session store configured, skipping session restoration", [])
 
-        Logger.debug("No session store configured, skipping session restoration")
         :ok
 
       store ->
-        require Logger
-
-        Logger.debug("Checking for sessions to restore from store for server #{inspect(server)}")
+        Anubis.Logging.log(:debug, "Checking for sessions to restore from store", server: server)
 
         case store.list_active(server: server) do
           {:ok, session_ids} ->
             if length(session_ids) > 0 do
-              Logger.info("Restoring #{length(session_ids)} sessions for server #{inspect(server)}")
+              Anubis.Logging.log(:info, "Restoring sessions", count: length(session_ids), server: server)
 
               Enum.each(session_ids, fn session_id ->
-                Logger.debug("Creating session process for restored session: #{session_id}")
+                Anubis.Logging.log(:debug, "Creating session process for restored session", session_id: session_id)
+
                 create_session(registry, server, session_id)
               end)
             else
-              Logger.debug("No sessions found to restore for server #{inspect(server)}")
+              Anubis.Logging.log(:debug, "No sessions found to restore for server", server: server)
             end
 
             :ok
 
           {:error, reason} ->
-            Logger.warning("Failed to restore sessions: #{inspect(reason)}")
+            Anubis.Logging.log(:warning, "Failed to list active sessions from store", server: server, reason: reason)
+
             :ok
         end
     end
@@ -154,9 +153,8 @@ defmodule Anubis.Server.Session.Supervisor do
           if adapter && Code.ensure_loaded?(adapter) do
             adapter
           else
-            require Logger
+            Anubis.Logging.log(:warning, "Session store enabled but adapter not available", adapter: inspect(adapter))
 
-            Logger.warning("Session store enabled but adapter not available: #{inspect(adapter)}")
             nil
           end
         end

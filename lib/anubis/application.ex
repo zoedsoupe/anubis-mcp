@@ -38,26 +38,22 @@ defmodule Anubis.Application do
           adapter = Keyword.get(config, :adapter)
 
           if adapter && Code.ensure_loaded?(adapter) do
-            require Logger
-
-            Logger.info("Starting session store: #{inspect(adapter)}", %{
+            Anubis.Logging.log(:info, "Starting session store",
               enabled: true,
               adapter: adapter,
               ttl: Keyword.get(config, :ttl),
               namespace: Keyword.get(config, :namespace)
-            })
+            )
 
             [{adapter, config}]
           else
-            require Logger
+            Anubis.Logging.log(:warning, "Session store enabled but adapter not available", adapter: adapter)
 
-            Logger.warning("Session store enabled but adapter not available: #{inspect(adapter)}")
             []
           end
         else
-          require Logger
+          Anubis.Logging.log(:debug, "Session store configured but not enabled", [])
 
-          Logger.debug("Session store configured but not enabled")
           []
         end
     end
