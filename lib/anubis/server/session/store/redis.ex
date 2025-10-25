@@ -152,7 +152,7 @@ defmodule Anubis.Server.Session.Store.Redis do
     ttl = Keyword.get(opts, :ttl, state.ttl)
     key = make_key(state.namespace, session_id)
 
-    case encode_and_save(state.conn_name, key, session_state, ttl) do
+    case encode_and_save(state, key, session_state, ttl) do
       :ok ->
         Logging.server_event("session_saved", %{session_id: session_id, ttl: ttl})
         {:reply, :ok, state}
@@ -171,7 +171,7 @@ defmodule Anubis.Server.Session.Store.Redis do
   def handle_call({:load, session_id, _opts}, _from, state) do
     key = make_key(state.namespace, session_id)
 
-    case load_and_decode(state.conn_name, key) do
+    case load_and_decode(state, key) do
       {:ok, data} ->
         {:reply, {:ok, data}, state}
 
@@ -188,7 +188,7 @@ defmodule Anubis.Server.Session.Store.Redis do
   @impl GenServer
   def handle_call({:delete, session_id, _opts}, _from, state) do
     key = make_key(state.namespace, session_id)
-    conn = get_connection(state.conn_name)
+    conn = get_connection(state)
 
     case Redix.command(conn, ["DEL", key]) do
       {:ok, _} ->
@@ -209,7 +209,7 @@ defmodule Anubis.Server.Session.Store.Redis do
   def handle_call({:list_active, opts}, _from, state) do
     pattern = make_key(state.namespace, "*")
     server_filter = Keyword.get(opts, :server)
-    conn = get_connection(state.conn_name)
+    conn = get_connection(state)
 
     case scan_keys(conn, pattern) do
       {:ok, keys} ->
@@ -230,7 +230,7 @@ defmodule Anubis.Server.Session.Store.Redis do
   @impl GenServer
   def handle_call({:update_ttl, session_id, ttl_ms, _opts}, _from, state) do
     key = make_key(state.namespace, session_id)
-    conn = get_connection(state.conn_name)
+    conn = get_connection(state)
     ttl_seconds = ms_to_seconds(ttl_ms)
 
     case Redix.command(conn, ["EXPIRE", key, ttl_seconds]) do
@@ -255,7 +255,7 @@ defmodule Anubis.Server.Session.Store.Redis do
     key = make_key(state.namespace, session_id)
     ttl = Keyword.get(opts, :ttl, state.ttl)
 
-    case atomic_update(state.conn_name, key, updates, ttl) do
+    case atomic_update(state, key, updates, ttl) do
       :ok ->
         {:reply, :ok, state}
 
@@ -290,13 +290,10 @@ defmodule Anubis.Server.Session.Store.Redis do
     String.replace_prefix(key, prefix, "")
   end
 
-  defp get_connection(conn_name) do
-    # Get pool size from application config
-    config = Application.get_env(:anubis_mcp, :session_store, [])
-    pool_size = Keyword.get(config, :pool_size, 10)
-    # Round-robin through connection pool
-    index = :rand.uniform(pool_size)
-    :"anubis_#{conn_name}_#{index}"
+  defp get_connection(state) when is_struct(state, State) do
+    # Use cheap monotonic counter for pool selection instead of random
+    index = rem(:erlang.unique_integer([:positive]), state.pool_size) + 1
+    :"anubis_#{state.conn_name}_#{index}"
   end
 
   defp json_encode(data) do
@@ -309,8 +306,8 @@ defmodule Anubis.Server.Session.Store.Redis do
     div(milliseconds, 1000)
   end
 
-  defp encode_and_save(conn_name, key, data, ttl) do
-    conn = get_connection(conn_name)
+  defp encode_and_save(state, key, data, ttl) do
+    conn = get_connection(state)
     ttl_seconds = ms_to_seconds(ttl)
 
     case json_encode(data) do
@@ -325,8 +322,8 @@ defmodule Anubis.Server.Session.Store.Redis do
     end
   end
 
-  defp load_and_decode(conn_name, key) do
-    conn = get_connection(conn_name)
+  defp load_and_decode(state, key) do
+    conn = get_connection(state)
 
     case Redix.command(conn, ["GET", key]) do
       {:ok, nil} ->
@@ -343,11 +340,12 @@ defmodule Anubis.Server.Session.Store.Redis do
     end
   end
 
-  defp atomic_update(conn_name, key, updates, ttl) do
-    conn = get_connection(conn_name)
+  defp atomic_update(state, key, updates, ttl) do
+    conn = get_connection(state)
     ttl_seconds = ms_to_seconds(ttl)
 
-    # First, get the current value
+    # Simple read-modify-write (last-write-wins semantics)
+    # Good enough for session storage - sessions are single-writer in practice
     case Redix.command(conn, ["GET", key]) do
       {:ok, nil} ->
         {:error, :not_found}
@@ -359,23 +357,9 @@ defmodule Anubis.Server.Session.Store.Redis do
 
             case json_encode(updated_data) do
               {:ok, new_json} ->
-                # Use WATCH/MULTI/EXEC for atomic update
-                case Redix.pipeline(conn, [
-                       ["WATCH", key],
-                       ["MULTI"],
-                       ["SETEX", key, ttl_seconds, new_json],
-                       ["EXEC"]
-                     ]) do
-                  {:ok, ["OK", "OK", "QUEUED", result]} when result != nil ->
-                    # EXEC returned results (not nil), so transaction succeeded
-                    :ok
-
-                  {:ok, ["OK", "OK", "QUEUED", nil]} ->
-                    # EXEC returned nil, transaction was aborted (key was modified)
-                    {:error, :transaction_aborted}
-
-                  {:error, reason} ->
-                    {:error, reason}
+                case Redix.command(conn, ["SETEX", key, ttl_seconds, new_json]) do
+                  {:ok, "OK"} -> :ok
+                  {:error, reason} -> {:error, reason}
                 end
 
               {:error, reason} ->
