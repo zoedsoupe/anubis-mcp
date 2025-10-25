@@ -11,7 +11,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         adapter: Anubis.Server.Session.Store.Redis,
         redis_url: "redis://localhost:6379/0",
         pool_size: 10,
-        ttl: 1800,  # 30 minutes in seconds
+        ttl: 1_800_000,  # 30 minutes in milliseconds
         namespace: "anubis:sessions",
         connection_name: :anubis_redis
 
@@ -31,15 +31,13 @@ defmodule Anubis.Server.Session.Store.Redis do
 
   alias Anubis.Server.Session.Store
 
-  require Logger
-
-  # 30 minutes
-  @default_ttl 1800
+  # 30 minutes in milliseconds
+  @default_ttl 1_800_000
   @default_namespace "anubis:sessions"
 
   defmodule State do
     @moduledoc false
-    defstruct [:conn_name, :namespace, :ttl]
+    defstruct [:conn_name, :namespace, :ttl, :pool_size]
   end
 
   # Client API
@@ -70,8 +68,8 @@ defmodule Anubis.Server.Session.Store.Redis do
   end
 
   @impl Store
-  def update_ttl(session_id, ttl_seconds, opts \\ []) do
-    GenServer.call(__MODULE__, {:update_ttl, session_id, ttl_seconds, opts})
+  def update_ttl(session_id, ttl_ms, opts \\ []) do
+    GenServer.call(__MODULE__, {:update_ttl, session_id, ttl_ms, opts})
   end
 
   @impl Store
@@ -123,17 +121,18 @@ defmodule Anubis.Server.Session.Store.Redis do
         state = %State{
           conn_name: conn_name,
           namespace: namespace,
-          ttl: ttl
+          ttl: ttl,
+          pool_size: pool_size
         }
 
-        Logger.info("Redis session store started successfully", %{
+        Anubis.Logging.log(:info, "Redis session store started successfully",
           namespace: namespace,
           pool_size: pool_size,
           ttl: ttl,
           redis_url: redis_url
-        })
+        )
 
-        Logging.server_event("redis_store_started", %{
+        Anubis.Logging.server_event("redis_store_started", %{
           namespace: namespace,
           pool_size: pool_size,
           ttl: ttl
@@ -142,7 +141,8 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:ok, state}
 
       {:error, reason} = error ->
-        Logger.error("Failed to start Redis connections: #{inspect(reason)}")
+        Anubis.Logging.log(:error, "Failed to start Redis session store", reason: inspect(reason))
+
         {:stop, error}
     end
   end
@@ -158,7 +158,11 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, :ok, state}
 
       {:error, reason} = error ->
-        Logger.error("Failed to save session #{session_id}: #{inspect(reason)}")
+        Anubis.Logging.log(:error, "Failed to persist session",
+          session_id: session_id,
+          error: reason
+        )
+
         {:reply, error, state}
     end
   end
@@ -175,7 +179,8 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, error, state}
 
       {:error, reason} = error ->
-        Logger.error("Failed to load session #{session_id}: #{inspect(reason)}")
+        Anubis.Logging.log(:error, "Failed to load session #{session_id}", error: reason)
+
         {:reply, error, state}
     end
   end
@@ -191,7 +196,11 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, :ok, state}
 
       {:error, reason} ->
-        Logger.error("Failed to delete session #{session_id}: #{inspect(reason)}")
+        Anubis.Logging.log(:error, "Failed to delete session",
+          session_id: session_id,
+          error: reason
+        )
+
         {:reply, {:error, reason}, state}
     end
   end
@@ -212,15 +221,17 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, {:ok, session_ids}, state}
 
       {:error, reason} = error ->
-        Logger.error("Failed to list sessions: #{inspect(reason)}")
+        Anubis.Logging.log(:error, "Failed to list sessions from store", error: reason)
+
         {:reply, error, state}
     end
   end
 
   @impl GenServer
-  def handle_call({:update_ttl, session_id, ttl_seconds, _opts}, _from, state) do
+  def handle_call({:update_ttl, session_id, ttl_ms, _opts}, _from, state) do
     key = make_key(state.namespace, session_id)
     conn = get_connection(state.conn_name)
+    ttl_seconds = ms_to_seconds(ttl_ms)
 
     case Redix.command(conn, ["EXPIRE", key, ttl_seconds]) do
       {:ok, 1} ->
@@ -230,7 +241,11 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, {:error, :not_found}, state}
 
       {:error, reason} ->
-        Logger.error("Failed to update TTL for session #{session_id}: #{inspect(reason)}")
+        Anubis.Logging.log(:error, "Failed to update TTL for session",
+          session_id: session_id,
+          error: reason
+        )
+
         {:reply, {:error, reason}, state}
     end
   end
@@ -248,7 +263,11 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:reply, error, state}
 
       {:error, reason} = error ->
-        Logger.error("Failed to update session #{session_id}: #{inspect(reason)}")
+        Anubis.Logging.log(:error, "Failed to update session",
+          session_id: session_id,
+          error: reason
+        )
+
         {:reply, error, state}
     end
   end
@@ -272,19 +291,31 @@ defmodule Anubis.Server.Session.Store.Redis do
   end
 
   defp get_connection(conn_name) do
+    # Get pool size from application config
+    config = Application.get_env(:anubis_mcp, :session_store, [])
+    pool_size = Keyword.get(config, :pool_size, 10)
     # Round-robin through connection pool
-    # Should match config
-    pool_size = 10
     index = :rand.uniform(pool_size)
     :"anubis_#{conn_name}_#{index}"
   end
 
+  defp json_encode(data) do
+    {:ok, JSON.encode!(data)}
+  rescue
+    error -> {:error, error}
+  end
+
+  defp ms_to_seconds(milliseconds) do
+    div(milliseconds, 1000)
+  end
+
   defp encode_and_save(conn_name, key, data, ttl) do
     conn = get_connection(conn_name)
+    ttl_seconds = ms_to_seconds(ttl)
 
-    case Jason.encode(data) do
+    case json_encode(data) do
       {:ok, json} ->
-        case Redix.command(conn, ["SETEX", key, ttl, json]) do
+        case Redix.command(conn, ["SETEX", key, ttl_seconds, json]) do
           {:ok, "OK"} -> :ok
           {:error, reason} -> {:error, reason}
         end
@@ -302,7 +333,7 @@ defmodule Anubis.Server.Session.Store.Redis do
         {:error, :not_found}
 
       {:ok, json} ->
-        case Jason.decode(json, keys: :atoms) do
+        case JSON.decode(json) do
           {:ok, data} -> {:ok, data}
           {:error, reason} -> {:error, {:decoding_failed, reason}}
         end
@@ -314,29 +345,37 @@ defmodule Anubis.Server.Session.Store.Redis do
 
   defp atomic_update(conn_name, key, updates, ttl) do
     conn = get_connection(conn_name)
+    ttl_seconds = ms_to_seconds(ttl)
 
-    # Use Redis transaction for atomic update
-    case Redix.transaction_pipeline(conn, [
-           ["WATCH", key],
-           ["GET", key]
-         ]) do
-      {:ok, [_, nil]} ->
+    # First, get the current value
+    case Redix.command(conn, ["GET", key]) do
+      {:ok, nil} ->
         {:error, :not_found}
 
-      {:ok, [_, json]} ->
-        case Jason.decode(json, keys: :atoms) do
+      {:ok, json} ->
+        case JSON.decode(json) do
           {:ok, current_data} ->
             updated_data = Map.merge(current_data, updates)
 
-            case Jason.encode(updated_data) do
+            case json_encode(updated_data) do
               {:ok, new_json} ->
-                case Redix.transaction_pipeline(conn, [
+                # Use WATCH/MULTI/EXEC for atomic update
+                case Redix.pipeline(conn, [
+                       ["WATCH", key],
                        ["MULTI"],
-                       ["SETEX", key, ttl, new_json],
+                       ["SETEX", key, ttl_seconds, new_json],
                        ["EXEC"]
                      ]) do
-                  {:ok, _} -> :ok
-                  {:error, reason} -> {:error, reason}
+                  {:ok, ["OK", "OK", "QUEUED", result]} when result != nil ->
+                    # EXEC returned results (not nil), so transaction succeeded
+                    :ok
+
+                  {:ok, ["OK", "OK", "QUEUED", nil]} ->
+                    # EXEC returned nil, transaction was aborted (key was modified)
+                    {:error, :transaction_aborted}
+
+                  {:error, reason} ->
+                    {:error, reason}
                 end
 
               {:error, reason} ->
