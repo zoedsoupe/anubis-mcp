@@ -18,7 +18,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
     Application.put_env(:anubis_mcp, :session_store,
       enabled: true,
       adapter: MockSessionStore,
-      ttl: 1800
+      ttl: 1_800_000
     )
 
     on_exit(fn ->
@@ -107,7 +107,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
 
       conn =
         :post
-        |> conn("/", Jason.encode!(message))
+        |> conn("/", JSON.encode!(message))
         |> put_req_header("content-type", "application/json")
         |> put_req_header("accept", "application/json, text/event-stream")
         |> put_req_header("mcp-session-id", session_id)
@@ -136,7 +136,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
 
       _conn =
         :post
-        |> conn("/", Jason.encode!(message))
+        |> conn("/", JSON.encode!(message))
         |> put_req_header("content-type", "application/json")
         |> put_req_header("accept", "application/json")
 
@@ -230,7 +230,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
 
       conn =
         :post
-        |> conn("/", Jason.encode!(message))
+        |> conn("/", JSON.encode!(message))
         |> put_req_header("content-type", "application/json")
         |> put_req_header("accept", "application/json")
 
