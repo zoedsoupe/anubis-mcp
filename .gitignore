@@ -53,4 +53,5 @@ result
 /.expert/
 /.elixir-tools/
 
-.DS_Store
+# macOS
+**/.DS_Store
