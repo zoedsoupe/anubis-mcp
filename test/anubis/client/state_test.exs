@@ -36,7 +36,8 @@ defmodule Anubis.Client.StateTest do
 
       operation =
         Operation.new(%{
-          method: "test_method"
+          method: "test_method",
+          timeout: 30_000
         })
 
       {request_id, updated_state} =
@@ -60,7 +61,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 
@@ -83,7 +84,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 
@@ -110,7 +111,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 
@@ -222,7 +223,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 

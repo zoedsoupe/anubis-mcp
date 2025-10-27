@@ -175,7 +175,7 @@ defmodule Anubis.Client.Base do
         method: "ping",
         params: %{},
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -203,7 +203,7 @@ defmodule Anubis.Client.Base do
         method: "resources/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -231,7 +231,7 @@ defmodule Anubis.Client.Base do
         method: "resources/templates/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -256,7 +256,7 @@ defmodule Anubis.Client.Base do
         method: "resources/read",
         params: %{"uri" => uri},
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -284,7 +284,7 @@ defmodule Anubis.Client.Base do
         method: "prompts/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -312,7 +312,7 @@ defmodule Anubis.Client.Base do
         method: "prompts/get",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -340,7 +340,7 @@ defmodule Anubis.Client.Base do
         method: "tools/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -368,7 +368,7 @@ defmodule Anubis.Client.Base do
         method: "tools/call",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -478,7 +478,7 @@ defmodule Anubis.Client.Base do
         method: "completion/complete",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
