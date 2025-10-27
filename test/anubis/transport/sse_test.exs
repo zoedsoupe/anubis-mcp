@@ -131,7 +131,7 @@ defmodule Anubis.Transport.SSETest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      assert :ok = SSE.send_message(transport, ping_message)
+      assert :ok = SSE.send_message(transport, ping_message, timeout: 5000)
 
       # Give time for the response to come back
       Process.sleep(100)
@@ -168,7 +168,7 @@ defmodule Anubis.Transport.SSETest do
       Process.sleep(100)
 
       # Try to send a message without having an endpoint
-      assert {:error, :not_connected} = SSE.send_message(transport, "test message")
+      assert {:error, :not_connected} = SSE.send_message(transport, "test message", timeout: 5000)
 
       # Clean up
       SSE.shutdown(transport)
@@ -222,7 +222,7 @@ defmodule Anubis.Transport.SSETest do
 
       # Send a message and check for error response
       assert {:error, {:http_error, 500, "Internal Server Error"}} =
-               SSE.send_message(transport, "test message")
+               SSE.send_message(transport, "test message", timeout: 5000)
 
       # Clean up
       SSE.shutdown(transport)
@@ -380,7 +380,7 @@ defmodule Anubis.Transport.SSETest do
 
       transport_state = :sys.get_state(transport)
       assert transport_state.message_url
-      assert :ok = SSE.send_message(transport, "test message")
+      assert :ok = SSE.send_message(transport, "test message", timeout: 5000)
 
       SSE.shutdown(transport)
       StubClient.clear_messages()
@@ -420,7 +420,7 @@ defmodule Anubis.Transport.SSETest do
 
       transport_state = :sys.get_state(transport)
       assert transport_state.message_url == "#{server_url}/messages/123"
-      assert :ok = SSE.send_message(transport, "test message")
+      assert :ok = SSE.send_message(transport, "test message", timeout: 5000)
 
       SSE.shutdown(transport)
       StubClient.clear_messages()
@@ -494,7 +494,7 @@ defmodule Anubis.Transport.SSETest do
       transport_state = :sys.get_state(transport)
       assert transport_state.message_url == "#{server_url}/messages/123"
       refute String.contains?(transport_state.message_url, "/mcp/mcp/")
-      assert :ok = SSE.send_message(transport, "test message")
+      assert :ok = SSE.send_message(transport, "test message", timeout: 5000)
 
       SSE.shutdown(transport)
       StubClient.clear_messages()

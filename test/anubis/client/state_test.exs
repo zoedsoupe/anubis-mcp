@@ -12,7 +12,8 @@ defmodule Anubis.Client.StateTest do
         client_info: %{"name" => "TestClient", "version" => "1.0.0"},
         capabilities: %{"resources" => %{}},
         protocol_version: "2024-11-05",
-        transport: %{layer: :fake_transport, name: :fake_name}
+        transport: %{layer: :fake_transport, name: :fake_name},
+        timeout: 30_000
       }
 
       state = State.new(opts)
@@ -21,6 +22,7 @@ defmodule Anubis.Client.StateTest do
       assert state.capabilities == %{"resources" => %{}}
       assert state.protocol_version == "2024-11-05"
       assert state.transport == %{layer: :fake_transport, name: :fake_name}
+      assert state.timeout == 30_000
       assert state.pending_requests == %{}
       assert state.progress_callbacks == %{}
       assert state.log_callback == nil
@@ -34,7 +36,8 @@ defmodule Anubis.Client.StateTest do
 
       operation =
         Operation.new(%{
-          method: "test_method"
+          method: "test_method",
+          timeout: 30_000
         })
 
       {request_id, updated_state} =
@@ -58,7 +61,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 
@@ -81,7 +84,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 
@@ -108,7 +111,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 
@@ -220,7 +223,7 @@ defmodule Anubis.Client.StateTest do
       state = new_test_state()
       from = {self(), make_ref()}
 
-      operation = Operation.new(%{method: "test_method"})
+      operation = Operation.new(%{method: "test_method", timeout: 30_000})
 
       {request_id, state} = State.add_request_from_operation(state, operation, from)
 
@@ -330,7 +333,8 @@ defmodule Anubis.Client.StateTest do
       client_info: %{"name" => "TestClient", "version" => "1.0.0"},
       capabilities: %{},
       protocol_version: "2024-11-05",
-      transport: %{layer: :fake_transport, name: :fake_name}
+      transport: %{layer: :fake_transport, name: :fake_name},
+      timeout: 30_000
     }
   end
 end

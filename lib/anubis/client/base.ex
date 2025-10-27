@@ -112,6 +112,8 @@ defmodule Anubis.Client.Base do
           optional(:sampling | String.t()) => %{}
         }
 
+  @default_operation_timeout to_timeout(second: 30)
+
   @typedoc """
   MCP client initialization options
 
@@ -136,7 +138,8 @@ defmodule Anubis.Client.Base do
     {:transport, {:required, {:custom, &Anubis.client_transport/1}}},
     {:client_info, {:required, :map}},
     {:capabilities, {:required, :map}},
-    {:protocol_version, {:string, {:default, @default_protocol_version}}}
+    {:protocol_version, {:string, {:default, @default_protocol_version}}},
+    {:timeout, {:integer, {:default, @default_operation_timeout}}}
   ])
 
   @doc """
@@ -172,7 +175,7 @@ defmodule Anubis.Client.Base do
         method: "ping",
         params: %{},
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -200,7 +203,7 @@ defmodule Anubis.Client.Base do
         method: "resources/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -228,7 +231,7 @@ defmodule Anubis.Client.Base do
         method: "resources/templates/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -253,7 +256,7 @@ defmodule Anubis.Client.Base do
         method: "resources/read",
         params: %{"uri" => uri},
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -281,7 +284,7 @@ defmodule Anubis.Client.Base do
         method: "prompts/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -309,7 +312,7 @@ defmodule Anubis.Client.Base do
         method: "prompts/get",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -337,7 +340,7 @@ defmodule Anubis.Client.Base do
         method: "tools/list",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -365,7 +368,7 @@ defmodule Anubis.Client.Base do
         method: "tools/call",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -418,7 +421,8 @@ defmodule Anubis.Client.Base do
     operation =
       Operation.new(%{
         method: "logging/setLevel",
-        params: %{"level" => level}
+        params: %{"level" => level},
+        timeout: @default_operation_timeout
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -474,7 +478,7 @@ defmodule Anubis.Client.Base do
         method: "completion/complete",
         params: params,
         progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout)
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
       })
 
     buffer_timeout = operation.timeout + to_timeout(second: 1)
@@ -785,7 +789,8 @@ defmodule Anubis.Client.Base do
         client_info: opts.client_info,
         capabilities: opts.capabilities,
         protocol_version: protocol_version,
-        transport: transport
+        transport: transport,
+        timeout: opts.timeout
       })
 
     client_name = get_in(opts, [:client_info, "name"])
@@ -827,7 +832,7 @@ defmodule Anubis.Client.Base do
          {request_id, updated_state} =
            State.add_request_from_operation(state, operation, from),
          {:ok, request_data} <- encode_request(method, params_with_token, request_id),
-         :ok <- send_to_transport(state.transport, request_data) do
+         :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
       Telemetry.execute(
         Telemetry.event_client_request(),
         %{system_time: System.system_time()},
@@ -885,7 +890,7 @@ defmodule Anubis.Client.Base do
               "progress" => progress,
               "total" => total
             }) do
-       send_to_transport(state.transport, notification)
+       send_to_transport(state.transport, notification, timeout: state.timeout)
      end, state}
   end
 
@@ -972,14 +977,15 @@ defmodule Anubis.Client.Base do
     operation =
       Operation.new(%{
         method: "initialize",
-        params: params
+        params: params,
+        timeout: state.timeout
       })
 
     {request_id, updated_state} =
       State.add_request_from_operation(state, operation, {self(), make_ref()})
 
     with {:ok, request_data} <- encode_request("initialize", params, request_id),
-         :ok <- send_to_transport(state.transport, request_data) do
+         :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
       {:noreply, updated_state}
     else
       err -> {:stop, err, state}
@@ -1018,7 +1024,7 @@ defmodule Anubis.Client.Base do
 
     with {:ok, response_data} <-
            Message.encode_response(%{"result" => roots_result}, id),
-         :ok <- send_to_transport(state.transport, response_data) do
+         :ok <- send_to_transport(state.transport, response_data, timeout: state.timeout) do
       Logging.client_event("roots_list_request", %{id: id, roots_count: roots_count})
 
       Telemetry.execute(
@@ -1044,7 +1050,7 @@ defmodule Anubis.Client.Base do
 
   defp handle_server_request(%{"method" => "ping", "id" => id}, state) do
     with {:ok, response_data} <- Message.encode_response(%{"result" => %{}}, id),
-         :ok <- send_to_transport(state.transport, response_data) do
+         :ok <- send_to_transport(state.transport, response_data, timeout: state.timeout) do
       {:noreply, state}
     else
       err ->
@@ -1494,15 +1500,15 @@ defmodule Anubis.Client.Base do
     send_notification(state, "notifications/cancelled", params)
   end
 
-  defp send_to_transport(transport, data) do
-    with {:error, reason} <- transport.layer.send_message(transport.name, data) do
+  defp send_to_transport(transport, data, opts) do
+    with {:error, reason} <- transport.layer.send_message(transport.name, data, opts) do
       {:error, Error.transport(:send_failure, %{original_reason: reason})}
     end
   end
 
   defp send_notification(state, method, params \\ %{}) do
     with {:ok, notification_data} <- encode_notification(method, params) do
-      send_to_transport(state.transport, notification_data)
+      send_to_transport(state.transport, notification_data, timeout: state.timeout)
     end
   end
 
@@ -1593,7 +1599,7 @@ defmodule Anubis.Client.Base do
 
   defp send_sampling_response(id, response, state) do
     transport = state.transport
-    :ok = transport.layer.send_message(transport.name, response)
+    :ok = transport.layer.send_message(transport.name, response, timeout: state.timeout)
 
     Telemetry.execute(
       Telemetry.event_client_response(),
@@ -1605,7 +1611,7 @@ defmodule Anubis.Client.Base do
   defp send_sampling_error(id, message, code, reason, %{transport: transport} = state) do
     error = %Error{code: -1, message: message, data: %{"reason" => reason}}
     {:ok, response} = Error.to_json_rpc(error, id)
-    :ok = transport.layer.send_message(transport.name, response)
+    :ok = transport.layer.send_message(transport.name, response, timeout: state.timeout)
 
     Logging.client_event(
       "sampling_error",

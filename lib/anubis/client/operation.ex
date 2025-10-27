@@ -9,8 +9,6 @@ defmodule Anubis.Client.Operation do
   - `timeout` - The timeout for this specific operation (default: 30 seconds)
   """
 
-  @default_timeout to_timeout(second: 30)
-
   @type progress_options :: [
           token: String.t() | integer(),
           callback: (String.t() | integer(), number(), number() | nil -> any())
@@ -25,9 +23,9 @@ defmodule Anubis.Client.Operation do
 
   defstruct [
     :method,
+    :timeout,
     params: %{},
-    progress_opts: [],
-    timeout: @default_timeout
+    progress_opts: []
   ]
 
   @doc """
@@ -47,12 +45,12 @@ defmodule Anubis.Client.Operation do
           optional(:progress_opts) => progress_options() | nil,
           optional(:timeout) => pos_integer()
         }) :: t()
-  def new(%{method: method} = attrs) do
+  def new(%{method: method, timeout: timeout} = attrs) do
     %__MODULE__{
       method: method,
       params: Map.get(attrs, :params) || %{},
       progress_opts: Map.get(attrs, :progress_opts),
-      timeout: Map.get(attrs, :timeout) || @default_timeout
+      timeout: timeout
     }
   end
 end
