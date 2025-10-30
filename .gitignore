@@ -52,3 +52,5 @@ result
 /.lexical/
 /.expert/
 /.elixir-tools/
+.direnv
+.nix-mix
