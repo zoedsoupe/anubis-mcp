@@ -421,9 +421,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      # With 10s timeout, should succeed (10s > 6s)
-      # Before fix: would timeout at 5s (default) or 15s (Mint default receive_timeout)
-      # After fix: respects the 10s timeout and waits for full response
+      # Should succeed with 10s timeout for a 6s server delay
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 10_000)
 
       Process.sleep(100)
@@ -457,9 +455,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
-      # With 30s timeout, should succeed (30s > 20s)
-      # Before fix: would fail at 15s with Mint.TransportError{reason: :timeout}
-      # After fix: respects the 30s timeout and waits for full response
+      # Should succeed with 30s timeout for a 20s server delay
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 30_000)
 
       Process.sleep(100)

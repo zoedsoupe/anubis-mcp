@@ -63,6 +63,7 @@ defmodule Anubis.Transport.STDIOTest do
     test "respects custom timeout option" do
       # Create a mock transport GenServer that will block for 6 seconds on handle_call
       defmodule SlowTransport do
+        @moduledoc false
         use GenServer
 
         def start_link(opts) do

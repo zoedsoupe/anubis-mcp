@@ -28,8 +28,8 @@ defmodule Anubis.HTTP do
 
   @max_redirects 3
 
-  # @spec follow_redirect(Finch.Request.t(), keyword(), non_neg_integer) ::
-  #         {:ok, Finch.Response.t()} | {:error, term}
+  @spec follow_redirect(Finch.Request.t(), keyword(), non_neg_integer()) ::
+          {:ok, Finch.Response.t()} | {:error, term()}
   def follow_redirect(%Finch.Request{} = request, opts \\ [], attempts \\ @max_redirects) do
     with {:ok, resp} <- Finch.request(request, Anubis.Finch, opts),
          do: do_follow_redirect(request, resp, opts, attempts)
@@ -37,7 +37,8 @@ defmodule Anubis.HTTP do
 
   defp do_follow_redirect(_req, _resp, _opts, 0), do: {:error, :max_redirects}
 
-  defp do_follow_redirect(req, %Finch.Response{status: 307, headers: headers}, opts, attempts) when is_integer(attempts) do
+  defp do_follow_redirect(req, %Finch.Response{status: 307, headers: headers}, opts, attempts)
+       when is_integer(attempts) do
     location = List.keyfind(headers, "location", 0)
 
     Anubis.Logging.transport_event("redirect", %{

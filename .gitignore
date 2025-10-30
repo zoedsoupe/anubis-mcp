@@ -40,9 +40,11 @@ hermes_mcp-*.tar
 
 # Local envs
 .env.*
+.direnv
 
 # Nix files
 result
+.nix-mix
 
 # Claude
 /.claude/
@@ -52,5 +54,3 @@ result
 /.lexical/
 /.expert/
 /.elixir-tools/
-.direnv
-.nix-mix

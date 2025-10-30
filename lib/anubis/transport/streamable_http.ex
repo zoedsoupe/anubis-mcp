@@ -236,9 +236,7 @@ defmodule Anubis.Transport.StreamableHTTP do
     # Set receive_timeout, ensuring it takes precedence over any default in http_options
     # Only pass valid Finch.request options (receive_timeout, pool_timeout, request_timeout)
     # transport_opts are for Finch pool config at startup, not for individual requests
-    options =
-      state.http_options
-      |> Keyword.put(:receive_timeout, timeout)
+    options = Keyword.put(state.http_options, :receive_timeout, timeout)
 
     url = URI.to_string(state.mcp_url)
 
