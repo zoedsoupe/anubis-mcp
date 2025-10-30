@@ -396,6 +396,79 @@ defmodule Anubis.Transport.StreamableHTTPTest do
     end
   end
 
+  describe "timeout handling" do
+    test "respects custom timeout option", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+
+      # Simulate slow server that takes 6 seconds to respond
+      Bypass.expect(bypass, "POST", "/mcp", fn conn ->
+        Process.sleep(6000)
+        conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          transport_opts: @test_http_opts
+        )
+
+      Process.sleep(100)
+
+      {:ok, ping_message} =
+        Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+
+      # With 10s timeout, should succeed (10s > 6s)
+      # Before fix: would timeout at 5s (default) or 15s (Mint default receive_timeout)
+      # After fix: respects the 10s timeout and waits for full response
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 10_000)
+
+      Process.sleep(100)
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+
+    test "handles requests longer than Mint default timeout (15s)", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+
+      # Simulate slow server that takes 20 seconds to respond
+      # This exceeds Mint's default receive_timeout of 15s
+      Bypass.expect(bypass, "POST", "/mcp", fn conn ->
+        Process.sleep(20_000)
+        conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          transport_opts: @test_http_opts
+        )
+
+      Process.sleep(100)
+
+      {:ok, ping_message} =
+        Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+
+      # With 30s timeout, should succeed (30s > 20s)
+      # Before fix: would fail at 15s with Mint.TransportError{reason: :timeout}
+      # After fix: respects the 30s timeout and waits for full response
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 30_000)
+
+      Process.sleep(100)
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+  end
+
   describe "error handling" do
     test "handles network connection failures", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"

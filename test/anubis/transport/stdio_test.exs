@@ -59,6 +59,39 @@ defmodule Anubis.Transport.STDIOTest do
     test "sends message successfully", %{transport_pid: pid} do
       assert :ok = STDIO.send_message(pid, "test message", timeout: 5000)
     end
+
+    test "respects custom timeout option" do
+      # Create a mock transport GenServer that will block for 6 seconds on handle_call
+      defmodule SlowTransport do
+        use GenServer
+
+        def start_link(opts) do
+          GenServer.start_link(__MODULE__, opts, name: opts[:name])
+        end
+
+        def init(opts), do: {:ok, opts}
+
+        def handle_call({:send, _message}, _from, state) do
+          # Simulate a slow operation that takes 6 seconds
+          Process.sleep(6000)
+          {:reply, :ok, state}
+        end
+      end
+
+      {:ok, transport} = SlowTransport.start_link(name: :slow_transport_test)
+
+      on_exit(fn ->
+        if Process.alive?(transport) do
+          GenServer.stop(transport, :normal, 100)
+        end
+      end)
+
+      # Test: With a 10s timeout, the call should succeed (10s > 6s)
+      # Before fix: if opts[:timeout] returned nil, GenServer.call would use 5s default and timeout
+      # After fix: Keyword.get(opts, :timeout, 5000) properly extracts the timeout value
+      result = STDIO.send_message(transport, "test1", timeout: 10_000)
+      assert result == :ok, "Should succeed with 10s timeout"
+    end
   end
 
   describe "client message handling" do
