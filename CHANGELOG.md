@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.1...v0.15.0) (2025-11-03)
+
+
+### Features
+
+* add timeout for client/server -&gt; transport calling option ([#50](https://github.com/zoedsoupe/anubis-mcp/issues/50)) ([1e37c23](https://github.com/zoedsoupe/anubis-mcp/commit/1e37c23d3af3f40c54e0ba8b1bcc5043d80547d1))
+* allow template resources registration ([#43](https://github.com/zoedsoupe/anubis-mcp/issues/43)) ([9af9b8d](https://github.com/zoedsoupe/anubis-mcp/commit/9af9b8dcf4368ba981b667acc86b47b45a7d8ff4))
+
+
+### Bug Fixes
+
+* Timeout options not properly passed to HTTP transport ([#52](https://github.com/zoedsoupe/anubis-mcp/issues/52)) ([0d392d6](https://github.com/zoedsoupe/anubis-mcp/commit/0d392d64010e39f4ce38a4427b960574fa6e82aa))
+
 ## [0.14.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.0...v0.14.1) (2025-10-07)
 
 
