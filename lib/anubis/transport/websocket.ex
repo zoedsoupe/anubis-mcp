@@ -82,7 +82,7 @@ if Code.ensure_loaded?(:gun) do
 
     @impl Transport
     def send_message(pid, message, opts) when is_binary(message) do
-      GenServer.call(pid, {:send, message}, opts[:timeout])
+      GenServer.call(pid, {:send, message}, Keyword.get(opts, :timeout, 5000))
     end
 
     @impl Transport

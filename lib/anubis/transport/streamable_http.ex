@@ -97,7 +97,8 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   @impl Transport
   def send_message(pid \\ __MODULE__, message, opts) when is_binary(message) do
-    GenServer.call(pid, {:send, message}, opts[:timeout])
+    timeout = Keyword.get(opts, :timeout, 5000)
+    GenServer.call(pid, {:send, message, timeout}, timeout)
   end
 
   @impl Transport
@@ -136,17 +137,18 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def handle_call({:send, message}, from, state) do
+  def handle_call({:send, message, timeout}, from, state) do
     emit_telemetry(:send, state, %{message_size: byte_size(message)})
 
     Logging.transport_event("sending_http_request", %{
       url: URI.to_string(state.mcp_url),
-      size: byte_size(message)
+      size: byte_size(message),
+      timeout: timeout
     })
 
     new_state = %{state | active_request: from}
 
-    case send_http_request(new_state, message) do
+    case send_http_request(new_state, message, timeout) do
       {:ok, response} ->
         Logging.transport_event("got_http_response", %{status: response.status})
         handle_response(response, new_state)
@@ -224,26 +226,31 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   # Private functions
 
-  defp send_http_request(state, message) do
+  defp send_http_request(state, message, timeout) do
     headers =
       state.headers
       |> Map.put("accept", "application/json, text/event-stream")
       |> Map.put("content-type", "application/json")
       |> put_session_header(state.session_id)
 
-    options = [transport_opts: state.transport_opts] ++ state.http_options
+    # Set receive_timeout, ensuring it takes precedence over any default in http_options
+    # Only pass valid Finch.request options (receive_timeout, pool_timeout, request_timeout)
+    # transport_opts are for Finch pool config at startup, not for individual requests
+    options = Keyword.put(state.http_options, :receive_timeout, timeout)
+
     url = URI.to_string(state.mcp_url)
 
     Logging.transport_event("http_request", %{
       method: :post,
       url: url,
-      headers: headers
+      headers: headers,
+      timeout: timeout
     })
 
-    request = HTTP.build(:post, url, headers, message, options)
+    request = HTTP.build(:post, url, headers, message)
 
     request
-    |> HTTP.follow_redirect()
+    |> HTTP.follow_redirect(options)
     |> case do
       {:ok, %{status: status} = response} when status in 200..299 ->
         {:ok, response}
@@ -402,10 +409,10 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   defp run_sse_task(parent, state) do
     headers = build_sse_headers(state)
-    options = [transport_opts: state.transport_opts] ++ state.http_options
-    request = HTTP.build(:get, URI.to_string(state.mcp_url), headers, nil, options)
+    options = state.http_options
+    request = HTTP.build(:get, URI.to_string(state.mcp_url), headers, nil)
 
-    process_sse_request(request, parent)
+    process_sse_request(request, options, parent)
     send(parent, {:sse_closed, :normal})
   end
 
@@ -415,8 +422,8 @@ defmodule Anubis.Transport.StreamableHTTP do
     |> put_last_event_id_header(state.last_event_id)
   end
 
-  defp process_sse_request(request, parent) do
-    case HTTP.follow_redirect(request) do
+  defp process_sse_request(request, options, parent) do
+    case HTTP.follow_redirect(request, options) do
       {:ok, %{status: 200, headers: resp_headers, body: body}} ->
         handle_sse_response(resp_headers, body, parent)
 
@@ -442,12 +449,12 @@ defmodule Anubis.Transport.StreamableHTTP do
   defp delete_session(state) do
     headers = put_session_header(%{}, state.session_id)
 
-    options = [transport_opts: state.transport_opts] ++ state.http_options
+    options = state.http_options
 
     request =
-      HTTP.build(:delete, URI.to_string(state.mcp_url), headers, nil, options)
+      HTTP.build(:delete, URI.to_string(state.mcp_url), headers, nil)
 
-    case HTTP.follow_redirect(request) do
+    case HTTP.follow_redirect(request, options) do
       {:ok, %{status: status}} when status in [200, 405] ->
         :ok
 

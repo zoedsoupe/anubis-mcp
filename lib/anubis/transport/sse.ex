@@ -102,7 +102,7 @@ defmodule Anubis.Transport.SSE do
 
   @impl Transport
   def send_message(pid, message, opts) when is_binary(message) do
-    GenServer.call(pid, {:send, message}, opts[:timeout])
+    GenServer.call(pid, {:send, message}, Keyword.get(opts, :timeout, 5000))
   end
 
   @impl Transport
@@ -233,9 +233,9 @@ defmodule Anubis.Transport.SSE do
       metadata
     )
 
-    request = make_message_request(message, state)
+    {request, options} = make_message_request(message, state)
 
-    case HTTP.follow_redirect(request) do
+    case HTTP.follow_redirect(request, options) do
       {:ok, %Finch.Response{status: status}} when status in 200..299 ->
         {:reply, :ok, state}
 
@@ -328,13 +328,9 @@ defmodule Anubis.Transport.SSE do
   def terminate(_reason, _state), do: :ok
 
   defp make_message_request(message, %{message_url: endpoint} = state) do
-    HTTP.build(
-      :post,
-      endpoint,
-      state.headers,
-      message,
-      [transport_opts: state.transport_opts] ++ state.http_options
-    )
+    request = HTTP.build(:post, endpoint, state.headers, message)
+    options = state.http_options
+    {request, options}
   end
 
   # tries to handle multiple possibles formats for message_url URI
