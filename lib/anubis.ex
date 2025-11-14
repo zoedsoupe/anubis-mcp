@@ -61,4 +61,13 @@ defmodule Anubis do
     function_exported?(m, f, a) or
       (Code.ensure_loaded?(m) and function_exported?(m, f, a))
   end
+
+  @spec get_session_store_adapter :: nil | module
+  def get_session_store_adapter do
+    config = Application.get_env(:anubis_mcp, :session_store)
+    enabled? = config[:enabled] || false
+    adapter = config[:adapter]
+
+    if enabled? && Code.ensure_loaded?(adapter), do: adapter
+  end
 end

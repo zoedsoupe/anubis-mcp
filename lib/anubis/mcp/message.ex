@@ -188,7 +188,7 @@ defmodule Anubis.MCP.Message do
     "method" =>
       {:required,
        {:enum,
-        ~w(notifications/initialized notifications/cancelled notifications/progress notifications/message notifications/roots/list_changed)}},
+        ~w(notifications/initialized notifications/cancelled notifications/progress notifications/message notifications/roots/list_changed notifications/log/message notifications/tools/list_changed)}},
     "params" => {:dependent, &parse_notification_params_by_method/1}
   })
 
@@ -479,7 +479,7 @@ defmodule Anubis.MCP.Message do
 
     * `params` - Map containing progress parameters:
       * `"progressToken"` - The token that was provided in the original request (string or integer)
-      * `"progress"` - The current progress value (number) 
+      * `"progress"` - The current progress value (number)
       * `"total"` - Optional total value for the operation (number)
       * `"message"` - Optional descriptive message (string, for 2025-03-26)
     * `params_schema` - Optional Peri schema for params validation (defaults to @progress_notif_params_schema)
@@ -621,7 +621,7 @@ defmodule Anubis.MCP.Message do
 
   @doc """
   Builds a response message map without encoding to JSON.
-    
+
   ## Examples
 
       iex> Message.build_response(%{"value" => 42}, "req_123")
@@ -634,7 +634,7 @@ defmodule Anubis.MCP.Message do
 
   @doc """
   Builds an error message map without encoding to JSON.
-    
+
   ## Examples
 
       iex> Message.build_error(%{"code" => -32600, "message" => "Invalid Request"}, "req_123")
