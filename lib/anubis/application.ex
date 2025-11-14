@@ -28,34 +28,21 @@ defmodule Anubis.Application do
   end
 
   defp maybe_start_session_store do
-    case Application.get_env(:anubis_mcp, :session_store) do
-      nil ->
-        []
+    if adapter = Anubis.get_session_store_adapter() do
+      config = Application.get_env(:anubis_mcp, :session_store)
 
-      config ->
-        # Check if session store is enabled
-        if Keyword.get(config, :enabled, false) do
-          adapter = Keyword.get(config, :adapter)
+      Anubis.Logging.log(:info, "Starting session store",
+        enabled: true,
+        adapter: adapter,
+        ttl: Keyword.get(config, :ttl),
+        namespace: Keyword.get(config, :namespace)
+      )
 
-          if adapter && Code.ensure_loaded?(adapter) do
-            Anubis.Logging.log(:info, "Starting session store",
-              enabled: true,
-              adapter: adapter,
-              ttl: Keyword.get(config, :ttl),
-              namespace: Keyword.get(config, :namespace)
-            )
+      [{adapter, config}]
+    else
+      Anubis.Logging.log(:warning, "Session store enabled but adapter not available", adapter: adapter)
 
-            [{adapter, config}]
-          else
-            Anubis.Logging.log(:warning, "Session store enabled but adapter not available", adapter: adapter)
-
-            []
-          end
-        else
-          Anubis.Logging.log(:debug, "Session store configured but not enabled", [])
-
-          []
-        end
+      []
     end
   end
 end

@@ -345,32 +345,28 @@ defmodule Anubis.Server.Session.Store.Redis do
 
     # Simple read-modify-write (last-write-wins semantics)
     # Good enough for session storage - sessions are single-writer in practice
+    with {:ok, current_data} <- fetch_current_data(conn, key),
+         updated_data = Map.merge(current_data, updates),
+         {:ok, new_json} <- json_encode(updated_data),
+         {:ok, "OK"} <- Redix.command(conn, ["SETEX", key, ttl_seconds, new_json]) do
+      :ok
+    end
+  end
+
+  defp fetch_current_data(conn, key) do
+    with {:ok, json} <- fetch_existing_key(conn, key),
+         {:ok, data} <- JSON.decode(json) do
+      {:ok, data}
+    else
+      {:error, reason} -> {:error, {:decoding_failed, reason}}
+    end
+  end
+
+  defp fetch_existing_key(conn, key) do
     case Redix.command(conn, ["GET", key]) do
-      {:ok, nil} ->
-        {:error, :not_found}
-
-      {:ok, json} ->
-        case JSON.decode(json) do
-          {:ok, current_data} ->
-            updated_data = Map.merge(current_data, updates)
-
-            case json_encode(updated_data) do
-              {:ok, new_json} ->
-                case Redix.command(conn, ["SETEX", key, ttl_seconds, new_json]) do
-                  {:ok, "OK"} -> :ok
-                  {:error, reason} -> {:error, reason}
-                end
-
-              {:error, reason} ->
-                {:error, {:encoding_failed, reason}}
-            end
-
-          {:error, reason} ->
-            {:error, {:decoding_failed, reason}}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+      {:ok, nil} -> {:error, :not_found}
+      {:ok, json} -> {:ok, json}
+      {:error, reason} -> {:error, reason}
     end
   end
 

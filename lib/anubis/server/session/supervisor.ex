@@ -2,6 +2,7 @@ defmodule Anubis.Server.Session.Supervisor do
   @moduledoc false
 
   use DynamicSupervisor
+  use Anubis.Logging
 
   alias Anubis.Server.Session
 
@@ -107,56 +108,19 @@ defmodule Anubis.Server.Session.Supervisor do
   # Private functions
 
   defp restore_sessions(server, registry) do
-    case get_store() do
+    case Anubis.get_session_store_adapter() do
       nil ->
-        Anubis.Logging.log(:debug, "No session store configured, skipping session restoration", [])
-
-        :ok
+        Logging.log(:debug, "No session store configured, skipping session restoration", [])
 
       store ->
-        Anubis.Logging.log(:debug, "Checking for sessions to restore from store", server: server)
+        Logging.log(:debug, "Checking for sessions to restore from store", server: server)
 
         case store.list_active(server: server) do
           {:ok, session_ids} ->
-            if length(session_ids) > 0 do
-              Anubis.Logging.log(:info, "Restoring sessions", count: length(session_ids), server: server)
-
-              Enum.each(session_ids, fn session_id ->
-                Anubis.Logging.log(:debug, "Creating session process for restored session", session_id: session_id)
-
-                create_session(registry, server, session_id)
-              end)
-            else
-              Anubis.Logging.log(:debug, "No sessions found to restore for server", server: server)
-            end
-
-            :ok
+            Enum.each(session_ids, &create_session(registry, server, &1))
 
           {:error, reason} ->
-            Anubis.Logging.log(:warning, "Failed to list active sessions from store", server: server, reason: reason)
-
-            :ok
-        end
-    end
-  end
-
-  defp get_store do
-    case Application.get_env(:anubis_mcp, :session_store) do
-      nil ->
-        nil
-
-      config ->
-        # Check if session store is enabled
-        if Keyword.get(config, :enabled, false) do
-          adapter = Keyword.get(config, :adapter)
-
-          if adapter && Code.ensure_loaded?(adapter) do
-            adapter
-          else
-            Anubis.Logging.log(:warning, "Session store enabled but adapter not available", adapter: inspect(adapter))
-
-            nil
-          end
+            Logging.log(:warning, "Failed to list active sessions from store", server: server, reason: reason)
         end
     end
   end

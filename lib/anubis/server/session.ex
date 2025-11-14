@@ -2,6 +2,9 @@ defmodule Anubis.Server.Session do
   @moduledoc false
 
   use Agent, restart: :transient
+  use Anubis.Logging
+
+  import Peri
 
   @type t :: %__MODULE__{
           protocol_version: String.t() | nil,
@@ -27,6 +30,17 @@ defmodule Anubis.Server.Session do
     pending_requests: %{}
   ]
 
+  defschema :state_t, %{
+    protocol_version: :string,
+    initialized: {:required, :boolean},
+    name: {:custom, &Anubis.genserver_name/1},
+    client_info: :map,
+    client_capabilities: :map,
+    log_level: {:required, :string},
+    id: :string,
+    pending_requests: {:map, :string, %{started_at: :integer, method: :string}}
+  }
+
   @doc """
   Starts a new session agent with initial state.
 
@@ -42,7 +56,7 @@ defmodule Anubis.Server.Session do
     initial_state =
       case maybe_restore_session(session_id, name, server_module) do
         {:ok, state} ->
-          Anubis.Logging.log(:info, "Restored session #{inspect(session_id)} from store",
+          Logging.log(:info, "Restored session #{inspect(session_id)} from store",
             initialized: state.initialized,
             protocol_version: state.protocol_version
           )
@@ -170,124 +184,58 @@ defmodule Anubis.Server.Session do
   # Private persistence functions
 
   defp maybe_restore_session(session_id, name, server_module) do
-    case get_store() do
-      nil ->
-        Anubis.Logging.log(:debug, "No session store configured, creating new session",
-          session_id: session_id
-        )
+    if store = Anubis.get_session_store_adapter() do
+      Logging.log(:debug, "Attempting to restore session from store. session_id: #{inspect(session_id)}", [])
 
-        {:error, :no_store}
+      case store.load(session_id, server: server_module) do
+        {:ok, state_map} ->
+          Logging.log(:debug, "Successfully loaded session #{inspect(session_id)} from store", [])
+          {:ok, state} = state_t(state_map)
+          state = struct(__MODULE__, state)
+          {:ok, %{state | name: name}}
 
-      store ->
-        Anubis.Logging.log(
-          :debug,
-          "Attempting to restore session from store. session_id: #{inspect(session_id)}",
-          []
-        )
+        {:error, :not_found} = error ->
+          Logging.log(:debug, "Session #{inspect(session_id)} not found in store, creating new session", [])
+          error
 
-        case store.load(session_id, server: server_module) do
-          {:ok, state_map} ->
-            Anubis.Logging.log(
-              :debug,
-              "Successfully loaded session #{inspect(session_id)} from store",
-              []
-            )
+        error ->
+          Logging.log(:debug, "Failed to load session #{inspect(session_id)} from store", [])
+          error
+      end
+    else
+      Logging.log(:debug, "No session store configured, creating new session", session_id: session_id)
 
-            state_map_atomized =
-              Map.new(state_map, fn {k, v} ->
-                {String.to_atom(k), v}
-              end)
-
-            # Restore the session struct from the persisted map
-            state = struct(__MODULE__, state_map_atomized)
-            # Update the name field to match the current process
-            {:ok, %{state | name: name}}
-
-          {:error, :not_found} = error ->
-            Anubis.Logging.log(
-              :debug,
-              "Session #{inspect(session_id)} not found in store, creating new session",
-              []
-            )
-
-            error
-
-          error ->
-            Anubis.Logging.log(
-              :debug,
-              "Failed to load session #{inspect(session_id)} from store",
-              []
-            )
-
-            error
-        end
+      {:error, :no_store}
     end
   end
 
   defp maybe_persist_session(%__MODULE__{} = state) do
-    case get_store() do
-      nil ->
-        Anubis.Logging.log(:debug, "No session store configured, skipping persistence", [])
+    if store = Anubis.get_session_store_adapter() do
+      Logging.log(:debug, "Persisting session #{inspect(state.id)} to store", [])
 
-        :ok
+      # Convert struct to mapand remove runtime fields
+      state_map =
+        state
+        |> Map.from_struct()
+        # Don't persist process names
+        |> Map.delete(:name)
 
-      store ->
-        Anubis.Logging.log(:debug, "Persisting session #{inspect(state.id)} to store", [])
+      case store.save(state.id, state_map, []) do
+        :ok ->
+          Logging.log(:debug, "Successfully persisted session #{inspect(state.id)} to store", [])
 
-        # Convert struct to mapand remove runtime fields
-        state_map =
-          state
-          |> Map.from_struct()
-          # Don't persist process names
-          |> Map.delete(:name)
+        {:error, reason} ->
+          Logging.log(
+            :warning,
+            "Failed to persist session #{inspect(state.id)} to store",
+            session_id: state.id,
+            error: reason
+          )
 
-        case store.save(state.id, state_map, []) do
-          :ok ->
-            Anubis.Logging.log(
-              :debug,
-              "Successfully persisted session #{inspect(state.id)} to store",
-              []
-            )
-
-            :ok
-
-          {:error, reason} ->
-            Anubis.Logging.log(
-              :warning,
-              "Failed to persist session #{inspect(state.id)} to store",
-              session_id: state.id,
-              error: reason
-            )
-
-            :ok
-        end
-    end
-  end
-
-  defp get_store do
-    case Application.get_env(:anubis_mcp, :session_store) do
-      nil ->
-        nil
-
-      config ->
-        # Check if session store is enabled
-        if Keyword.get(config, :enabled, false) do
-          adapter = Keyword.get(config, :adapter)
-
-          if adapter && Code.ensure_loaded?(adapter) do
-            Anubis.Logging.log(:debug, "Using session store adapter", [])
-
-            adapter
-          else
-            Anubis.Logging.log(:warning, "Session store enabled but adapter not available", [])
-
-            nil
-          end
-        else
-          Anubis.Logging.log(:debug, "Session store configured but not enabled", [])
-
-          nil
-        end
+          :ok
+      end
+    else
+      Logging.log(:debug, "No session store configured, skipping persistence", [])
     end
   end
 end
