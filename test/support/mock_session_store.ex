@@ -11,7 +11,11 @@ defmodule Anubis.Test.MockSessionStore do
   use Agent
 
   def start_link(_opts) do
-    Agent.start_link(fn -> %{sessions: %{}} end, name: __MODULE__)
+    start = fn -> %{sessions: %{}} end
+
+    with {:error, {:already_started, pid}} <- Agent.start_link(start, name: __MODULE__) do
+      {:ok, pid}
+    end
   end
 
   def save(session_id, state, _opts) do

@@ -36,10 +36,10 @@ defmodule Anubis.Server.Session.Store do
 
   Configure the session store in your application config:
 
-      config :anubis, :session_store,
+      config :anubis_mcp, :session_store,
         adapter: MyApp.RedisStore,
         redis_url: "redis://localhost:6379",
-        ttl: 1800  # 30 minutes
+        ttl: 1800
 
   ## Session Security
 

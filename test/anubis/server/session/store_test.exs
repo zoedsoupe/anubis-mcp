@@ -5,9 +5,11 @@ defmodule Anubis.Server.Session.StoreTest do
   alias Anubis.Server.Session.Supervisor, as: SessionSupervisor
   alias Anubis.Test.MockSessionStore
 
+  @moduletag capture_log: true
+
   setup do
     # Start the mock store
-    {:ok, _} = MockSessionStore.start_link([])
+    start_supervised!(MockSessionStore)
     MockSessionStore.reset!()
 
     # Configure the application to use the mock store
@@ -33,16 +35,11 @@ defmodule Anubis.Server.Session.StoreTest do
   describe "session persistence" do
     test "saves session state when initialized" do
       session_id = "test_session_123"
-      {:ok, _} = Registry.start_link(keys: :unique, name: TestSessionRegistry)
+      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry})
       session_name = {:via, Registry, {TestSessionRegistry, session_id}}
 
       # Start a session
-      {:ok, _pid} =
-        Session.start_link(
-          session_id: session_id,
-          name: session_name,
-          server_module: TestServer
-        )
+      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
 
       # Initialize the session
       Session.update_from_initialization(
@@ -63,7 +60,7 @@ defmodule Anubis.Server.Session.StoreTest do
 
     test "restores session from store on startup" do
       session_id = "existing_session_456"
-      {:ok, _} = Registry.start_link(keys: :unique, name: TestSessionRegistry2)
+      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry2})
 
       # Pre-populate store with session data
       session_data = %{
@@ -81,12 +78,7 @@ defmodule Anubis.Server.Session.StoreTest do
       # Start a new session with the same ID
       session_name = {:via, Registry, {TestSessionRegistry2, session_id}}
 
-      {:ok, _pid} =
-        Session.start_link(
-          session_id: session_id,
-          name: session_name,
-          server_module: TestServer
-        )
+      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
 
       # Verify the session was restored with the persisted data
       session = Session.get(session_name)
@@ -97,15 +89,10 @@ defmodule Anubis.Server.Session.StoreTest do
 
     test "persists sessions without tokens" do
       session_id = "simple_session_789"
-      {:ok, _} = Registry.start_link(keys: :unique, name: TestSessionRegistry3)
+      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry3})
       session_name = {:via, Registry, {TestSessionRegistry3, session_id}}
 
-      {:ok, _pid} =
-        Session.start_link(
-          session_id: session_id,
-          name: session_name,
-          server_module: TestServer
-        )
+      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
 
       # Mark as initialized to trigger persistence
       Session.mark_initialized(session_name)
@@ -177,7 +164,7 @@ defmodule Anubis.Server.Session.StoreTest do
   describe "session recovery on supervisor startup" do
     setup do
       # Start a test registry
-      {:ok, _} = Registry.start_link(keys: :unique, name: Anubis.Server.Session.StoreTest.TestRegistry)
+      start_supervised!({Registry, keys: :unique, name: Anubis.Server.Session.StoreTest.TestRegistry})
       :ok
     end
 
@@ -206,18 +193,15 @@ defmodule Anubis.Server.Session.StoreTest do
           %{
             id: session_id,
             initialized: true,
-            protocol_version: "2024-11-21"
+            protocol_version: "2024-11-21",
+            log_level: "info"
           },
           []
         )
       end
 
       # Start the supervisor (this should restore sessions)
-      {:ok, _sup} =
-        SessionSupervisor.start_link(
-          server: TestServer,
-          registry: TestRegistry
-        )
+      start_supervised!({SessionSupervisor, server: TestServer, registry: TestRegistry})
 
       # Wait a bit for sessions to be restored
       Process.sleep(100)
@@ -242,16 +226,11 @@ defmodule Anubis.Server.Session.StoreTest do
       Application.delete_env(:anubis_mcp, :session_store)
 
       session_id = "no_store_session"
-      {:ok, _} = Registry.start_link(keys: :unique, name: TestSessionRegistry5)
+      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry5})
       session_name = {:via, Registry, {TestSessionRegistry5, session_id}}
 
       # Should still be able to create sessions
-      {:ok, _pid} =
-        Session.start_link(
-          session_id: session_id,
-          name: session_name,
-          server_module: TestServer
-        )
+      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
 
       # Session should work normally
       Session.mark_initialized(session_name)

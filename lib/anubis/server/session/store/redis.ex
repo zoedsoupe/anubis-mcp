@@ -7,11 +7,11 @@ defmodule Anubis.Server.Session.Store.Redis do
 
   ## Configuration
 
-      config :anubis, :session_store,
+      config :anubis_mcp, :session_store,
         adapter: Anubis.Server.Session.Store.Redis,
         redis_url: "redis://localhost:6379/0",
         pool_size: 10,
-        ttl: 1_800_000,  # 30 minutes in milliseconds
+        ttl: 1_800_000, # 30 minutes in milliseconds
         namespace: "anubis:sessions",
         connection_name: :anubis_redis
 
@@ -358,6 +358,7 @@ defmodule Anubis.Server.Session.Store.Redis do
          {:ok, data} <- JSON.decode(json) do
       {:ok, data}
     else
+      {:error, :not_found} = err -> err
       {:error, reason} -> {:error, {:decoding_failed, reason}}
     end
   end

@@ -4,6 +4,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
   alias Anubis.Server.Session.Store.Redis
 
   @moduletag :integration
+  @moduletag capture_log: true
 
   @redis_config [
     redis_url: "redis://localhost:6379",
@@ -16,36 +17,44 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
 
   setup_all do
     # Check if Redis is available
-    case :gen_tcp.connect(~c"localhost", 6379, [], 5000) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        :ok
+    redis_available =
+      case :gen_tcp.connect(~c"localhost", 6379, [], 5000) do
+        {:ok, socket} ->
+          :gen_tcp.close(socket)
+          true
 
-      {:error, _} ->
-        IO.puts("\nSkipping Redis integration tests - Redis not available at localhost:6379")
-        :skip
-    end
+        {:error, _} ->
+          false
+      end
+
+    %{redis_available: redis_available}
   end
 
-  setup do
+  setup %{redis_available: redis_available} = _context do
+    if !redis_available do
+      ExUnit.Callbacks.skip("Redis not available at localhost:6379")
+    end
+
     # Configure application to use test Redis config
     Application.put_env(:anubis_mcp, :session_store, @redis_config)
 
-    # Clean up any existing test keys
-    case Redix.start_link("redis://localhost:6379") do
-      {:ok, conn} ->
-        Redix.command(conn, ["FLUSHDB"])
-        Redix.stop(conn)
-        :ok
+    on_exit(fn ->
+      conn = start_supervised!({Redix, "redis://localhost:6379"})
 
-      {:error, _} ->
-        :skip
-    end
+      case Redix.command(conn, ["SCAN", "0", "MATCH", "anubis:test:*"]) do
+        {:ok, _, []} -> :ok
+        {:ok, _, keys} -> Redix.command(conn, ["UNLINK" | keys])
+      end
+
+      Redix.stop(conn)
+    end)
+
+    :ok
   end
 
   describe "Redis store integration" do
     test "starts and stops correctly" do
-      {:ok, pid} = Redis.start_link(@redis_config)
+      pid = start_supervised!({Redis, @redis_config})
       assert Process.alive?(pid)
 
       GenServer.stop(pid)
@@ -53,7 +62,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     end
 
     test "saves and loads session data" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
+      start_supervised!({Redis, @redis_config})
 
       session_id = "test_session_123"
 
@@ -76,13 +85,12 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     end
 
     test "handles non-existent sessions" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
-
+      start_supervised!({Redis, @redis_config})
       assert {:error, :not_found} = Redis.load("nonexistent_session")
     end
 
     test "deletes sessions" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
+      start_supervised!({Redis, @redis_config})
 
       session_id = "delete_test_456"
       session_data = %{id: session_id}
@@ -97,7 +105,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     end
 
     test "lists active sessions" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
+      start_supervised!({Redis, @redis_config})
 
       session_ids = ["active_1", "active_2", "active_3"]
 
@@ -113,7 +121,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     end
 
     test "updates session data atomically" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
+      start_supervised!({Redis, @redis_config})
 
       session_id = "update_test_789"
 
@@ -143,7 +151,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     end
 
     test "handles TTL correctly" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
+      start_supervised!({Redis, @redis_config})
 
       session_id = "ttl_test_999"
       session_data = %{id: session_id}
@@ -163,7 +171,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
 
     test "handles connection pool correctly" do
       config = Keyword.put(@redis_config, :pool_size, 5)
-      {:ok, _pid} = Redis.start_link(config)
+      start_supervised!({Redis, config})
 
       # Make multiple concurrent operations
       tasks =
@@ -182,7 +190,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     end
 
     test "updates TTL for existing sessions" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
+      start_supervised!({Redis, @redis_config})
 
       session_id = "ttl_update_test"
       :ok = Redis.save(session_id, %{id: session_id})
@@ -195,7 +203,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     end
 
     test "cleanup_expired is a no-op for Redis" do
-      {:ok, _pid} = Redis.start_link(@redis_config)
+      start_supervised!({Redis, @redis_config})
 
       # Redis handles expiration automatically
       assert {:ok, 0} = Redis.cleanup_expired([])
@@ -208,7 +216,7 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
 
       # Redis starts with sync_connect: false, so it won't fail immediately
       # Instead, operations will fail when the connection isn't available
-      {:ok, pid} = Redis.start_link(bad_config)
+      pid = start_supervised!({Redis, bad_config})
 
       # Wait a moment for connection attempt
       Process.sleep(100)

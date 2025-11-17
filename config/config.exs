@@ -17,6 +17,6 @@ config :logger, :default_formatter,
 #   adapter: Anubis.Server.Session.Store.Redis,
 #   redis_url: System.get_env("REDIS_URL", "redis://localhost:6379/0"),
 #   pool_size: 10,
-#   ttl: 1800,  # 30 minutes in seconds
+#   ttl: 1800,  # TTL is in ms
 #   namespace: "anubis:sessions",
 #   connection_name: :anubis_redis

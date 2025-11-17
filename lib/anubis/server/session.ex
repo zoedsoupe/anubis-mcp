@@ -199,7 +199,7 @@ defmodule Anubis.Server.Session do
           error
 
         error ->
-          Logging.log(:debug, "Failed to load session #{inspect(session_id)} from store", [])
+          Logging.log(:debug, "Failed to load session #{inspect(session_id)} from store", error: error)
           error
       end
     else
