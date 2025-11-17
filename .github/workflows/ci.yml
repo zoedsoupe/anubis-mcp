@@ -91,7 +91,7 @@ jobs:
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
-      
+
       - name: Cache Elixir deps
         uses: actions/cache@v4
         id: deps-cache
@@ -144,6 +144,17 @@ jobs:
 
     env:
       MIX_ENV: test
+
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
 
     strategy:
       matrix:
