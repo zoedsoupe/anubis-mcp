@@ -202,4 +202,4 @@ jobs:
         run: mix deps.compile --warnings-as-errors
 
       - name: Run tests
-        run: mix test
+        run: mix test --include integration

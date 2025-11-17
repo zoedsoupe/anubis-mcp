@@ -15,35 +15,16 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     connection_name: :test_redis
   ]
 
-  setup_all do
-    # Check if Redis is available
-    redis_available =
-      case :gen_tcp.connect(~c"localhost", 6379, [], 5000) do
-        {:ok, socket} ->
-          :gen_tcp.close(socket)
-          true
-
-        {:error, _} ->
-          false
-      end
-
-    %{redis_available: redis_available}
-  end
-
-  setup %{redis_available: redis_available} = _context do
-    if !redis_available do
-      ExUnit.Callbacks.skip("Redis not available at localhost:6379")
-    end
-
-    # Configure application to use test Redis config
+  setup _context do
     Application.put_env(:anubis_mcp, :session_store, @redis_config)
 
     on_exit(fn ->
       conn = start_supervised!({Redix, "redis://localhost:6379"})
 
       case Redix.command(conn, ["SCAN", "0", "MATCH", "anubis:test:*"]) do
-        {:ok, _, []} -> :ok
-        {:ok, _, keys} -> Redix.command(conn, ["UNLINK" | keys])
+        {:ok, []} -> :ok
+        {:ok, keys} -> Redix.command(conn, ["UNLINK" | keys])
+        _ -> nil
       end
 
       Redix.stop(conn)

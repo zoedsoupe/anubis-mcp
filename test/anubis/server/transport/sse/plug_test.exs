@@ -10,6 +10,8 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
   alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.SSE.Plug, as: SSEPlug
 
+  @moduletag capture_log: true
+
   setup :with_default_registry
 
   describe "init/1" do
