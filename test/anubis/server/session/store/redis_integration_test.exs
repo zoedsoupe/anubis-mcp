@@ -19,15 +19,17 @@ defmodule Anubis.Server.Session.Store.RedisIntegrationTest do
     Application.put_env(:anubis_mcp, :session_store, @redis_config)
 
     on_exit(fn ->
-      conn = start_supervised!({Redix, "redis://localhost:6379"})
+      {:ok, conn} = Redix.start_link("redis://localhost:6379")
 
-      case Redix.command(conn, ["SCAN", "0", "MATCH", "anubis:test:*"]) do
-        {:ok, []} -> :ok
-        {:ok, keys} -> Redix.command(conn, ["UNLINK" | keys])
-        _ -> nil
+      try do
+        case Redix.command(conn, ["KEYS", "anubis:test:*"]) do
+          {:ok, []} -> :ok
+          {:ok, [_ | _] = keys} -> Redix.command(conn, ["DEL" | keys])
+          _ -> nil
+        end
+      after
+        Redix.stop(conn)
       end
-
-      Redix.stop(conn)
     end)
 
     :ok

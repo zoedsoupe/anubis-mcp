@@ -57,3 +57,6 @@ result
 
 # macOS
 **/.DS_Store
+
+# redis
+dump.rdb
