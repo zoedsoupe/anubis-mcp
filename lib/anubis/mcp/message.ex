@@ -116,12 +116,16 @@ defmodule Anubis.MCP.Message do
     "maxTokens" => :integer
   }
 
-  defschema(:request_schema, %{
-    "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-    "method" => {:required, {:enum, @request_methods}},
-    "params" => {:dependent, &params_with_progress_token/1},
-    "id" => {:required, {:either, {:string, :integer}}}
-  })
+  defschema(
+    :request_schema,
+    %{
+      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+      "method" => {:required, {:enum, @request_methods}},
+      "params" => {:dependent, &params_with_progress_token/1},
+      "id" => {:required, {:either, {:string, :integer}}}
+    },
+    mode: :strict
+  )
 
   defp params_with_progress_token(attrs) do
     with {:ok, %{} = schema} <- parse_request_params_by_method(attrs) do
@@ -135,27 +139,16 @@ defmodule Anubis.MCP.Message do
   end
 
   defp parse_request_params_by_method(%{"method" => "initialize"}), do: {:ok, @init_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "ping"}), do: {:ok, @ping_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "resources/list"}), do: {:ok, @resources_list_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "resources/read"}), do: {:ok, @resources_read_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "prompts/list"}), do: {:ok, @prompts_list_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "prompts/get"}), do: {:ok, @prompts_get_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "tools/list"}), do: {:ok, @tools_list_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "tools/call"}), do: {:ok, @tools_call_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "logging/setLevel"}), do: {:ok, @set_log_level_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "completion/complete"}), do: {:ok, @completion_complete_params_schema}
-
   defp parse_request_params_by_method(%{"method" => "sampling/createMessage"}), do: {:ok, @sampling_create_params}
-
   defp parse_request_params_by_method(%{"method" => "roots/list"}), do: {:ok, :map}
   defp parse_request_params_by_method(_), do: {:ok, :map}
 
@@ -183,14 +176,18 @@ defmodule Anubis.MCP.Message do
     "logger" => :string
   }
 
-  defschema(:notification_schema, %{
-    "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-    "method" =>
-      {:required,
-       {:enum,
-        ~w(notifications/initialized notifications/cancelled notifications/progress notifications/message notifications/roots/list_changed notifications/log/message notifications/tools/list_changed)}},
-    "params" => {:dependent, &parse_notification_params_by_method/1}
-  })
+  defschema(
+    :notification_schema,
+    %{
+      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+      "method" =>
+        {:required,
+         {:enum,
+          ~w(notifications/initialized notifications/cancelled notifications/progress notifications/message notifications/roots/list_changed notifications/log/message notifications/tools/list_changed)}},
+      "params" => {:dependent, &parse_notification_params_by_method/1}
+    },
+    mode: :strict
+  )
 
   defp parse_notification_params_by_method(%{"method" => "notifications/initialized"}),
     do: {:ok, @init_noti_params_schema}
@@ -208,18 +205,26 @@ defmodule Anubis.MCP.Message do
 
   defp parse_notification_params_by_method(_), do: {:ok, :map}
 
-  defschema(:response_schema, %{
-    "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-    "result" => {:required, :any},
-    "id" => {:required, {:either, {:string, :integer}}}
-  })
+  defschema(
+    :response_schema,
+    %{
+      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+      "result" => {:required, :any},
+      "id" => {:required, {:either, {:string, :integer}}}
+    },
+    mode: :strict
+  )
 
-  defschema(:sampling_result_schema, %{
-    "role" => {:required, {:literal, "assistant"}},
-    "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema, @audio_content_schema]}},
-    "model" => {:required, :string},
-    "stopReason" => {:string, {:default, "endTurn"}}
-  })
+  defschema(
+    :sampling_result_schema,
+    %{
+      "role" => {:required, {:literal, "assistant"}},
+      "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema, @audio_content_schema]}},
+      "model" => {:required, :string},
+      "stopReason" => {:string, {:default, "endTurn"}}
+    },
+    mode: :strict
+  )
 
   defschema(
     :sampling_response_schema,
@@ -227,18 +232,25 @@ defmodule Anubis.MCP.Message do
       get_schema(:response_schema),
       "result",
       get_schema(:sampling_result_schema)
-    )
+    ),
+    mode: :strict
   )
 
-  defschema(:error_schema, %{
-    "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-    "error" => %{
-      "code" => {:required, :integer},
-      "message" => {:required, :string},
-      "data" => :any
+  defschema(
+    :error_schema,
+    %{
+      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+      "error" =>
+        {:required,
+         %{
+           "code" => {:required, :integer},
+           "message" => {:required, :string},
+           "data" => :any
+         }},
+      "id" => {:required, {:either, {:string, :integer}}}
     },
-    "id" => {:required, {:either, {:string, :integer}}}
-  })
+    mode: :strict
+  )
 
   defschema(
     :mcp_message_schema,
@@ -248,7 +260,8 @@ defmodule Anubis.MCP.Message do
        get_schema(:notification_schema),
        get_schema(:response_schema),
        get_schema(:error_schema)
-     ]}
+     ]},
+    mode: :strict
   )
 
   # generic guards
