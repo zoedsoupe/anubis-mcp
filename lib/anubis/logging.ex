@@ -143,7 +143,7 @@ defmodule Anubis.Logging do
   defp should_log?(level) do
     log? = Application.get_env(:anubis_mcp, :log, true)
     config_level = Application.get_env(:logger, :level, :debug)
-    log? and Logger.compare_levels(config_level, level) != :lt
+    log? and Logger.compare_levels(level, config_level) != :lt
   end
 
   @doc false
