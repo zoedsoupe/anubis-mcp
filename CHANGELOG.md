@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.16.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.15.0...v0.16.0) (2025-11-18)
+
+
+### Features
+
+* redis based session store (continue from [#48](https://github.com/zoedsoupe/anubis-mcp/issues/48)) ([#55](https://github.com/zoedsoupe/anubis-mcp/issues/55)) ([fddea32](https://github.com/zoedsoupe/anubis-mcp/commit/fddea327ef8d91c57c4dc65f527aadc3e8d105a2))
+
+
+### Bug Fixes
+
+* correct arguments in Logging.should_log? ([#47](https://github.com/zoedsoupe/anubis-mcp/issues/47)) ([6f550e6](https://github.com/zoedsoupe/anubis-mcp/commit/6f550e647fd5e6e7c6cdfb233e1cc8a4ac530fc7))
+
 ## [0.15.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.1...v0.15.0) (2025-11-03)
 
 ### Features
