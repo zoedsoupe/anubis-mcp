@@ -187,6 +187,20 @@ Client: read_resource("config://app/settings")
 Server: {contents: [{text: "{\n  \"environment\": \"production\",\n  ..."}]}
 ```
 
+Resources can have a `description`. This can be provided via the `description/0` callback.
+
+```elixir
+defmodule MyApp.ConfigResource do
+  @moduledoc "Current application configuration"
+  ...
+
+  @impl true
+  def description, do: "The config for the application"
+end
+```
+
+If a description is not provided, the `@moduledoc` will be used.
+
 ## Creating Prompts
 
 Prompts are templates that help AI assistants interact with your users more effectively:
