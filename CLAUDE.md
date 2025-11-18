@@ -136,3 +136,4 @@ mix docs
 ### Testing Guidelines
 
 - Always implement test helper modules in @test/support/ context, analyzing if there aren't any existing ones that could be used
+- memo

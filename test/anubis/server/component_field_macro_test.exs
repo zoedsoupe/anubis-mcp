@@ -7,6 +7,9 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
   alias TestTools.NestedFieldTool
   alias TestTools.SingleNestedFieldTool
 
+  # Styler adds this alias but it's only used in nested test modules
+  @compile {:no_warn_unused_vars, Component}
+
   describe "field macro with nested do blocks" do
     test "generates correct JSON Schema with nested fields" do
       json_schema = NestedFieldTool.input_schema()

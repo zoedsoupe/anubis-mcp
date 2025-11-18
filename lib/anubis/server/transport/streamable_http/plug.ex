@@ -83,7 +83,13 @@ if Code.ensure_loaded?(Plug) do
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
 
-      %{transport: transport, session_header: session_header, timeout: request_timeout}
+      %{
+        server: server,
+        registry: registry,
+        transport: transport,
+        session_header: session_header,
+        timeout: request_timeout
+      }
     end
 
     @impl Plug
@@ -146,7 +152,7 @@ if Code.ensure_loaded?(Plug) do
           send_error(
             conn,
             406,
-            "Not Acceptable: Client must accept both application/json and text/event-stream"
+            "Not Acceptable: Client must accept application/json"
           )
 
         {:error, :invalid_json} ->
@@ -198,12 +204,12 @@ if Code.ensure_loaded?(Plug) do
       )
     end
 
-    # DELETE request handler - closes session
-
-    defp handle_delete(conn, %{transport: transport, session_header: session_header}) do
+    defp handle_delete(conn, %{transport: transport, session_header: session_header} = opts) do
       case get_req_header(conn, session_header) do
         [session_id] when is_binary(session_id) and session_id != "" ->
           StreamableHTTP.unregister_sse_handler(transport, session_id)
+          delete_session_from_store(session_id)
+          stop_session_process(opts, session_id)
 
           conn
           |> put_resp_content_type("application/json")
@@ -346,8 +352,9 @@ if Code.ensure_loaded?(Plug) do
         |> get_req_header("accept")
         |> List.first("")
 
-      if String.contains?(accept_header, "application/json") and
-           String.contains?(accept_header, "text/event-stream") do
+      # For POST requests, client must accept application/json at minimum
+      # text/event-stream is optional and indicates client wants SSE responses
+      if String.contains?(accept_header, "application/json") do
         :ok
       else
         {:error, :invalid_accept_header}
@@ -364,8 +371,17 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp determine_session_id(_conn, _header, [message]) when Message.is_initialize(message) do
-      ID.generate_session_id()
+    defp determine_session_id(conn, session_header, message) when Message.is_initialize(message) do
+      # For initialize messages, check if client provided a session ID to resume
+      case get_req_header(conn, session_header) do
+        [session_id] when is_binary(session_id) and session_id != "" ->
+          # Client wants to resume existing session - use their ID
+          session_id
+
+        _ ->
+          # No session ID provided - generate new one for fresh session
+          ID.generate_session_id()
+      end
     end
 
     defp determine_session_id(conn, session_header, _message) do
@@ -459,6 +475,20 @@ if Code.ensure_loaded?(Plug) do
       case conn.query_params do
         %Unfetched{} -> nil
         params -> params
+      end
+    end
+
+    defp delete_session_from_store(session_id) do
+      if store = Anubis.get_session_store_adapter() do
+        store.delete(session_id, [])
+      end
+    end
+
+    defp stop_session_process(%{server: server, registry: registry}, session_id) do
+      session_name = registry.server_session(server, session_id)
+
+      if pid = GenServer.whereis(session_name) do
+        GenServer.stop(pid, :normal)
       end
     end
   end

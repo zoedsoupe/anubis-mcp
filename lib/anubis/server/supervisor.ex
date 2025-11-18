@@ -2,6 +2,7 @@ defmodule Anubis.Server.Supervisor do
   @moduledoc false
 
   use Supervisor, restart: :permanent
+  use Anubis.Logging
 
   alias Anubis.Server.Base
   alias Anubis.Server.Session
@@ -44,7 +45,7 @@ defmodule Anubis.Server.Supervisor do
       Anubis.Server.Supervisor.start_link(MyServer, [],
         transport: {:streamable_http, port: 8080}
       )
-      
+
       # With custom session timeout (15 minutes)
       Anubis.Server.Supervisor.start_link(MyServer, [],
         transport: {:streamable_http, port: 8080},
@@ -134,7 +135,8 @@ defmodule Anubis.Server.Supervisor do
   end
 
   defp parse_transport_child({:sse, opts}, server, registry) do
-    IO.warn(
+    Logging.log(
+      :warning,
       "The :sse transport option is deprecated as of MCP specification 2025-03-26. " <>
         "Please use {:streamable_http, opts} instead. " <>
         "The SSE transport is maintained only for backward compatibility with MCP protocol version 2024-11-05.",

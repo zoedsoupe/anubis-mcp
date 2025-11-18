@@ -136,7 +136,7 @@ defmodule Anubis.Logging do
   # Private helpers
 
   @doc false
-  def log(level, message, metadata) when is_atom(level) do
+  def log(level, message, metadata \\ []) when is_atom(level) do
     if should_log?(level), do: log_by_level(level, message, metadata)
   end
 
