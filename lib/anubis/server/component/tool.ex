@@ -117,6 +117,26 @@ defmodule Anubis.Server.Component.Tool do
   @callback title() :: String.t()
 
   @doc """
+  Returns the description of this tool.
+
+  The description helps AI assistants understand what the tool does and when to use it.
+  If not provided, the module's `@moduledoc` will be used automatically.
+
+  ## Examples
+
+      def description do
+        "Performs arithmetic operations on two numbers"
+      end
+
+      # With dynamic content
+      def description do
+        interval = Application.get_env(:my_app, :cache_minutes, 15)
+        "Fetches data (cached for \#{interval} minutes)"
+      end
+  """
+  @callback description() :: String.t()
+
+  @doc """
   Returns optional annotations for the tool.
 
   Annotations provide additional metadata about the tool that may be used
@@ -170,7 +190,7 @@ defmodule Anubis.Server.Component.Tool do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks annotations: 0, output_schema: 0, title: 0
+  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Tool

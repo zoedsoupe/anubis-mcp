@@ -115,6 +115,26 @@ defmodule Anubis.Server.Component.Prompt do
   @callback title() :: String.t()
 
   @doc """
+  Returns the description of this prompt.
+
+  The description helps AI assistants understand what the prompt does and when to use it.
+  If not provided, the module's `@moduledoc` will be used automatically.
+
+  ## Examples
+
+      def description do
+        "Generate a code review with best practices"
+      end
+
+      # With dynamic content
+      def description do
+        model = Application.get_env(:my_app, :analysis_model, "default")
+        "Analyze code using \#{model} model"
+      end
+  """
+  @callback description() :: String.t()
+
+  @doc """
   Returns the list of arguments this prompt accepts.
 
   Each argument should include:
@@ -172,7 +192,7 @@ defmodule Anubis.Server.Component.Prompt do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks title: 0
+  @optional_callbacks title: 0, description: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Prompt

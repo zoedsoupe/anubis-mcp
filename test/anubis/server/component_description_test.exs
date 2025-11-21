@@ -27,6 +27,7 @@ defmodule Anubis.Server.ComponentDescriptionTest do
         field :input, :string
       end
 
+      @impl true
       def description, do: "Tool description from description/0 callback"
 
       @impl true
@@ -62,6 +63,7 @@ defmodule Anubis.Server.ComponentDescriptionTest do
         type: :resource,
         uri: "test://resource-with-callback"
 
+      @impl true
       def description, do: "Resource description from description/0 callback"
 
       @impl true
@@ -105,6 +107,7 @@ defmodule Anubis.Server.ComponentDescriptionTest do
         field :input, :string
       end
 
+      @impl true
       def description, do: "Prompt description from description/0 callback"
 
       @impl true

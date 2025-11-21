@@ -346,6 +346,7 @@ defmodule MyApp.MetricsResource do
     type: :resource,
     uri: "metrics://system"
 
+  @impl true
   def description do
     {uptime_ms, _} = :erlang.statistics(:wall_clock)
     uptime_seconds = div(uptime_ms, 1000)
@@ -371,6 +372,7 @@ defmodule MyApp.AnalysisPrompt do
     field :dataset, :string, required: true
   end
 
+  @impl true
   def description do
     model = Application.get_env(:my_app, :analysis_model, "default")
     "Analyze datasets using #{model} model"
