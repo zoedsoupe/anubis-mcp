@@ -320,16 +320,19 @@ defmodule Anubis.Server.Component do
       "Custom description from callback"
   """
   def get_description(module) when is_atom(module) do
-    cond do
-      function_exported?(module, :description, 0) ->
-        module.description()
+    description =
+      cond do
+        function_exported?(module, :description, 0) ->
+          module.description()
 
-      function_exported?(module, :__description__, 0) ->
-        module.__description__()
+        function_exported?(module, :__description__, 0) ->
+          module.__description__()
 
-      true ->
-        ""
-    end
+        true ->
+          ""
+      end
+
+    description || ""
   end
 
   @doc """

@@ -268,7 +268,8 @@ end
 ```
 
 When listed, this tool appears as:
-```
+
+```text
 - calculator: Perform basic arithmetic operations on two numbers
 ```
 

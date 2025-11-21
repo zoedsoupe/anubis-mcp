@@ -34,6 +34,19 @@ defmodule Anubis.Server.ComponentDescriptionTest do
       def execute(_params, frame), do: {:reply, Response.tool(), frame}
     end
 
+    defmodule ToolWithoutDescription do
+      @moduledoc false
+
+      use Component, type: :tool
+
+      schema do
+        field :input, :string
+      end
+
+      @impl true
+      def execute(_params, frame), do: {:reply, Response.tool(), frame}
+    end
+
     test "uses @moduledoc when description/0 is not defined" do
       assert Component.get_description(ToolWithModuledoc) == "Tool description from moduledoc"
     end
@@ -41,6 +54,10 @@ defmodule Anubis.Server.ComponentDescriptionTest do
     test "uses description/0 callback when defined, overriding @moduledoc" do
       assert Component.get_description(ToolWithDescriptionCallback) ==
                "Tool description from description/0 callback"
+    end
+
+    test "returns empty string when neither @moduledoc nor description/0 is defined" do
+      assert Component.get_description(ToolWithoutDescription) == ""
     end
   end
 
@@ -70,6 +87,17 @@ defmodule Anubis.Server.ComponentDescriptionTest do
       def read(_params, frame), do: {:reply, Response.resource(), frame}
     end
 
+    defmodule ResourceWithoutDescription do
+      @moduledoc false
+
+      use Component,
+        type: :resource,
+        uri: "test://resource-without-description"
+
+      @impl true
+      def read(_params, frame), do: {:reply, Response.resource(), frame}
+    end
+
     test "uses @moduledoc when description/0 is not defined" do
       assert Component.get_description(ResourceWithModuledoc) ==
                "Resource description from moduledoc"
@@ -78,6 +106,10 @@ defmodule Anubis.Server.ComponentDescriptionTest do
     test "uses description/0 callback when defined, overriding @moduledoc" do
       assert Component.get_description(ResourceWithDescriptionCallback) ==
                "Resource description from description/0 callback"
+    end
+
+    test "returns empty string when neither @moduledoc nor description/0 is defined" do
+      assert Component.get_description(ResourceWithoutDescription) == ""
     end
   end
 
@@ -93,7 +125,7 @@ defmodule Anubis.Server.ComponentDescriptionTest do
 
       @impl true
       def get_messages(_params, frame) do
-        response = Response.prompt() |> Response.user_message("test")
+        response = Response.user_message(Response.prompt(), "test")
         {:reply, response, frame}
       end
     end
@@ -112,7 +144,23 @@ defmodule Anubis.Server.ComponentDescriptionTest do
 
       @impl true
       def get_messages(_params, frame) do
-        response = Response.prompt() |> Response.user_message("test")
+        response = Response.user_message(Response.prompt(), "test")
+        {:reply, response, frame}
+      end
+    end
+
+    defmodule PromptWithoutDescription do
+      @moduledoc false
+
+      use Component, type: :prompt
+
+      schema do
+        field :input, :string
+      end
+
+      @impl true
+      def get_messages(_params, frame) do
+        response = Response.user_message(Response.prompt(), "test")
         {:reply, response, frame}
       end
     end
@@ -124,6 +172,10 @@ defmodule Anubis.Server.ComponentDescriptionTest do
     test "uses description/0 callback when defined, overriding @moduledoc" do
       assert Component.get_description(PromptWithDescriptionCallback) ==
                "Prompt description from description/0 callback"
+    end
+
+    test "returns empty string when neither @moduledoc nor description/0 is defined" do
+      assert Component.get_description(PromptWithoutDescription) == ""
     end
   end
 end
