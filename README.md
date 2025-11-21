@@ -16,7 +16,7 @@ Anubis MCP is a comprehensive Elixir SDK for the [Model Context Protocol](https:
 ```elixir
 def deps do
   [
-    {:anubis_mcp, "~> 0.15.0"}  # x-release-please-version
+    {:anubis_mcp, "~> 0.16.0"}  # x-release-please-version
   ]
 end
 ```
@@ -92,7 +92,7 @@ children = [
 
 ## Why Anubis?
 
-Named after Anubis, the Egyptian god of the underworld and guide to the afterlife, this library helps navigate the boundaries between Large Language Models and external tools. Much like how Anubis guided souls through transitions, this SDK guides data through the liminal space between AI and external systems. 
+Named after Anubis, the Egyptian god of the underworld and guide to the afterlife, this library helps navigate the boundaries between Large Language Models and external tools. Much like how Anubis guided souls through transitions, this SDK guides data through the liminal space between AI and external systems.
 
 The name also carries personal significance - after my journey through the corporate underworld ended unexpectedly, this project was reborn from the ashes of its predecessor, ready to guide developers through their own MCP adventures. Sometimes you need a deity of transitions to help you... transition. 🏳️‍⚧️
 
@@ -105,7 +105,6 @@ Thanks to our amazing sponsors for supporting this project!
     <img src="https://avatars.githubusercontent.com/u/132028505?s=200&v=4" alt="Coderabbit Sponsor Logo" height="80"/>
   </a>
 </p>
-
 
 ## Documentation
 

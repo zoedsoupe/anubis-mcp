@@ -54,3 +54,9 @@ result
 /.lexical/
 /.expert/
 /.elixir-tools/
+
+# macOS
+**/.DS_Store
+
+# redis
+dump.rdb

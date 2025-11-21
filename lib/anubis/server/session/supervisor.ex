@@ -2,6 +2,7 @@ defmodule Anubis.Server.Session.Supervisor do
   @moduledoc false
 
   use DynamicSupervisor
+  use Anubis.Logging
 
   alias Anubis.Server.Session
 
@@ -25,7 +26,16 @@ defmodule Anubis.Server.Session.Supervisor do
     server = Keyword.fetch!(opts, :server)
     registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
     name = registry.supervisor(@kind, server)
-    DynamicSupervisor.start_link(__MODULE__, server, name: name)
+
+    case DynamicSupervisor.start_link(__MODULE__, {server, registry}, name: name) do
+      {:ok, _pid} = success ->
+        # Restore sessions from store if configured
+        restore_sessions(server, registry)
+        success
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -47,7 +57,7 @@ defmodule Anubis.Server.Session.Supervisor do
       {:ok, session_pid} = Session.Supervisor.create_session(MyRegistry, MyServer, "session-123")
 
       # Attempting to create duplicate session
-      {:error, {:already_started, ^session_pid}} = 
+      {:error, {:already_started, ^session_pid}} =
         Session.Supervisor.create_session(MyRegistry, MyServer, "session-123")
   """
   def create_session(registry \\ Anubis.Server.Registry, server, session_id) do
@@ -56,7 +66,7 @@ defmodule Anubis.Server.Session.Supervisor do
 
     DynamicSupervisor.start_child(
       name,
-      {Session, session_id: session_id, name: session_name}
+      {Session, session_id: session_id, name: session_name, server_module: server}
     )
   end
 
@@ -91,7 +101,27 @@ defmodule Anubis.Server.Session.Supervisor do
   end
 
   @impl DynamicSupervisor
-  def init(_init_arg) do
+  def init({_server, _registry}) do
     DynamicSupervisor.init(strategy: :one_for_one)
+  end
+
+  # Private functions
+
+  defp restore_sessions(server, registry) do
+    case Anubis.get_session_store_adapter() do
+      nil ->
+        Logging.log(:debug, "No session store configured, skipping session restoration", [])
+
+      store ->
+        Logging.log(:debug, "Checking for sessions to restore from store", server: server)
+
+        case store.list_active(server: server) do
+          {:ok, session_ids} ->
+            Enum.each(session_ids, &create_session(registry, server, &1))
+
+          {:error, reason} ->
+            Logging.log(:warning, "Failed to list active sessions from store", server: server, reason: reason)
+        end
+    end
   end
 end

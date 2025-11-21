@@ -136,14 +136,14 @@ defmodule Anubis.Logging do
   # Private helpers
 
   @doc false
-  def log(level, message, metadata) when is_atom(level) do
+  def log(level, message, metadata \\ []) when is_atom(level) do
     if should_log?(level), do: log_by_level(level, message, metadata)
   end
 
   defp should_log?(level) do
     log? = Application.get_env(:anubis_mcp, :log, true)
     config_level = Application.get_env(:logger, :level, :debug)
-    log? and Logger.compare_levels(config_level, level) != :lt
+    log? and Logger.compare_levels(level, config_level) != :lt
   end
 
   @doc false

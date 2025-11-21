@@ -2,6 +2,7 @@ defmodule Anubis.Client.Supervisor do
   @moduledoc false
 
   use Supervisor
+  use Anubis.Logging
 
   alias Anubis.Client.Base
   alias Anubis.Transport.SSE
@@ -32,13 +33,13 @@ defmodule Anubis.Client.Supervisor do
   ## Examples
 
       # Simple usage with module names
-      Anubis.Client.Supervisor.start_link(MyApp.MCPClient, 
+      Anubis.Client.Supervisor.start_link(MyApp.MCPClient,
         transport: {:stdio, command: "mcp", args: ["server"]},
         client_info: %{"name" => "MyApp", "version" => "1.0.0"},
         capabilities: %{"roots" => %{}},
         protocol_version: "2024-11-05"
       )
-      
+
       # With custom names (e.g., for distributed systems)
       Anubis.Client.Supervisor.start_link(MyApp.MCPClient,
         name: {:via, Horde.Registry, {MyCluster, "client_1"}},
@@ -112,7 +113,8 @@ defmodule Anubis.Client.Supervisor do
   defp parse_transport_config({:streamable_http, opts}), do: {StreamableHTTP, opts}
 
   defp parse_transport_config({:sse, opts}) do
-    IO.warn(
+    Logging.log(
+      :warning,
       "The :sse transport option is deprecated as of MCP specification 2025-03-26. " <>
         "Please use {:streamable_http, opts} instead. " <>
         "The SSE transport is maintained only for backward compatibility with MCP protocol version 2024-11-05.",

@@ -1,7 +1,7 @@
 defmodule Anubis.MixProject do
   use Mix.Project
 
-  @version "0.15.0"
+  @version "0.16.0"
   @source_url "https://github.com/zoedsoupe/anubis-mcp"
 
   def project do
@@ -47,8 +47,9 @@ defmodule Anubis.MixProject do
   defp deps do
     [
       {:finch, "~> 0.19"},
-      {:peri, "0.6.0"},
+      {:peri, "0.6.2"},
       {:telemetry, "~> 1.2"},
+      {:redix, "~> 1.5", optional: true},
       {:gun, "~> 2.2", optional: true},
       {:burrito, "~> 1.0", optional: true},
       {:plug, "~> 1.18", optional: true},

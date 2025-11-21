@@ -29,6 +29,7 @@
         packages = with pkgs; [
           (elixir-with-otp erlang_28)."1.18.4"
           erlang_28
+          redis
           uv
           just
           go
@@ -44,7 +45,7 @@
     packages = forAllSystems (pkgs: {
       default = pkgs.stdenv.mkDerivation {
         pname = "anubis-mcp";
-        version = "0.15.0"; # x-release-please-version
+        version = "0.16.0"; # x-release-please-version
         src = ./.;
 
         buildInputs = with pkgs; [

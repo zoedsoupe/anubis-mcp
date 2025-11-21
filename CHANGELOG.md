@@ -2,149 +2,140 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.15.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.1...v0.15.0) (2025-11-03)
+## [0.16.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.15.0...v0.16.0) (2025-11-18)
 
 
 ### Features
 
-* add timeout for client/server -&gt; transport calling option ([#50](https://github.com/zoedsoupe/anubis-mcp/issues/50)) ([1e37c23](https://github.com/zoedsoupe/anubis-mcp/commit/1e37c23d3af3f40c54e0ba8b1bcc5043d80547d1))
-* allow template resources registration ([#43](https://github.com/zoedsoupe/anubis-mcp/issues/43)) ([9af9b8d](https://github.com/zoedsoupe/anubis-mcp/commit/9af9b8dcf4368ba981b667acc86b47b45a7d8ff4))
+* redis based session store (continue from [#48](https://github.com/zoedsoupe/anubis-mcp/issues/48)) ([#55](https://github.com/zoedsoupe/anubis-mcp/issues/55)) ([fddea32](https://github.com/zoedsoupe/anubis-mcp/commit/fddea327ef8d91c57c4dc65f527aadc3e8d105a2))
 
 
 ### Bug Fixes
 
-* Timeout options not properly passed to HTTP transport ([#52](https://github.com/zoedsoupe/anubis-mcp/issues/52)) ([0d392d6](https://github.com/zoedsoupe/anubis-mcp/commit/0d392d64010e39f4ce38a4427b960574fa6e82aa))
+* correct arguments in Logging.should_log? ([#47](https://github.com/zoedsoupe/anubis-mcp/issues/47)) ([6f550e6](https://github.com/zoedsoupe/anubis-mcp/commit/6f550e647fd5e6e7c6cdfb233e1cc8a4ac530fc7))
+
+## [0.15.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.1...v0.15.0) (2025-11-03)
+
+### Features
+
+- add timeout for client/server -&gt; transport calling option ([#50](https://github.com/zoedsoupe/anubis-mcp/issues/50)) ([1e37c23](https://github.com/zoedsoupe/anubis-mcp/commit/1e37c23d3af3f40c54e0ba8b1bcc5043d80547d1))
+- allow template resources registration ([#43](https://github.com/zoedsoupe/anubis-mcp/issues/43)) ([9af9b8d](https://github.com/zoedsoupe/anubis-mcp/commit/9af9b8dcf4368ba981b667acc86b47b45a7d8ff4))
+
+### Bug Fixes
+
+- Timeout options not properly passed to HTTP transport ([#52](https://github.com/zoedsoupe/anubis-mcp/issues/52)) ([0d392d6](https://github.com/zoedsoupe/anubis-mcp/commit/0d392d64010e39f4ce38a4427b960574fa6e82aa))
 
 ## [0.14.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.0...v0.14.1) (2025-10-07)
 
-
 ### Bug Fixes
 
-* correct capability parsing to nest options under capability keys ([#31](https://github.com/zoedsoupe/anubis-mcp/issues/31)) ([9946027](https://github.com/zoedsoupe/anubis-mcp/commit/9946027072aee81297ee3c6c10e75acbb1328ae3))
-* correctly handle timeouts and keepalive ([#41](https://github.com/zoedsoupe/anubis-mcp/issues/41)) ([2f44840](https://github.com/zoedsoupe/anubis-mcp/commit/2f448404601799a061c9971bee69222d9c7bf927))
-
+- correct capability parsing to nest options under capability keys ([#31](https://github.com/zoedsoupe/anubis-mcp/issues/31)) ([9946027](https://github.com/zoedsoupe/anubis-mcp/commit/9946027072aee81297ee3c6c10e75acbb1328ae3))
+- correctly handle timeouts and keepalive ([#41](https://github.com/zoedsoupe/anubis-mcp/issues/41)) ([2f44840](https://github.com/zoedsoupe/anubis-mcp/commit/2f448404601799a061c9971bee69222d9c7bf927))
 
 ### Documentation
 
-* rewrite introduction/home documentation page ([34baf39](https://github.com/zoedsoupe/anubis-mcp/commit/34baf3907e7e50b490398f48c32a782d213c36e9))
-
+- rewrite introduction/home documentation page ([34baf39](https://github.com/zoedsoupe/anubis-mcp/commit/34baf3907e7e50b490398f48c32a782d213c36e9))
 
 ### Miscellaneous Chores
 
-* add sponsors section with coderabbit ([f04f8bb](https://github.com/zoedsoupe/anubis-mcp/commit/f04f8bb100eb03602fd59716936ce2353040f4b2))
-* update example projects elixir deps, use fixed otp version and stable version for CLI release ([b362e54](https://github.com/zoedsoupe/anubis-mcp/commit/b362e54594d1551856436eb401a394be33dbf3a6))
-
+- add sponsors section with coderabbit ([f04f8bb](https://github.com/zoedsoupe/anubis-mcp/commit/f04f8bb100eb03602fd59716936ce2353040f4b2))
+- update example projects elixir deps, use fixed otp version and stable version for CLI release ([b362e54](https://github.com/zoedsoupe/anubis-mcp/commit/b362e54594d1551856436eb401a394be33dbf3a6))
 
 ### Continuous Integration
 
-* fix zig version for CLI release and locally on flake ([e7ed2b4](https://github.com/zoedsoupe/anubis-mcp/commit/e7ed2b4aa94cef5edf5968f30c24e5b1e4aac81e))
+- fix zig version for CLI release and locally on flake ([e7ed2b4](https://github.com/zoedsoupe/anubis-mcp/commit/e7ed2b4aa94cef5edf5968f30c24e5b1e4aac81e))
 
 ## [0.14.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.1...v0.14.0) (2025-08-21)
 
-
 ### Features
 
-* `resources/templates/list` method for clients ([a6eb210](https://github.com/zoedsoupe/anubis-mcp/commit/a6eb210af4b6913d8a8480e5247002c2b15f511c))
-
+- `resources/templates/list` method for clients ([a6eb210](https://github.com/zoedsoupe/anubis-mcp/commit/a6eb210af4b6913d8a8480e5247002c2b15f511c))
 
 ### Bug Fixes
 
-* align docs and parsing of server component schema-field definition options ([#12](https://github.com/zoedsoupe/anubis-mcp/issues/12)) ([cb2df76](https://github.com/zoedsoupe/anubis-mcp/commit/cb2df761e05beacf2beb3d5e94bf56329c203cc7))
-* correctly pass server call timeout options ([a49f497](https://github.com/zoedsoupe/anubis-mcp/commit/a49f4973545860e98fa056655ff229df70c70749))
-* explicit handle title for components ([#9](https://github.com/zoedsoupe/anubis-mcp/issues/9)) ([1adfed2](https://github.com/zoedsoupe/anubis-mcp/commit/1adfed2f0e18a4cd2dc7d013556455a155a8ff7f))
-* output schemas should not validate on error resps ([#15](https://github.com/zoedsoupe/anubis-mcp/issues/15)) ([b5faaad](https://github.com/zoedsoupe/anubis-mcp/commit/b5faaad5c409b3616273d5bee822d609ef35803b))
-
+- align docs and parsing of server component schema-field definition options ([#12](https://github.com/zoedsoupe/anubis-mcp/issues/12)) ([cb2df76](https://github.com/zoedsoupe/anubis-mcp/commit/cb2df761e05beacf2beb3d5e94bf56329c203cc7))
+- correctly pass server call timeout options ([a49f497](https://github.com/zoedsoupe/anubis-mcp/commit/a49f4973545860e98fa056655ff229df70c70749))
+- explicit handle title for components ([#9](https://github.com/zoedsoupe/anubis-mcp/issues/9)) ([1adfed2](https://github.com/zoedsoupe/anubis-mcp/commit/1adfed2f0e18a4cd2dc7d013556455a155a8ff7f))
+- output schemas should not validate on error resps ([#15](https://github.com/zoedsoupe/anubis-mcp/issues/15)) ([b5faaad](https://github.com/zoedsoupe/anubis-mcp/commit/b5faaad5c409b3616273d5bee822d609ef35803b))
 
 ### Reverts
 
-* "Add keep-alive messages to the StreamableHTTP transport ([#11](https://github.com/zoedsoupe/anubis-mcp/issues/11))" ([8ea5a3c](https://github.com/zoedsoupe/anubis-mcp/commit/8ea5a3c8edd31394b4f47cb3e4f73f06d8d12fed))
-
+- "Add keep-alive messages to the StreamableHTTP transport ([#11](https://github.com/zoedsoupe/anubis-mcp/issues/11))" ([8ea5a3c](https://github.com/zoedsoupe/anubis-mcp/commit/8ea5a3c8edd31394b4f47cb3e4f73f06d8d12fed))
 
 ### Miscellaneous Chores
 
-* rename hermes folders/files to anubis ([#5](https://github.com/zoedsoupe/anubis-mcp/issues/5)) ([239ee3f](https://github.com/zoedsoupe/anubis-mcp/commit/239ee3f611fd9ba3a8234ee8155da1cb9a8b89c7))
+- rename hermes folders/files to anubis ([#5](https://github.com/zoedsoupe/anubis-mcp/issues/5)) ([239ee3f](https://github.com/zoedsoupe/anubis-mcp/commit/239ee3f611fd9ba3a8234ee8155da1cb9a8b89c7))
 
 ## [0.13.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.13.0...v0.13.1) (2025-07-31)
 
-
 ### Bug Fixes
 
-* not crash server on empty tool/prompt args ([#4](https://github.com/zoedsoupe/anubis-mcp/issues/4)) ([ee8043f](https://github.com/zoedsoupe/anubis-mcp/commit/ee8043f331481790931d2d711b6df8f9cd7a4940))
-
+- not crash server on empty tool/prompt args ([#4](https://github.com/zoedsoupe/anubis-mcp/issues/4)) ([ee8043f](https://github.com/zoedsoupe/anubis-mcp/commit/ee8043f331481790931d2d711b6df8f9cd7a4940))
 
 ### Miscellaneous Chores
 
-* old release are from the original fork ([e99d8ba](https://github.com/zoedsoupe/anubis-mcp/commit/e99d8baa7e8c00f3105ce16f8ac2178698859278))
-* plug router config on readme ([#2](https://github.com/zoedsoupe/anubis-mcp/issues/2)) ([243176c](https://github.com/zoedsoupe/anubis-mcp/commit/243176cd95fdb3ac0a500630b4e80cc26bc33769))
-* readme ([bed6ff7](https://github.com/zoedsoupe/anubis-mcp/commit/bed6ff78ed617af3eaba6d316c1107643e8aea06))
+- old release are from the original fork ([e99d8ba](https://github.com/zoedsoupe/anubis-mcp/commit/e99d8baa7e8c00f3105ce16f8ac2178698859278))
+- plug router config on readme ([#2](https://github.com/zoedsoupe/anubis-mcp/issues/2)) ([243176c](https://github.com/zoedsoupe/anubis-mcp/commit/243176cd95fdb3ac0a500630b4e80cc26bc33769))
+- readme ([bed6ff7](https://github.com/zoedsoupe/anubis-mcp/commit/bed6ff78ed617af3eaba6d316c1107643e8aea06))
 
 ## [0.13.0](https://github.com/cloudwalk/hermes-mcp/compare/v0.12.1...v0.13.0) (2025-07-18)
 
-
 ### Features
 
-* allow redact patterns on server assigns/data ([#190](https://github.com/cloudwalk/hermes-mcp/issues/190)) ([07af99f](https://github.com/cloudwalk/hermes-mcp/commit/07af99f9e43d2afa87bf5504437ecf21c346a1d7))
-* better dsl for embedded nested fields on server components ([#199](https://github.com/cloudwalk/hermes-mcp/issues/199)) ([097f5fd](https://github.com/cloudwalk/hermes-mcp/commit/097f5fd8f788aaaa73c5e3d6699937656488886f))
-* new server response contents for tools/resources with annotations (2025-06-18) ([#195](https://github.com/cloudwalk/hermes-mcp/issues/195)) ([9b65308](https://github.com/cloudwalk/hermes-mcp/commit/9b653087a6ddfac399b33be2c4be54d564335c84))
-* resources templates ([#193](https://github.com/cloudwalk/hermes-mcp/issues/193)) ([1457e59](https://github.com/cloudwalk/hermes-mcp/commit/1457e59f16b77ca894b07a731d69ca5f8337c42b))
-* tools output schema feature (2025-06-18) ([#194](https://github.com/cloudwalk/hermes-mcp/issues/194)) ([8088a49](https://github.com/cloudwalk/hermes-mcp/commit/8088a49ce4463a01e899418bb9c34fce30427d3c))
-
+- allow redact patterns on server assigns/data ([#190](https://github.com/cloudwalk/hermes-mcp/issues/190)) ([07af99f](https://github.com/cloudwalk/hermes-mcp/commit/07af99f9e43d2afa87bf5504437ecf21c346a1d7))
+- better dsl for embedded nested fields on server components ([#199](https://github.com/cloudwalk/hermes-mcp/issues/199)) ([097f5fd](https://github.com/cloudwalk/hermes-mcp/commit/097f5fd8f788aaaa73c5e3d6699937656488886f))
+- new server response contents for tools/resources with annotations (2025-06-18) ([#195](https://github.com/cloudwalk/hermes-mcp/issues/195)) ([9b65308](https://github.com/cloudwalk/hermes-mcp/commit/9b653087a6ddfac399b33be2c4be54d564335c84))
+- resources templates ([#193](https://github.com/cloudwalk/hermes-mcp/issues/193)) ([1457e59](https://github.com/cloudwalk/hermes-mcp/commit/1457e59f16b77ca894b07a731d69ca5f8337c42b))
+- tools output schema feature (2025-06-18) ([#194](https://github.com/cloudwalk/hermes-mcp/issues/194)) ([8088a49](https://github.com/cloudwalk/hermes-mcp/commit/8088a49ce4463a01e899418bb9c34fce30427d3c))
 
 ### Miscellaneous Chores
 
-* deprecate sse transport ([#187](https://github.com/cloudwalk/hermes-mcp/issues/187)) ([1932fbc](https://github.com/cloudwalk/hermes-mcp/commit/1932fbcdef12194c496d3ac074b17ef65fe18e49))
-* **deps:** bump the npm_and_yarn group across 1 directory with 2 updates ([#198](https://github.com/cloudwalk/hermes-mcp/issues/198)) ([5e21aac](https://github.com/cloudwalk/hermes-mcp/commit/5e21aac07ab1e709cb2bad8ddf9f45ba3ff99ef9))
-* readme ([bed6ff7](https://github.com/cloudwalk/hermes-mcp/commit/bed6ff78ed617af3eaba6d316c1107643e8aea06))
+- deprecate sse transport ([#187](https://github.com/cloudwalk/hermes-mcp/issues/187)) ([1932fbc](https://github.com/cloudwalk/hermes-mcp/commit/1932fbcdef12194c496d3ac074b17ef65fe18e49))
+- **deps:** bump the npm_and_yarn group across 1 directory with 2 updates ([#198](https://github.com/cloudwalk/hermes-mcp/issues/198)) ([5e21aac](https://github.com/cloudwalk/hermes-mcp/commit/5e21aac07ab1e709cb2bad8ddf9f45ba3ff99ef9))
+- readme ([bed6ff7](https://github.com/cloudwalk/hermes-mcp/commit/bed6ff78ed617af3eaba6d316c1107643e8aea06))
 
 ## [0.12.1](https://github.com/cloudwalk/hermes-mcp/compare/v0.12.0...v0.12.1) (2025-07-14)
 
-
 ### Code Refactoring
 
-* do not hangle on transport process ([#185](https://github.com/cloudwalk/hermes-mcp/issues/185)) ([e6ba926](https://github.com/cloudwalk/hermes-mcp/commit/e6ba9260ceb8e078ca043d6f1ceb41d540b42ca0))
-* remove batch messaging feature ([#183](https://github.com/cloudwalk/hermes-mcp/issues/183)) ([99458c0](https://github.com/cloudwalk/hermes-mcp/commit/99458c0559d69addf9e22b3f7e38891e83d475de))
+- do not hangle on transport process ([#185](https://github.com/cloudwalk/hermes-mcp/issues/185)) ([e6ba926](https://github.com/cloudwalk/hermes-mcp/commit/e6ba9260ceb8e078ca043d6f1ceb41d540b42ca0))
+- remove batch messaging feature ([#183](https://github.com/cloudwalk/hermes-mcp/issues/183)) ([99458c0](https://github.com/cloudwalk/hermes-mcp/commit/99458c0559d69addf9e22b3f7e38891e83d475de))
 
 ## [0.12.0](https://github.com/cloudwalk/hermes-mcp/compare/v0.11.3...v0.12.0) (2025-07-11)
 
-
 ### Features
 
-* client sampling capability ([#170](https://github.com/cloudwalk/hermes-mcp/issues/170)) ([da617a6](https://github.com/cloudwalk/hermes-mcp/commit/da617a694dbeff1d363e7b671a31f484e202e685))
-* roots/list and completion features ([#178](https://github.com/cloudwalk/hermes-mcp/issues/178)) ([d22a6bd](https://github.com/cloudwalk/hermes-mcp/commit/d22a6bdfb92189e54455c49120abc2c7fa4f8814))
-* server components cursor pagination ([#177](https://github.com/cloudwalk/hermes-mcp/issues/177)) ([a95eba7](https://github.com/cloudwalk/hermes-mcp/commit/a95eba7cc2ffcefca99b3961b80094bb12a3912f))
-* server-side sampling capability ([#173](https://github.com/cloudwalk/hermes-mcp/issues/173)) ([c09e7f3](https://github.com/cloudwalk/hermes-mcp/commit/c09e7f3a5e95e59f5644ef12e1602b3b8621df7f))
-
+- client sampling capability ([#170](https://github.com/cloudwalk/hermes-mcp/issues/170)) ([da617a6](https://github.com/cloudwalk/hermes-mcp/commit/da617a694dbeff1d363e7b671a31f484e202e685))
+- roots/list and completion features ([#178](https://github.com/cloudwalk/hermes-mcp/issues/178)) ([d22a6bd](https://github.com/cloudwalk/hermes-mcp/commit/d22a6bdfb92189e54455c49120abc2c7fa4f8814))
+- server components cursor pagination ([#177](https://github.com/cloudwalk/hermes-mcp/issues/177)) ([a95eba7](https://github.com/cloudwalk/hermes-mcp/commit/a95eba7cc2ffcefca99b3961b80094bb12a3912f))
+- server-side sampling capability ([#173](https://github.com/cloudwalk/hermes-mcp/issues/173)) ([c09e7f3](https://github.com/cloudwalk/hermes-mcp/commit/c09e7f3a5e95e59f5644ef12e1602b3b8621df7f))
 
 ### Bug Fixes
 
-* allow configuring server request timeout ([#182](https://github.com/cloudwalk/hermes-mcp/issues/182)) ([e79fe2f](https://github.com/cloudwalk/hermes-mcp/commit/e79fe2f003a41517a5ff5e8f6e3fb378bdc43f11))
-* do not allow duplicate server components and more convenient API ([#180](https://github.com/cloudwalk/hermes-mcp/issues/180)) ([bc71df8](https://github.com/cloudwalk/hermes-mcp/commit/bc71df8f7c6fb877f19dada9b17c3eb342d32ccd))
-
+- allow configuring server request timeout ([#182](https://github.com/cloudwalk/hermes-mcp/issues/182)) ([e79fe2f](https://github.com/cloudwalk/hermes-mcp/commit/e79fe2f003a41517a5ff5e8f6e3fb378bdc43f11))
+- do not allow duplicate server components and more convenient API ([#180](https://github.com/cloudwalk/hermes-mcp/issues/180)) ([bc71df8](https://github.com/cloudwalk/hermes-mcp/commit/bc71df8f7c6fb877f19dada9b17c3eb342d32ccd))
 
 ### Miscellaneous Chores
 
-* add llms summary about the library ([#175](https://github.com/cloudwalk/hermes-mcp/issues/175)) ([ed0e608](https://github.com/cloudwalk/hermes-mcp/commit/ed0e60872e5b77ddb6ffff13da6c1e20b1c2d7a2))
-* allow different kind of components have the same name ([#181](https://github.com/cloudwalk/hermes-mcp/issues/181)) ([d5ba6f5](https://github.com/cloudwalk/hermes-mcp/commit/d5ba6f56fb54ed07e46d37c2217dcf76c793762f))
-
+- add llms summary about the library ([#175](https://github.com/cloudwalk/hermes-mcp/issues/175)) ([ed0e608](https://github.com/cloudwalk/hermes-mcp/commit/ed0e60872e5b77ddb6ffff13da6c1e20b1c2d7a2))
+- allow different kind of components have the same name ([#181](https://github.com/cloudwalk/hermes-mcp/issues/181)) ([d5ba6f5](https://github.com/cloudwalk/hermes-mcp/commit/d5ba6f56fb54ed07e46d37c2217dcf76c793762f))
 
 ### Code Refactoring
 
-* handle_sampling callback, use frame as entrypoint for notifications ([#176](https://github.com/cloudwalk/hermes-mcp/issues/176)) ([1e88711](https://github.com/cloudwalk/hermes-mcp/commit/1e887117ba81751042534d60df79d83a8123a3d9))
-* interactive tasks now support JSON file input ([#172](https://github.com/cloudwalk/hermes-mcp/issues/172)) ([9465266](https://github.com/cloudwalk/hermes-mcp/commit/946526617171094ccf929a5d9f3bbd8e3a591f18))
+- handle_sampling callback, use frame as entrypoint for notifications ([#176](https://github.com/cloudwalk/hermes-mcp/issues/176)) ([1e88711](https://github.com/cloudwalk/hermes-mcp/commit/1e887117ba81751042534d60df79d83a8123a3d9))
+- interactive tasks now support JSON file input ([#172](https://github.com/cloudwalk/hermes-mcp/issues/172)) ([9465266](https://github.com/cloudwalk/hermes-mcp/commit/946526617171094ccf929a5d9f3bbd8e3a591f18))
 
 ## [0.11.3](https://github.com/cloudwalk/hermes-mcp/compare/v0.11.2...v0.11.3) (2025-07-02)
 
-
 ### Bug Fixes
 
-* correctly parse dates when default values are passed ([58f6368](https://github.com/cloudwalk/hermes-mcp/commit/58f63686574e230269f847ee793d9561976653bb))
-* include frame helpers on module-based component ([#163](https://github.com/cloudwalk/hermes-mcp/issues/163)) ([15ba2c7](https://github.com/cloudwalk/hermes-mcp/commit/15ba2c7fbdd0a776eabe028aef0350f4f52a43a8))
-* server can now send notifications correctly ([#166](https://github.com/cloudwalk/hermes-mcp/issues/166)) ([33f32de](https://github.com/cloudwalk/hermes-mcp/commit/33f32deccd42dc4591832636b2b3fad56ce40661))
-
+- correctly parse dates when default values are passed ([58f6368](https://github.com/cloudwalk/hermes-mcp/commit/58f63686574e230269f847ee793d9561976653bb))
+- include frame helpers on module-based component ([#163](https://github.com/cloudwalk/hermes-mcp/issues/163)) ([15ba2c7](https://github.com/cloudwalk/hermes-mcp/commit/15ba2c7fbdd0a776eabe028aef0350f4f52a43a8))
+- server can now send notifications correctly ([#166](https://github.com/cloudwalk/hermes-mcp/issues/166)) ([33f32de](https://github.com/cloudwalk/hermes-mcp/commit/33f32deccd42dc4591832636b2b3fad56ce40661))
 
 ### Miscellaneous Chores
 
-* update documentation, simplify, more storytelling ([#168](https://github.com/cloudwalk/hermes-mcp/issues/168)) ([ccdddc1](https://github.com/cloudwalk/hermes-mcp/commit/ccdddc1478c09e2f3440a6f1343949aeca854a1d))
+- update documentation, simplify, more storytelling ([#168](https://github.com/cloudwalk/hermes-mcp/issues/168)) ([ccdddc1](https://github.com/cloudwalk/hermes-mcp/commit/ccdddc1478c09e2f3440a6f1343949aeca854a1d))
 
 ## [0.11.2](https://github.com/cloudwalk/hermes-mcp/compare/v0.11.1...v0.11.2) (2025-06-30)
 
