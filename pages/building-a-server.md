@@ -199,7 +199,18 @@ defmodule MyApp.ConfigResource do
 end
 ```
 
-If a description is not provided, the `@moduledoc` will be used.
+If a description is not provided, the `@moduledoc` will be used as the resource description:
+
+```elixir
+defmodule MyApp.StatusResource do
+  @moduledoc "System health and status information"
+
+  use Anubis.Server.Component, type: :resource
+
+  # No description/0 callback - @moduledoc will be used automatically
+  ...
+end
+```
 
 ## Creating Prompts
 
