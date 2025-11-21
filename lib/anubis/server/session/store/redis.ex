@@ -13,7 +13,24 @@ defmodule Anubis.Server.Session.Store.Redis do
         pool_size: 10,
         ttl: 1_800_000, # 30 minutes in milliseconds
         namespace: "anubis:sessions",
-        connection_name: :anubis_redis
+        connection_name: :anubis_redis,
+        redix_opts: []  # Optional Redix connection options
+
+  ## SSL/TLS Configuration
+
+  For Redis servers requiring TLS (like Upstash), pass SSL options via `:redix_opts`:
+
+      config :anubis_mcp, :session_store,
+        adapter: Anubis.Server.Session.Store.Redis,
+        redis_url: "rediss://default:password@host.upstash.io:6379",
+        redix_opts: [
+          ssl: true,
+          socket_opts: [
+            customize_hostname_check: [
+              match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+            ]
+          ]
+        ]
 
   ## Features
 
@@ -90,24 +107,31 @@ defmodule Anubis.Server.Session.Store.Redis do
     pool_size = Keyword.get(opts, :pool_size, 10)
     namespace = Keyword.get(opts, :namespace, @default_namespace)
     ttl = Keyword.get(opts, :ttl, @default_ttl)
+    # Strip :name from custom opts to preserve internal pool naming
+    custom_redix_opts =
+      opts
+      |> Keyword.get(:redix_opts, [])
+      |> validate_redix_opts()
+      |> Keyword.drop([:name])
 
     # Start Redix connection pool with anubis_ prefix to avoid conflicts
     children =
       for i <- 1..pool_size do
         child_id = :"anubis_#{conn_name}_#{i}"
 
+        # Default Redix options, merged with custom options (custom takes precedence)
+        # Note: :name is always set internally to maintain pool integrity
+        redix_opts =
+          [
+            name: child_id,
+            sync_connect: false,
+            exit_on_disconnection: false
+          ]
+          |> Keyword.merge(custom_redix_opts)
+
         %{
           id: child_id,
-          start:
-            {Redix, :start_link,
-             [
-               redis_url,
-               [
-                 name: child_id,
-                 sync_connect: false,
-                 exit_on_disconnection: false
-               ]
-             ]}
+          start: {Redix, :start_link, [redis_url, redix_opts]}
         }
       end
 
@@ -279,6 +303,16 @@ defmodule Anubis.Server.Session.Store.Redis do
   end
 
   # Private functions
+
+  defp validate_redix_opts(nil), do: []
+
+  defp validate_redix_opts(opts) do
+    if Keyword.keyword?(opts) do
+      opts
+    else
+      raise ArgumentError, ":redix_opts must be a keyword list"
+    end
+  end
 
   defp make_key(namespace, session_id) do
     "#{namespace}:#{session_id}"
