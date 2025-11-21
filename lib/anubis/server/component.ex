@@ -292,14 +292,15 @@ defmodule Anubis.Server.Component do
   defp get_behaviour_module(:resource), do: Resource
 
   @doc """
-  Extracts the description from a component module's moduledoc.
+  Extracts the description from a component module.
 
   ## Parameters
     * `module` - The component module atom
 
   ## Returns
-    * The module's `@moduledoc` content as a string
-    * Empty string if no moduledoc is defined
+    * The description from `description/0` callback if defined
+    * Falls back to the module's `@moduledoc` if no callback is defined
+    * Empty string if neither is defined
 
   ## Examples
 
@@ -309,13 +310,29 @@ defmodule Anubis.Server.Component do
       ...> end
       iex> Anubis.Server.Component.get_description(MyTool)
       "A helpful tool"
+
+      iex> defmodule MyToolWithCallback do
+      ...>   @moduledoc "Default description"
+      ...>   use Anubis.Server.Component, type: :tool
+      ...>   def description, do: "Custom description from callback"
+      ...> end
+      iex> Anubis.Server.Component.get_description(MyToolWithCallback)
+      "Custom description from callback"
   """
   def get_description(module) when is_atom(module) do
-    if function_exported?(module, :__description__, 0) do
-      module.__description__()
-    else
-      ""
-    end
+    description =
+      cond do
+        function_exported?(module, :description, 0) ->
+          module.description()
+
+        function_exported?(module, :__description__, 0) ->
+          module.__description__()
+
+        true ->
+          ""
+      end
+
+    description || ""
   end
 
   @doc """

@@ -151,6 +151,26 @@ defmodule Anubis.Server.Component.Resource do
   @callback mime_type() :: String.t()
 
   @doc """
+  Returns the description of this resource.
+
+  The description helps AI assistants understand what data the resource provides.
+  If not provided, the module's `@moduledoc` will be used automatically.
+
+  ## Examples
+
+      def description do
+        "Application configuration settings"
+      end
+
+      # With dynamic content
+      def description do
+        {uptime_ms, _} = :erlang.statistics(:wall_clock)
+        "System metrics (uptime: \#{div(uptime_ms, 1000)}s)"
+      end
+  """
+  @callback description() :: String.t()
+
+  @doc """
   Reads the resource content.
 
   ## Parameters
@@ -176,7 +196,7 @@ defmodule Anubis.Server.Component.Resource do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks title: 0, uri: 0, uri_template: 0
+  @optional_callbacks title: 0, uri: 0, uri_template: 0, description: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Resource

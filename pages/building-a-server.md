@@ -240,6 +240,160 @@ defmodule MyApp.BugReportPrompt do
 end
 ```
 
+## Component Descriptions
+
+How do AI assistants know what your components do? They read descriptions. Anubis makes this simple.
+
+### Using @moduledoc
+
+By default, all components use their `@moduledoc` as the description. This works for tools, resources, and prompts:
+
+```elixir
+defmodule MyApp.Calculator do
+  @moduledoc "Perform basic arithmetic operations on two numbers"
+
+  use Anubis.Server.Component, type: :tool
+
+  schema do
+    field :operation, :string, required: true, values: ["add", "subtract", "multiply", "divide"]
+    field :a, :float, required: true
+    field :b, :float, required: true
+  end
+
+  @impl true
+  def execute(params, frame) do
+    # Implementation...
+  end
+end
+```
+
+When listed, this tool appears as:
+
+```text
+- calculator: Perform basic arithmetic operations on two numbers
+```
+
+The same pattern works for resources:
+
+```elixir
+defmodule MyApp.LogsResource do
+  @moduledoc "Application logs from the last 24 hours"
+
+  use Anubis.Server.Component,
+    type: :resource,
+    uri: "logs://app/recent"
+
+  @impl true
+  def read(_params, frame) do
+    # Implementation...
+  end
+end
+```
+
+And for prompts:
+
+```elixir
+defmodule MyApp.CodeReviewPrompt do
+  @moduledoc "Generate a thorough code review focusing on best practices"
+
+  use Anubis.Server.Component, type: :prompt
+
+  schema do
+    field :language, :string, required: true
+    field :code, :string, required: true
+  end
+
+  @impl true
+  def get_messages(params, frame) do
+    # Implementation...
+  end
+end
+```
+
+### Dynamic Descriptions with description/0
+
+What if your description needs to be dynamic? Maybe it includes runtime configuration or current state? Implement a `description/0` function:
+
+```elixir
+defmodule MyApp.WeatherTool do
+  @moduledoc "Weather information tool"
+
+  use Anubis.Server.Component, type: :tool
+
+  schema do
+    field :city, :string, required: true
+  end
+
+  @impl true
+  def description do
+    interval = Application.get_env(:my_app, :weather_cache_minutes, 15)
+    "Get current weather for any city (data updated every #{interval} minutes)"
+  end
+
+  @impl true
+  def execute(params, frame) do
+    # Implementation...
+  end
+end
+```
+
+Resources can use dynamic descriptions too:
+
+```elixir
+defmodule MyApp.MetricsResource do
+  @moduledoc "System metrics resource"
+
+  use Anubis.Server.Component,
+    type: :resource,
+    uri: "metrics://system"
+
+  @impl true
+  def description do
+    {uptime_ms, _} = :erlang.statistics(:wall_clock)
+    uptime_seconds = div(uptime_ms, 1000)
+    "Real-time system metrics (uptime: #{uptime_seconds}s)"
+  end
+
+  @impl true
+  def read(_params, frame) do
+    # Implementation...
+  end
+end
+```
+
+And prompts can too:
+
+```elixir
+defmodule MyApp.AnalysisPrompt do
+  @moduledoc "Data analysis prompt"
+
+  use Anubis.Server.Component, type: :prompt
+
+  schema do
+    field :dataset, :string, required: true
+  end
+
+  @impl true
+  def description do
+    model = Application.get_env(:my_app, :analysis_model, "default")
+    "Analyze datasets using #{model} model"
+  end
+
+  @impl true
+  def get_messages(params, frame) do
+    # Implementation...
+  end
+end
+```
+
+What makes a good description? Think about what an AI assistant needs to know:
+
+- **What** does this component do?
+- **When** should it be used?
+- **What** are its key capabilities or constraints?
+
+Keep descriptions clear and concise. The better your descriptions, the better AI assistants can help your users.
+
 ## Transport Options
 
 How do clients connect to your server? Let's explore your options:
