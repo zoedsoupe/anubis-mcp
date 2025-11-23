@@ -112,7 +112,7 @@ defmodule Anubis.Server.Session.Store.Redis do
       opts
       |> Keyword.get(:redix_opts, [])
       |> validate_redix_opts()
-      |> Keyword.drop([:name])
+      |> Keyword.delete(:name)
 
     # Start Redix connection pool with anubis_ prefix to avoid conflicts
     children =
@@ -121,13 +121,7 @@ defmodule Anubis.Server.Session.Store.Redis do
 
         # Default Redix options, merged with custom options (custom takes precedence)
         # Note: :name is always set internally to maintain pool integrity
-        redix_opts =
-          [
-            name: child_id,
-            sync_connect: false,
-            exit_on_disconnection: false
-          ]
-          |> Keyword.merge(custom_redix_opts)
+        redix_opts = Keyword.merge([name: child_id, sync_connect: false, exit_on_disconnection: false], custom_redix_opts)
 
         %{
           id: child_id,
