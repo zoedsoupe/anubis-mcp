@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.17.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.16.0...v0.17.0) (2025-11-25)
+
+
+### Features
+
+* **redis:** add redix_opts for SSL/TLS support ([#59](https://github.com/zoedsoupe/anubis-mcp/issues/59)) ([33658ab](https://github.com/zoedsoupe/anubis-mcp/commit/33658abab69e1f0c361a4dbf4e9665bb900d2f7e))
+
+
+### Bug Fixes
+
+* added server component description/0 callback ([#58](https://github.com/zoedsoupe/anubis-mcp/issues/58)) ([a094473](https://github.com/zoedsoupe/anubis-mcp/commit/a094473916f7ac414369bb2faab1593fd141a7f1))
+
 ## [0.16.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.15.0...v0.16.0) (2025-11-18)
 
 
