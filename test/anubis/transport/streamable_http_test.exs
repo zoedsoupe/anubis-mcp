@@ -92,7 +92,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       Process.sleep(100)
 
       messages = StubClient.get_messages()
-      assert length(messages) > 0
+      refute Enum.empty?(messages)
       assert List.first(messages) =~ "result"
 
       StreamableHTTP.shutdown(transport)
@@ -160,7 +160,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       Process.sleep(200)
 
       messages = StubClient.get_messages()
-      assert length(messages) > 0
+      refute Enum.empty?(messages)
 
       StreamableHTTP.shutdown(transport)
       StubClient.clear_messages()
