@@ -770,10 +770,10 @@ defmodule Anubis.Server.Component.SchemaTest do
       assert {:ok, _} = validator.(%{email: "test@example.com", age: 25})
 
       assert {:error, errors} = validator.(%{age: 25})
-      assert length(errors) > 0
+      assert Enum.empty?(errors)
 
       assert {:error, errors} = validator.(%{email: "test@example.com", age: 200})
-      assert length(errors) > 0
+      assert Enum.empty?(errors)
     end
   end
 

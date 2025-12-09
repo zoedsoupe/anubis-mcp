@@ -1511,7 +1511,7 @@ defmodule Anubis.Client.BaseTest do
       assert error.reason == :parse_error
       assert error.data[:tool] == "get_weather"
       assert is_list(error.data[:errors])
-      assert length(error.data[:errors]) > 0
+      assert Enum.empty?(error.data[:errors])
     end
 
     test "handles tools with complex outputSchema", %{client: client} do
