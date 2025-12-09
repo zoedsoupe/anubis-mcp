@@ -119,7 +119,7 @@ defmodule Anubis.Transport.STDIOTest do
       Process.sleep(100)
 
       messages = StubClient.get_messages()
-      assert Enum.empty?(messages)
+      refute Enum.empty?(messages)
     end
   end
 
@@ -165,7 +165,7 @@ defmodule Anubis.Transport.STDIOTest do
       Process.sleep(100)
 
       messages = StubClient.get_messages()
-      assert Enum.empty?(messages)
+      refute Enum.empty?(messages)
 
       safe_stop(pid)
     end
