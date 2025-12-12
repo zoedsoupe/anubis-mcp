@@ -19,11 +19,13 @@ defmodule Anubis.Server.Session do
           }
         }
 
+  @default_log_level "warning"
+
   defstruct [
     :id,
     :protocol_version,
-    :log_level,
     :name,
+    log_level: @default_log_level,
     initialized: false,
     client_info: nil,
     client_capabilities: nil,
@@ -190,6 +192,8 @@ defmodule Anubis.Server.Session do
       case store.load(session_id, server: server_module) do
         {:ok, state_map} ->
           Logging.log(:debug, "Successfully loaded session #{inspect(session_id)} from store", [])
+          # Normalize nil log_level to default (handles sessions saved before log_level was required)
+          state_map = normalize_log_level(state_map)
           {:ok, state} = state_t(state_map)
           state = struct(__MODULE__, state)
           {:ok, %{state | name: name}}
@@ -236,6 +240,24 @@ defmodule Anubis.Server.Session do
       end
     else
       Logging.log(:debug, "No session store configured, skipping persistence", [])
+    end
+  end
+
+  # Normalizes log_level in session data loaded from store.
+  # Handles both atom and string keys, and replaces nil with default.
+  defp normalize_log_level(state_map) when is_map(state_map) do
+    cond do
+      # String key with nil value (from JSON decode)
+      is_map_key(state_map, "log_level") and is_nil(state_map["log_level"]) ->
+        Map.put(state_map, "log_level", @default_log_level)
+
+      # Atom key with nil value
+      is_map_key(state_map, :log_level) and is_nil(state_map[:log_level]) ->
+        Map.put(state_map, :log_level, @default_log_level)
+
+      # log_level is present and valid, or not present at all
+      true ->
+        state_map
     end
   end
 end
