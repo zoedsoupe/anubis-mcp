@@ -87,6 +87,40 @@ defmodule Anubis.Server.Session.StoreTest do
       assert session.client_info["name"] == "restored_client"
     end
 
+    test "restores session with nil log_level using default value" do
+      session_id = "legacy_session_with_nil_log_level"
+      start_supervised!({Registry, keys: :unique, name: TestSessionRegistryNilLogLevel})
+
+      # Pre-populate store with session data that has nil log_level
+      # This simulates sessions saved before log_level was required,
+      # or sessions from Redis where log_level was serialized as null
+      session_data = %{
+        "id" => session_id,
+        "protocol_version" => "2024-11-21",
+        "initialized" => true,
+        "client_info" => %{"name" => "legacy_client"},
+        "client_capabilities" => %{"tools" => %{}},
+        "log_level" => nil,
+        "pending_requests" => %{}
+      }
+
+      :ok = MockSessionStore.save(session_id, session_data, [])
+
+      # Start a new session with the same ID - this should NOT crash
+      session_name = {:via, Registry, {TestSessionRegistryNilLogLevel, session_id}}
+
+      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
+
+      # Verify the session was restored with a default log_level
+      session = Session.get(session_name)
+      assert session.protocol_version == "2024-11-21"
+      assert session.initialized == true
+      assert session.client_info["name"] == "legacy_client"
+      # log_level should have a default value, not nil
+      assert session.log_level != nil
+      assert is_binary(session.log_level)
+    end
+
     test "persists sessions without tokens" do
       session_id = "simple_session_789"
       start_supervised!({Registry, keys: :unique, name: TestSessionRegistry3})
