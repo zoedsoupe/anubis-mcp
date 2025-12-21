@@ -117,8 +117,7 @@ defmodule Anubis.Server.Session.StoreTest do
       assert session.initialized == true
       assert session.client_info["name"] == "legacy_client"
       # log_level should have a default value, not nil
-      assert session.log_level != nil
-      assert is_binary(session.log_level)
+      assert session.log_level == "warning"
     end
 
     test "persists sessions without tokens" do
