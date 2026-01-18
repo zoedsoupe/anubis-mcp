@@ -255,7 +255,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       handler_pid: inspect(pid)
     })
 
-    {:reply, :ok, %{state | sse_handlers: sse_handlers}}
+    new_state = %{state | sse_handlers: sse_handlers}
+
+    # Start keepalive when first SSE handler is registered
+    # This fixes the bug where keepalive never starts if server has no handlers at init
+    if map_size(state.sse_handlers) == 0 and should_keepalive?(new_state) do
+      schedule_keepalive(new_state.keepalive_interval)
+    end
+
+    {:reply, :ok, new_state}
   end
 
   @impl GenServer
