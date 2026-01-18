@@ -41,11 +41,8 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
       # Register SSE handler
       assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
 
-      # Wait for at least 2 keepalive intervals
-      Process.sleep(250)
-
       # Should receive at least one keepalive message
-      assert_received :sse_keepalive
+      assert_receive :sse_keepalive, 300
 
       # Clean up
       capture_log(fn ->
@@ -64,9 +61,8 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
       # Clear mailbox
       flush_mailbox()
 
-      # Wait and verify keepalive
-      Process.sleep(150)
-      assert_received :sse_keepalive
+      # Verify keepalive is received
+      assert_receive :sse_keepalive, 200
 
       # Register second handler
       assert :ok = StreamableHTTP.register_sse_handler(transport, session_id2)
@@ -74,9 +70,8 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
       # Clear mailbox again
       flush_mailbox()
 
-      # Wait and verify keepalive still works
-      Process.sleep(150)
-      assert_received :sse_keepalive
+      # Verify keepalive still works
+      assert_receive :sse_keepalive, 200
 
       # Clean up
       capture_log(fn ->
@@ -91,8 +86,7 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
 
       # Register and then unregister handler
       assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
-      Process.sleep(150)
-      assert_received :sse_keepalive
+      assert_receive :sse_keepalive, 200
 
       # Unregister
       capture_log(fn ->
@@ -123,12 +117,9 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
       # Register first handler
       assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
 
-      # Wait slightly more than one keepalive interval
-      Process.sleep(150)
-
       # WITHOUT FIX: This would fail because keepalive was never scheduled
       # WITH FIX: This succeeds because register_sse_handler triggers keepalive
-      assert_received :sse_keepalive
+      assert_receive :sse_keepalive, 200
 
       # Clean up
       capture_log(fn ->
@@ -138,6 +129,9 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
     end
   end
 
+  # Recursively flushes all messages from the process mailbox.
+  # This helper is used to clear any accumulated keepalive messages before
+  # verifying new ones are received.
   defp flush_mailbox do
     receive do
       _ -> flush_mailbox()
