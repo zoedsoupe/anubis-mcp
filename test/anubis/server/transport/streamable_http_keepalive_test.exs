@@ -97,11 +97,9 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
       # Clear mailbox
       flush_mailbox()
 
-      # Wait longer than keepalive interval
-      Process.sleep(250)
-
       # Should not receive keepalive after all handlers removed
-      refute_received :sse_keepalive
+      # Wait longer than keepalive interval (100ms) to ensure none are sent
+      refute_receive :sse_keepalive, 250
     end
 
     test "starts keepalive immediately when first handler registered after startup", %{

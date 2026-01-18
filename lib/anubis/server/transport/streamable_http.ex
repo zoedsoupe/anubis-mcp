@@ -528,10 +528,25 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     :ok
   end
 
+  # Schedules the next SSE keepalive message.
+  #
+  # Sends a `:send_keepalive` message to self() after the specified interval.
+  # This is used to maintain active SSE connections by preventing idle timeouts.
+  #
+  # ## Parameters
+  #   * `interval` - Time in milliseconds until next keepalive
   defp schedule_keepalive(interval) do
     Process.send_after(self(), :send_keepalive, interval)
   end
 
+  # Determines whether SSE keepalive messages should be sent.
+  #
+  # Returns `true` if keepalive is enabled and there are active SSE handlers,
+  # `false` otherwise. This prevents unnecessary keepalive scheduling when
+  # no clients are connected or keepalive is disabled.
+  #
+  # ## Parameters
+  #   * `state` - The GenServer state containing keepalive config and handlers
   defp should_keepalive?(state) do
     state.keepalive_enabled and not Enum.empty?(state.sse_handlers)
   end
