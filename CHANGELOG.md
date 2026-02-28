@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.17.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.0...v0.17.1) (2026-02-28)
+
+
+### Bug Fixes
+
+* Check Process.alive? before sending to SSE handler ([#82](https://github.com/zoedsoupe/anubis-mcp/issues/82)) ([e1dc705](https://github.com/zoedsoupe/anubis-mcp/commit/e1dc705f1ae8ee7e8670d26c7fdfc30583d19efd))
+
+
+### Code Refactoring
+
+* **phase-1:** abstract protocol version negotiation ([#93](https://github.com/zoedsoupe/anubis-mcp/issues/93)) ([05a2362](https://github.com/zoedsoupe/anubis-mcp/commit/05a2362a672ef462e73bc9a3f637c3f203c0978e))
+* **phase-2:** transport layer as functions, backward compatible ([#95](https://github.com/zoedsoupe/anubis-mcp/issues/95)) ([105d6a9](https://github.com/zoedsoupe/anubis-mcp/commit/105d6a91e31d8dbf606ec7916317f9add94acf4e))
+
 ## [0.17.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.16.0...v0.17.0) (2025-12-09)
 
 
