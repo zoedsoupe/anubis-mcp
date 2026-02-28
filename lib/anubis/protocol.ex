@@ -1,77 +1,55 @@
 defmodule Anubis.Protocol do
-  @moduledoc false
+  @moduledoc """
+  MCP protocol version management.
+
+  Provides version validation, negotiation, feature detection, and transport
+  compatibility checking. Delegates version-specific logic to modules under
+  `Anubis.Protocol.*` via `Anubis.Protocol.Registry`.
+
+  ## Adding a new protocol version
+
+  1. Create a new module under `lib/anubis/protocol/` implementing `Anubis.Protocol.Behaviour`
+  2. Register it in `Anubis.Protocol.Registry`
+  """
 
   alias Anubis.MCP.Error
+  alias Anubis.Protocol.Registry
 
   @type version :: String.t()
   @type feature :: atom()
-
-  @supported_versions ["2024-11-05", "2025-03-26", "2025-06-18"]
-  @latest_version "2025-06-18"
-  @fallback_version "2025-03-26"
-
-  @features_2024_11_05 [
-    :basic_messaging,
-    :resources,
-    :tools,
-    :prompts,
-    :logging,
-    :progress,
-    :cancellation,
-    :ping,
-    :roots,
-    :sampling
-  ]
-
-  @features_2025_03_26 [
-    :authorization,
-    :audio_content,
-    :tool_annotations,
-    :progress_messages,
-    :completion_capability
-    | @features_2024_11_05
-  ]
-
-  @features_2025_06_18 [
-    :elicitation,
-    :structured_tool_results,
-    :tool_output_schemas,
-    :model_preferences,
-    :embedded_resources_in_prompts,
-    :embedded_resources_in_tools
-    | @features_2025_03_26
-  ]
 
   @doc """
   Returns all supported protocol versions.
   """
   @spec supported_versions() :: [version()]
-  def supported_versions, do: @supported_versions
+  defdelegate supported_versions(), to: Registry
 
   @doc """
   Returns the latest supported protocol version.
   """
   @spec latest_version() :: version()
-  def latest_version, do: @latest_version
+  defdelegate latest_version(), to: Registry
 
   @doc """
   Returns the fallback protocol version for compatibility.
   """
   @spec fallback_version() :: version()
-  def fallback_version, do: @fallback_version
+  defdelegate fallback_version(), to: Registry
 
   @doc """
   Validates if a protocol version is supported.
   """
   @spec validate_version(version()) :: :ok | {:error, Error.t()}
-  def validate_version(version) when version in @supported_versions, do: :ok
-
   def validate_version(version) do
-    {:error,
-     Error.protocol(:invalid_params, %{
-       version: version,
-       supported: @supported_versions
-     })}
+    if Registry.supported?(version) do
+      :ok
+    else
+      {:error,
+       Error.protocol(:invalid_params, %{
+         version: version,
+         supported: supported_versions()
+       })}
+    end
   end
 
   @doc """
@@ -95,28 +73,29 @@ defmodule Anubis.Protocol do
 
   defp supported_transport_versions(transport) do
     case transport.supported_protocol_versions() do
-      :all -> @supported_versions
+      :all -> supported_versions()
       [_ | _] = versions -> versions
     end
   end
 
   @doc """
   Returns the set of features supported by a protocol version.
+
+  Delegates to the version module's `supported_features/0` callback.
   """
   @spec get_features(version()) :: list(feature())
-  def get_features("2024-11-05"), do: @features_2024_11_05
-  def get_features("2025-03-26"), do: @features_2025_03_26
-  def get_features("2025-06-18"), do: @features_2025_06_18
+  def get_features(version) do
+    case Registry.get_features(version) do
+      {:ok, features} -> features
+      :error -> []
+    end
+  end
 
   @doc """
   Checks if a feature is supported by a protocol version.
   """
   @spec supports_feature?(version(), feature()) :: boolean()
-  def supports_feature?(version, feature) when is_binary(version) and is_atom(feature) do
-    version
-    |> get_features()
-    |> Enum.member?(feature)
-  end
+  defdelegate supports_feature?(version, feature), to: Registry
 
   @doc """
   Negotiates protocol version between client and server versions.
@@ -127,13 +106,13 @@ defmodule Anubis.Protocol do
           {:ok, version()} | {:error, Error.t()}
   def negotiate_version(client_version, server_version) do
     cond do
-      client_version == server_version and client_version in @supported_versions ->
+      client_version == server_version and Registry.supported?(client_version) ->
         {:ok, client_version}
 
-      server_version in @supported_versions ->
+      Registry.supported?(server_version) ->
         {:ok, server_version}
 
-      client_version in @supported_versions ->
+      Registry.supported?(client_version) ->
         {:ok, client_version}
 
       true ->
@@ -141,10 +120,21 @@ defmodule Anubis.Protocol do
          Error.protocol(:invalid_params, %{
            client_version: client_version,
            server_version: server_version,
-           supported: @supported_versions
+           supported: supported_versions()
          })}
     end
   end
+
+  @doc """
+  Returns the protocol module for a given version string.
+
+  ## Examples
+
+      iex> Anubis.Protocol.get_module("2025-06-18")
+      {:ok, Anubis.Protocol.V2025_06_18}
+  """
+  @spec get_module(version()) :: {:ok, module()} | :error
+  defdelegate get_module(version), to: Registry, as: :get
 
   @doc """
   Returns transport modules that support a protocol version.
