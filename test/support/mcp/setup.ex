@@ -7,6 +7,7 @@ defmodule Anubis.MCP.Setup do
 
   alias Anubis.MCP.Builders
   alias Anubis.MCP.Message
+  alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.Transport.STDIO
 
@@ -77,16 +78,13 @@ defmodule Anubis.MCP.Setup do
     capabilities = ctx[:client_capabilities]
     info = ctx[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"}
 
-    registry = Anubis.Server.Registry
-    start_supervised!(registry)
-
-    transport_name = registry.transport(StubServer, StubTransport)
+    transport_name = Registry.transport_name(StubServer, StubTransport)
     transport = start_supervised!({StubTransport, name: transport_name})
 
-    task_sup = registry.task_supervisor(StubServer)
+    task_sup = Registry.task_supervisor_name(StubServer)
     start_supervised!({Task.Supervisor, name: task_sup})
 
-    session_name = registry.server_session(StubServer, session_id)
+    session_name = Registry.session_name(StubServer, session_id)
 
     session =
       start_supervised!(
@@ -95,7 +93,6 @@ defmodule Anubis.MCP.Setup do
          server_module: StubServer,
          name: session_name,
          transport: [layer: StubTransport, name: transport_name],
-         registry: registry,
          task_supervisor: task_sup}
       )
 
@@ -114,21 +111,17 @@ defmodule Anubis.MCP.Setup do
       transport: transport,
       server: session,
       session_id: session_id,
-      server_registry: registry,
       server_module: StubServer
     })
   end
 
   def server_with_stdio_transport(ctx) do
-    registry = Anubis.Server.Registry
-    start_supervised!(registry)
-
     server_module = ctx[:server_module] || StubServer
-    transport_name = registry.transport(server_module, :stdio)
-    task_sup = registry.task_supervisor(server_module)
+    transport_name = Registry.transport_name(server_module, :stdio)
+    task_sup = Registry.task_supervisor_name(server_module)
     start_supervised!({Task.Supervisor, name: task_sup})
 
-    session_name = registry.server_session(server_module, "stdio")
+    session_name = Registry.stdio_session_name(server_module)
 
     session =
       start_supervised!(
@@ -140,26 +133,17 @@ defmodule Anubis.MCP.Setup do
            layer: STDIO,
            name: transport_name
          ],
-         registry: registry,
          task_supervisor: task_sup}
       )
 
     transport =
-      start_supervised!({STDIO, name: transport_name, server: server_module, registry: registry})
+      start_supervised!({STDIO, name: transport_name, server: server_module})
 
     Map.merge(ctx, %{server: session, transport: transport})
   end
 
-  def with_default_registry(ctx) do
-    start_supervised!(Anubis.Server.Registry)
-    assert Process.whereis(Anubis.Server.Registry)
-    Map.put(ctx, :registry, Anubis.Server.Registry)
-  end
-
   def initialized_client(context) do
     import Mox
-
-    start_supervised!(Anubis.Server.Registry)
 
     server_capabilities =
       context[:server_capabilities] ||

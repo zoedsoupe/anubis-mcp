@@ -10,6 +10,7 @@ defmodule Anubis.Server.Session do
   alias Anubis.MCP.ID
   alias Anubis.MCP.Message
   alias Anubis.Server
+  alias Anubis.Server.Context
   alias Anubis.Server.Frame
   alias Anubis.Telemetry
 
@@ -99,8 +100,6 @@ defmodule Anubis.Server.Session do
       task_supervisor: opts.task_supervisor
     }
 
-    frame = populate_frame(state.frame, state)
-    state = %{state | frame: frame}
     state = schedule_session_expiry(state)
 
     Logging.server_event("session_starting", %{
@@ -126,16 +125,18 @@ defmodule Anubis.Server.Session do
   # Handle MCP requests (from transport layer)
 
   @impl GenServer
-  def handle_call({:mcp_request, decoded, context}, _from, state) when is_map(decoded) do
-    state = update_frame_transport(state, context)
+  def handle_call({:mcp_request, decoded, transport_context}, _from, state) when is_map(decoded) do
+    state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
-    handle_single_request(decoded, state)
+    handle_single_request(decoded, transport_context, state)
   end
 
   def handle_call(request, from, %{server_module: module} = state) do
     if Anubis.exported?(module, :handle_call, 3) do
-      case module.handle_call(request, from, state.frame) do
+      frame = prepare_frame(state)
+
+      case module.handle_call(request, from, frame) do
         {:reply, reply, frame} ->
           {:reply, reply, %{state | frame: frame}}
 
@@ -162,12 +163,12 @@ defmodule Anubis.Server.Session do
   # Handle MCP notifications
 
   @impl GenServer
-  def handle_cast({:mcp_notification, decoded, context}, state) when is_map(decoded) do
-    state = update_frame_transport(state, context)
+  def handle_cast({:mcp_notification, decoded, transport_context}, state) when is_map(decoded) do
+    state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
     if Message.is_initialize_lifecycle(decoded) or state.initialized do
-      handle_notification(decoded, state)
+      handle_notification(decoded, transport_context, state)
     else
       Logging.server_event("session_not_initialized_check", %{
         session_id: state.session_id,
@@ -202,7 +203,9 @@ defmodule Anubis.Server.Session do
 
   def handle_cast(request, %{server_module: module} = state) do
     if Anubis.exported?(module, :handle_cast, 2) do
-      case module.handle_cast(request, state.frame) do
+      frame = prepare_frame(state)
+
+      case module.handle_cast(request, frame) do
         {:noreply, frame} -> {:noreply, %{state | frame: frame}}
         {:noreply, frame, cont} -> {:noreply, %{state | frame: frame}, cont}
         {:stop, reason, frame} -> {:stop, reason, %{state | frame: frame}}
@@ -252,7 +255,9 @@ defmodule Anubis.Server.Session do
 
   def handle_info(event, %{server_module: module} = state) do
     if Anubis.exported?(module, :handle_info, 2) do
-      case module.handle_info(event, state.frame) do
+      frame = prepare_frame(state)
+
+      case module.handle_info(event, frame) do
         {:noreply, frame} -> {:noreply, %{state | frame: frame}}
         {:noreply, frame, cont} -> {:noreply, %{state | frame: frame}, cont}
         {:stop, reason, frame} -> {:stop, reason, %{state | frame: frame}}
@@ -279,7 +284,8 @@ defmodule Anubis.Server.Session do
     )
 
     if Anubis.exported?(module, :terminate, 2) do
-      module.terminate(reason, state.frame)
+      frame = prepare_frame(state)
+      module.terminate(reason, frame)
     else
       :ok
     end
@@ -311,7 +317,7 @@ defmodule Anubis.Server.Session do
             when Message.is_initialize_lifecycle(decoded) or
                    state.initialized == true
 
-  defp handle_single_request(decoded, state) do
+  defp handle_single_request(decoded, transport_context, state) do
     cond do
       Message.is_response(decoded) and server_request?(decoded["id"], state) ->
         handle_server_request_response(decoded, state)
@@ -326,7 +332,7 @@ defmodule Anubis.Server.Session do
         handle_server_not_initialized(state)
 
       Message.is_request(decoded) ->
-        handle_request(decoded, state)
+        handle_request(decoded, transport_context, state)
 
       true ->
         handle_invalid_request(state)
@@ -360,7 +366,7 @@ defmodule Anubis.Server.Session do
 
   # Initialize handling
 
-  defp handle_request(%{"params" => params} = request, state) when Message.is_initialize(request) do
+  defp handle_request(%{"params" => params} = request, _transport_context, state) when Message.is_initialize(request) do
     %{
       "clientInfo" => client_info,
       "capabilities" => client_capabilities,
@@ -377,9 +383,6 @@ defmodule Anubis.Server.Session do
         client_info: client_info,
         client_capabilities: client_capabilities
     }
-
-    frame = populate_frame(state.frame, state)
-    state = %{state | frame: frame}
 
     maybe_persist_session(state)
 
@@ -405,14 +408,14 @@ defmodule Anubis.Server.Session do
     {:reply, {:ok, encode_reply(Message.build_response(result, request["id"]))}, state}
   end
 
-  defp handle_request(%{"id" => request_id, "method" => "logging/setLevel"} = request, state)
+  defp handle_request(%{"id" => request_id, "method" => "logging/setLevel"} = request, _transport_context, state)
        when Server.is_supported_capability(state.capabilities, "logging") do
     level = request["params"]["level"]
     state = %{state | log_level: level}
     {:reply, {:ok, encode_reply(Message.build_response(%{}, request_id))}, state}
   end
 
-  defp handle_request(%{"id" => request_id, "method" => method} = request, state) do
+  defp handle_request(%{"id" => request_id, "method" => method} = request, transport_context, state) do
     Logging.server_event("handling_request", %{
       id: request_id,
       method: method,
@@ -427,24 +430,20 @@ defmodule Anubis.Server.Session do
       %{id: request_id, method: method}
     )
 
-    frame =
-      Frame.put_request(state.frame, %{
-        id: request_id,
-        method: method,
-        params: request["params"] || %{}
-      })
-
+    frame = prepare_frame(state, transport_context)
     server_request(request, %{state | frame: frame})
   end
 
   # Notification handling
 
-  defp handle_notification(%{"method" => "notifications/initialized"}, %{server_module: module} = state) do
+  defp handle_notification(
+         %{"method" => "notifications/initialized"},
+         _transport_context,
+         %{server_module: module} = state
+       ) do
     Logging.server_event("client_initialized", %{session_id: state.session_id})
 
     state = %{state | initialized: true}
-    frame = %{state.frame | initialized: true}
-    state = %{state | frame: frame}
 
     maybe_persist_session(state)
 
@@ -452,6 +451,8 @@ defmodule Anubis.Server.Session do
       session_id: state.session_id,
       initialized: true
     })
+
+    frame = prepare_frame(state)
 
     {:ok, frame} =
       if Anubis.exported?(module, :init, 2),
@@ -461,7 +462,7 @@ defmodule Anubis.Server.Session do
     {:noreply, %{state | frame: frame}}
   end
 
-  defp handle_notification(%{"method" => "notifications/cancelled"} = notification, state) do
+  defp handle_notification(%{"method" => "notifications/cancelled"} = notification, _transport_context, state) do
     params = notification["params"] || %{}
     request_id = params["requestId"]
     reason = Map.get(params, "reason", "cancelled")
@@ -501,7 +502,7 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  defp handle_notification(notification, state) do
+  defp handle_notification(notification, _transport_context, state) do
     method = notification["method"]
 
     Logging.server_event("handling_notification", %{method: method})
@@ -512,7 +513,8 @@ defmodule Anubis.Server.Session do
       %{method: method}
     )
 
-    server_notification(notification, state)
+    frame = prepare_frame(state)
+    server_notification(notification, %{state | frame: frame})
   end
 
   # Server request/notification dispatch
@@ -526,7 +528,6 @@ defmodule Anubis.Server.Session do
           %{id: request_id, method: method, status: :success}
         )
 
-        frame = Frame.clear_request(frame)
         state = complete_request(%{state | frame: frame}, request_id)
 
         {:reply, {:ok, encode_reply(Message.build_response(response, request_id))}, state}
@@ -538,7 +539,6 @@ defmodule Anubis.Server.Session do
           %{id: request_id, method: method, status: :noreply}
         )
 
-        frame = Frame.clear_request(frame)
         state = complete_request(%{state | frame: frame}, request_id)
         {:reply, {:ok, nil}, state}
 
@@ -555,7 +555,6 @@ defmodule Anubis.Server.Session do
           %{id: request_id, method: method, error: error}
         )
 
-        frame = Frame.clear_request(frame)
         state = complete_request(%{state | frame: frame}, request_id)
 
         {:reply, {:ok, encode_reply(Error.build_json_rpc(error, request_id))}, state}
@@ -599,30 +598,41 @@ defmodule Anubis.Server.Session do
 
   # Frame management
 
-  defp populate_frame(frame, state) do
-    Frame.put_private(frame, %{
+  defp prepare_frame(state, transport_context \\ nil) do
+    headers =
+      case transport_context do
+        %{req_headers: req_headers} -> normalize_headers(req_headers)
+        _ -> %{}
+      end
+
+    remote_ip =
+      case transport_context do
+        %{remote_ip: ip} -> ip
+        _ -> nil
+      end
+
+    context = %Context{
       session_id: state.session_id,
-      session_pid: self(),
       client_info: state.client_info,
-      client_capabilities: state.client_capabilities,
-      protocol_version: state.protocol_version,
-      protocol_module: state.protocol_module,
-      server_registry: state.registry,
-      server_module: state.server_module
-    })
+      headers: headers,
+      remote_ip: remote_ip
+    }
+
+    %{state.frame | context: context}
   end
 
-  defp update_frame_transport(state, context) do
-    {assigns, context} = Map.pop(context, :assigns, %{})
-    assigns = Map.merge(state.frame.assigns, assigns)
-
-    frame =
-      state.frame
-      |> Frame.put_transport(context)
-      |> Frame.assign(assigns)
-
+  defp merge_transport_assigns(state, %{assigns: assigns}) when is_map(assigns) do
+    frame = Frame.assign(state.frame, assigns)
     %{state | frame: frame}
   end
+
+  defp merge_transport_assigns(state, _context), do: state
+
+  defp normalize_headers(req_headers) when is_list(req_headers) do
+    Map.new(req_headers, fn {k, v} -> {String.downcase(k), v} end)
+  end
+
+  defp normalize_headers(_), do: %{}
 
   # Session expiry management
 
@@ -777,8 +787,10 @@ defmodule Anubis.Server.Session do
     {:noreply, state}
   end
 
-  defp handle_sampling(result, request_id, %{server_module: module, frame: frame} = state) do
+  defp handle_sampling(result, request_id, %{server_module: module} = state) do
     if Anubis.exported?(module, :handle_sampling, 3) do
+      frame = prepare_frame(state)
+
       case module.handle_sampling(result, request_id, frame) do
         {:noreply, new_frame} ->
           {:noreply, %{state | frame: new_frame}}
@@ -858,7 +870,9 @@ defmodule Anubis.Server.Session do
 
   defp handle_roots(roots, request_id, %{server_module: module} = state) do
     if Anubis.exported?(module, :handle_roots, 3) do
-      case module.handle_roots(roots, request_id, state.frame) do
+      frame = prepare_frame(state)
+
+      case module.handle_roots(roots, request_id, frame) do
         {:noreply, new_frame} ->
           {:noreply, %{state | frame: new_frame}}
 
@@ -884,7 +898,8 @@ defmodule Anubis.Server.Session do
         client_capabilities: state.client_capabilities,
         log_level: state.log_level,
         id: session_id,
-        pending_requests: state.pending_requests
+        pending_requests: state.pending_requests,
+        frame: Frame.to_saved(state.frame)
       }
 
       case store.save(session_id, state_map, []) do

@@ -335,7 +335,7 @@ defmodule Anubis.Server.Transport.SSE do
 
   @impl GenServer
   def handle_call({:handle_message, session_id, message, context}, _from, state) when is_map(message) do
-    session_pid = state.registry.whereis_server_session(state.server, session_id)
+    session_pid = state.registry.session_name(state.server, session_id)
     timeout = state.request_timeout
 
     if is_nil(session_pid) do

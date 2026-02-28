@@ -16,6 +16,7 @@ defmodule Anubis.Server.Transport.STDIO do
   import Peri
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Registry
   alias Anubis.Telemetry
   alias Anubis.Transport.Behaviour, as: Transport
 
@@ -107,7 +108,6 @@ defmodule Anubis.Server.Transport.STDIO do
   defschema(:parse_options, [
     {:server, {:required, {:oneof, [{:custom, &Anubis.genserver_name/1}, :pid, {:tuple, [:atom, :any]}]}}},
     {:name, {:custom, &Anubis.genserver_name/1}},
-    {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}}
   ])
 
@@ -146,7 +146,6 @@ defmodule Anubis.Server.Transport.STDIO do
     state = %{
       server: opts.server,
       reading_task: nil,
-      registry: opts.registry,
       request_timeout: opts.request_timeout
     }
 
@@ -288,8 +287,8 @@ defmodule Anubis.Server.Transport.STDIO do
     end
   end
 
-  defp process_message(message, %{server: server_module, registry: registry} = state) do
-    session_pid = registry.whereis_server_session(server_module, "stdio")
+  defp process_message(message, %{server: server_module} = state) do
+    session_pid = Registry.stdio_session_name(server_module)
     timeout = state.request_timeout
 
     context = %{
@@ -298,7 +297,7 @@ defmodule Anubis.Server.Transport.STDIO do
       pid: System.pid()
     }
 
-    if session_pid do
+    if Process.whereis(session_pid) do
       if Message.is_notification(message) do
         GenServer.cast(session_pid, {:mcp_notification, message, context})
       else

@@ -1,82 +1,59 @@
 defmodule MockCustomRegistry do
   @moduledoc false
-  @behaviour Anubis.Server.Registry.Adapter
+  @behaviour Anubis.Server.Registry
 
-  alias Anubis.Server.Registry.Adapter
+  use GenServer
 
-  @impl true
+  @impl Anubis.Server.Registry
   def child_spec(opts) do
     %{
       id: __MODULE__,
-      start: {GenServer, :start_link, [__MODULE__, opts, [name: __MODULE__]]},
+      start: {__MODULE__, :start_link, [opts]},
       type: :worker,
       restart: :permanent,
       shutdown: 500
     }
   end
 
-  @impl Adapter
-  def transport(server, transport_type) do
-    {:via, __MODULE__, {:transport, server, transport_type}}
+  @impl Anubis.Server.Registry
+  def register_session(name, session_id, pid) do
+    GenServer.call(name, {:register, session_id, pid})
   end
 
-  @impl Adapter
-  def task_supervisor(server_module) do
-    {:via, __MODULE__, {:task_supervisor, server_module}}
+  @impl Anubis.Server.Registry
+  def lookup_session(name, session_id) do
+    GenServer.call(name, {:lookup, session_id})
   end
 
-  @impl Adapter
-  def server(server_module) do
-    {:via, __MODULE__, {:server, server_module}}
-  end
-
-  @impl Adapter
-  def server_session(server_module, session_id) do
-    {:via, __MODULE__, {:server_session, server_module, session_id}}
-  end
-
-  @impl Adapter
-  def supervisor(kind, server_module) do
-    {:via, __MODULE__, {:supervisor, kind, server_module}}
-  end
-
-  @impl Adapter
-  def whereis_server(server_module) do
-    case :ets.lookup(__MODULE__, {:server, server_module}) do
-      [{_, pid}] -> pid
-      [] -> nil
-    end
-  end
-
-  @impl Adapter
-  def whereis_server_session(server_module, session_id) do
-    case :ets.lookup(__MODULE__, {:server_session, server_module, session_id}) do
-      [{_, pid}] -> pid
-      [] -> nil
-    end
-  end
-
-  @impl Adapter
-  def whereis_transport(server_module, transport_type) do
-    case :ets.lookup(__MODULE__, {:transport, server_module, transport_type}) do
-      [{_, pid}] -> pid
-      [] -> nil
-    end
-  end
-
-  @impl Adapter
-  def whereis_supervisor(kind, server_module) do
-    case :ets.lookup(__MODULE__, {:supervisor, kind, server_module}) do
-      [{_, pid}] -> pid
-      [] -> nil
-    end
+  @impl Anubis.Server.Registry
+  def unregister_session(name, session_id) do
+    GenServer.call(name, {:unregister, session_id})
   end
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @impl GenServer
   def init(_opts) do
-    {:ok, %{}}
+    {:ok, %{sessions: %{}}}
+  end
+
+  @impl GenServer
+  def handle_call({:register, session_id, pid}, _from, state) do
+    sessions = Map.put(state.sessions, session_id, pid)
+    {:reply, :ok, %{state | sessions: sessions}}
+  end
+
+  def handle_call({:lookup, session_id}, _from, state) do
+    case Map.get(state.sessions, session_id) do
+      nil -> {:reply, {:error, :not_found}, state}
+      pid -> {:reply, {:ok, pid}, state}
+    end
+  end
+
+  def handle_call({:unregister, session_id}, _from, state) do
+    sessions = Map.delete(state.sessions, session_id)
+    {:reply, :ok, %{state | sessions: sessions}}
   end
 end

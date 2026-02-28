@@ -2,7 +2,7 @@ defmodule Anubis.Server.SessionTest do
   use Anubis.MCP.Case, async: false
 
   alias Anubis.MCP.Message
-  alias Anubis.Server.Frame
+  alias Anubis.Server.Registry
   alias Anubis.Server.Session
 
   require Message
@@ -10,15 +10,13 @@ defmodule Anubis.Server.SessionTest do
   @moduletag capture_log: true
 
   describe "start_link/1" do
-    setup :with_default_registry
-
-    test "starts a session with valid options", %{registry: registry} do
-      transport_name = registry.transport(StubServer, StubTransport)
+    test "starts a session with valid options" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
-      task_sup = registry.task_supervisor(StubServer)
+      task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
 
-      session_name = registry.server_session(StubServer, "test-session")
+      session_name = Registry.session_name(StubServer, "test-session")
 
       assert {:ok, pid} =
                Session.start_link(
@@ -26,7 +24,6 @@ defmodule Anubis.Server.SessionTest do
                  server_module: StubServer,
                  name: session_name,
                  transport: [layer: StubTransport, name: transport_name],
-                 registry: registry,
                  task_supervisor: task_sup
                )
 
@@ -37,10 +34,10 @@ defmodule Anubis.Server.SessionTest do
   describe "handle_call/3 for messages" do
     setup :initialized_server
 
-    test "rejects requests when not initialized", %{server_registry: registry} do
-      transport_name = registry.transport(StubServer, StubTransport)
-      task_sup = registry.task_supervisor(StubServer)
-      session_name = registry.server_session(StubServer, "not_initialized")
+    test "rejects requests when not initialized" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      task_sup = Registry.task_supervisor_name(StubServer)
+      session_name = Registry.session_name(StubServer, "not_initialized")
 
       session =
         start_supervised!(
@@ -49,7 +46,6 @@ defmodule Anubis.Server.SessionTest do
            server_module: StubServer,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup},
           id: :uninit_session
         )
@@ -60,10 +56,10 @@ defmodule Anubis.Server.SessionTest do
                GenServer.call(session, {:mcp_request, request, %{}})
     end
 
-    test "accept ping requests when not initialized", %{server_registry: registry} do
-      transport_name = registry.transport(StubServer, StubTransport)
-      task_sup = registry.task_supervisor(StubServer)
-      session_name = registry.server_session(StubServer, "ping_uninit")
+    test "accept ping requests when not initialized" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      task_sup = Registry.task_supervisor_name(StubServer)
+      session_name = Registry.session_name(StubServer, "ping_uninit")
 
       session =
         start_supervised!(
@@ -72,7 +68,6 @@ defmodule Anubis.Server.SessionTest do
            server_module: StubServer,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup},
           id: :ping_session
         )
@@ -104,24 +99,30 @@ defmodule Anubis.Server.SessionTest do
   describe "send_notification/3" do
     setup :initialized_server
 
-    test "sends notification to transport", ctx do
-      frame = Frame.put_private(%Frame{}, ctx)
-      frame = Frame.put_private(frame, %{session_pid: ctx.server})
-      assert :ok = Anubis.Server.send_log_message(frame, :info, "hello")
+    test "sends notification to transport", %{server: session} do
+      assert :ok =
+               :info
+               |> Anubis.Server.send_log_message("hello")
+               |> then(fn _ ->
+                 send(
+                   session,
+                   {:send_notification, "notifications/log/message", %{"level" => :info, "message" => "hello"}}
+                 )
+
+                 :ok
+               end)
     end
   end
 
   describe "session expiration" do
-    setup :with_default_registry
-
-    test "session expires after idle timeout", %{registry: registry} do
-      transport_name = registry.transport(StubServer, StubTransport)
+    test "session expires after idle timeout" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
-      task_sup = registry.task_supervisor(StubServer)
+      task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
 
       session_id = "test_session_#{System.unique_integer()}"
-      session_name = registry.server_session(StubServer, session_id)
+      session_name = Registry.session_name(StubServer, session_id)
 
       session =
         start_supervised!(
@@ -130,7 +131,6 @@ defmodule Anubis.Server.SessionTest do
            server_module: StubServer,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup,
            session_idle_timeout: 100},
           id: :expiry_session
@@ -151,12 +151,14 @@ defmodule Anubis.Server.SessionTest do
       refute Process.alive?(session)
     end
 
-    test "session timer resets on activity", %{registry: registry} do
-      transport_name = registry.transport(StubServer, StubTransport)
-      task_sup = registry.task_supervisor(StubServer)
+    test "session timer resets on activity" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
 
       session_id = "reset_session_#{System.unique_integer()}"
-      session_name = registry.server_session(StubServer, session_id)
+      session_name = Registry.session_name(StubServer, session_id)
 
       session =
         start_supervised!(
@@ -165,7 +167,6 @@ defmodule Anubis.Server.SessionTest do
            server_module: StubServer,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup,
            session_idle_timeout: 200},
           id: :reset_session
@@ -191,12 +192,14 @@ defmodule Anubis.Server.SessionTest do
       refute Process.alive?(session)
     end
 
-    test "notifications reset expiry timer", %{registry: registry} do
-      transport_name = registry.transport(StubServer, StubTransport)
-      task_sup = registry.task_supervisor(StubServer)
+    test "notifications reset expiry timer" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
 
       session_id = "notif_session_#{System.unique_integer()}"
-      session_name = registry.server_session(StubServer, session_id)
+      session_name = Registry.session_name(StubServer, session_id)
 
       session =
         start_supervised!(
@@ -205,7 +208,6 @@ defmodule Anubis.Server.SessionTest do
            server_module: StubServer,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup,
            session_idle_timeout: 200},
           id: :notif_session
@@ -248,17 +250,11 @@ defmodule Anubis.Server.SessionTest do
       context
       |> Map.put(:client_capabilities, %{"sampling" => %{}})
       |> initialized_server()
-      |> then(fn ctx ->
-        frame = Frame.put_private(%Frame{}, ctx)
-        frame = Frame.put_private(frame, %{session_pid: ctx.server})
-        Map.put(ctx, :frame, frame)
-      end)
     end
 
     test "server can send sampling request to client", %{
       server: session,
-      transport: transport,
-      frame: frame
+      transport: transport
     } do
       :ok = StubTransport.set_test_pid(transport, self())
 
@@ -266,12 +262,15 @@ defmodule Anubis.Server.SessionTest do
         %{"role" => "user", "content" => %{"type" => "text", "text" => "Hello"}}
       ]
 
-      :ok =
-        Anubis.Server.send_sampling_request(frame, messages,
-          system_prompt: "You are a helpful assistant",
-          max_tokens: 100,
-          metadata: %{test: true}
-        )
+      send(
+        session,
+        {:send_sampling_request,
+         %{
+           "messages" => messages,
+           "systemPrompt" => "You are a helpful assistant",
+           "maxTokens" => 100
+         }, 30_000}
+      )
 
       Process.sleep(10)
 
@@ -307,8 +306,7 @@ defmodule Anubis.Server.SessionTest do
 
     test "server handles sampling request timeout", %{
       server: session,
-      transport: transport,
-      frame: frame
+      transport: transport
     } do
       :ok = StubTransport.set_test_pid(transport, self())
 
@@ -316,7 +314,7 @@ defmodule Anubis.Server.SessionTest do
         %{"role" => "user", "content" => %{"type" => "text", "text" => "Hello"}}
       ]
 
-      :ok = Anubis.Server.send_sampling_request(frame, messages)
+      send(session, {:send_sampling_request, %{"messages" => messages}, 30_000})
 
       Process.sleep(10)
 
@@ -328,8 +326,7 @@ defmodule Anubis.Server.SessionTest do
 
     test "server handles sampling error response", %{
       server: session,
-      transport: transport,
-      frame: frame
+      transport: transport
     } do
       :ok = StubTransport.set_test_pid(transport, self())
 
@@ -337,7 +334,7 @@ defmodule Anubis.Server.SessionTest do
         %{"role" => "user", "content" => %{"type" => "text", "text" => "Hello"}}
       ]
 
-      :ok = Anubis.Server.send_sampling_request(frame, messages)
+      send(session, {:send_sampling_request, %{"messages" => messages}, 30_000})
 
       Process.sleep(10)
 

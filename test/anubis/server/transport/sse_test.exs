@@ -3,10 +3,9 @@ defmodule Anubis.Server.Transport.SSETest do
 
   import ExUnit.CaptureLog
 
+  alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
-
-  setup :with_default_registry
 
   describe "start_link/1" do
     test "starts with valid options" do
@@ -46,11 +45,11 @@ defmodule Anubis.Server.Transport.SSETest do
   end
 
   describe "with running transport" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :sse)
+    setup do
+      name = Registry.transport_name(StubServer, :sse)
 
       {:ok, transport} =
-        start_supervised({SSE, server: StubServer, name: name, registry: registry})
+        start_supervised({SSE, server: StubServer, name: name})
 
       %{transport: transport, server: StubServer}
     end
@@ -65,17 +64,16 @@ defmodule Anubis.Server.Transport.SSETest do
       refute SSE.get_sse_handler(transport, session_id)
     end
 
-    test "handle_message processes notifications", %{transport: transport, registry: registry} do
+    test "handle_message processes notifications", %{transport: transport} do
       session_id = "test-session-456"
 
-      # Start task supervisor and a session for this test
-      task_sup = registry.task_supervisor(StubServer)
+      task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
 
-      transport_name = registry.transport(StubServer, StubTransport)
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name}, id: :sse_stub_transport)
 
-      session_name = registry.server_session(StubServer, session_id)
+      session_name = Registry.session_name(StubServer, session_id)
 
       start_supervised!(
         {Session,
@@ -83,7 +81,6 @@ defmodule Anubis.Server.Transport.SSETest do
          server_module: StubServer,
          name: session_name,
          transport: [layer: StubTransport, name: transport_name],
-         registry: registry,
          task_supervisor: task_sup},
         id: :sse_session
       )
@@ -186,17 +183,11 @@ defmodule Anubis.Server.Transport.SSETest do
     end
 
     test "get_endpoint_url with custom base_url and post_path" do
-      registry = Anubis.Server.Registry
       name = :custom_sse_transport
 
       {:ok, transport} =
         start_supervised(
-          {SSE,
-           server: StubServer,
-           name: name,
-           base_url: "http://localhost:8080",
-           post_path: "/api/messages",
-           registry: registry},
+          {SSE, server: StubServer, name: name, base_url: "http://localhost:8080", post_path: "/api/messages"},
           id: :custom_sse
         )
 

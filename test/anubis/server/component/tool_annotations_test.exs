@@ -2,6 +2,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
   use Anubis.MCP.Case, async: true
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Registry
   alias Anubis.Server.Session
 
   describe "tool annotations" do
@@ -60,17 +61,14 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     setup do
-      registry = Anubis.Server.Registry
-      start_supervised!(registry)
-
-      transport_name = registry.transport(ServerWithAnnotatedTools, StubTransport)
+      transport_name = Registry.transport_name(ServerWithAnnotatedTools, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
 
-      task_sup = registry.task_supervisor(ServerWithAnnotatedTools)
+      task_sup = Registry.task_supervisor_name(ServerWithAnnotatedTools)
       start_supervised!({Task.Supervisor, name: task_sup})
 
       session_id = "test-session"
-      session_name = registry.server_session(ServerWithAnnotatedTools, session_id)
+      session_name = Registry.session_name(ServerWithAnnotatedTools, session_id)
 
       session =
         start_supervised!(
@@ -79,7 +77,6 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
            server_module: ServerWithAnnotatedTools,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup}
         )
 
@@ -185,17 +182,14 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     setup do
-      registry = Anubis.Server.Registry
-      start_supervised!(registry)
-
-      transport_name = registry.transport(ServerWithOutputSchemaTools, StubTransport)
+      transport_name = Registry.transport_name(ServerWithOutputSchemaTools, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
 
-      task_sup = registry.task_supervisor(ServerWithOutputSchemaTools)
+      task_sup = Registry.task_supervisor_name(ServerWithOutputSchemaTools)
       start_supervised!({Task.Supervisor, name: task_sup})
 
       session_id = "test-session-output"
-      session_name = registry.server_session(ServerWithOutputSchemaTools, session_id)
+      session_name = Registry.session_name(ServerWithOutputSchemaTools, session_id)
 
       session =
         start_supervised!(
@@ -204,7 +198,6 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
            server_module: ServerWithOutputSchemaTools,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup},
           id: :output_session
         )

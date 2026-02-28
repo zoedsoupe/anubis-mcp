@@ -3,23 +3,19 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
   import ExUnit.CaptureLog
 
+  alias Anubis.Server.Registry
   alias Anubis.Server.Transport.StreamableHTTP
-
-  setup :with_default_registry
 
   describe "start_link/1" do
     test "starts with valid options" do
-      server = Anubis.Server.Registry.server(StubServer)
-      name = Anubis.Server.Registry.transport(StubServer, :streamable_http)
-      sup = Anubis.Server.Registry.task_supervisor(StubServer)
+      server = :"test_server_#{System.unique_integer([:positive])}"
+      name = Registry.transport_name(server, :streamable_http)
+      sup = Registry.task_supervisor_name(server)
 
       assert {:ok, pid} =
                StreamableHTTP.start_link(server: server, name: name, task_supervisor: sup)
 
       assert Process.alive?(pid)
-
-      assert Anubis.Server.Registry.whereis_transport(StubServer, :streamable_http) ==
-               pid
     end
 
     test "requires server option" do
@@ -31,13 +27,12 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
   describe "with running transport" do
     setup do
-      registry = Anubis.Server.Registry
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
+      name = Registry.transport_name(StubServer, :streamable_http)
+      sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: sup})
 
       {:ok, transport} =
-        start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: sup})
 
       %{transport: transport, server: StubServer}
     end

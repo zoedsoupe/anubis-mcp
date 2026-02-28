@@ -10,11 +10,6 @@ if Code.ensure_loaded?(Plug) do
     - POST: Handles JSON-RPC messages from client to server
     - DELETE: Closes a session
 
-    ## SSE Streaming Architecture
-
-    This Plug handles SSE streaming by keeping the request process alive
-    and managing the streaming loop for server-to-client communication.
-
     ## Usage in Phoenix Router
 
         pipeline :mcp do
@@ -26,32 +21,11 @@ if Code.ensure_loaded?(Plug) do
           forward "/", to: Anubis.Server.Transport.StreamableHTTP.Plug, server: :your_server_name
         end
 
-    ## Usage in Plug Router
-
-        forward "/mcp", to: Anubis.Server.Transport.StreamableHTTP.Plug, init_opts: [server: :your_server_name]
-
     ## Configuration Options
 
     - `:server` - The server process name (required)
     - `:session_header` - Custom header name for session ID (default: "mcp-session-id")
     - `:request_timeout` - Request timeout in milliseconds (default: 30000)
-    - `:registry` - The registry to use. See `Anubis.Server.Registry` for more information (default: Elixir's Registry implementation)
-
-    ## Security Features
-
-    - Origin header validation for DNS rebinding protection
-    - Session-based request validation
-    - Automatic session cleanup on connection loss
-    - Rate limiting support (when configured)
-
-    ## HTTP Response Codes
-
-    - 200: Successful request
-    - 202: Accepted (for notifications and responses)
-    - 400: Bad request (malformed JSON-RPC)
-    - 404: Session not found
-    - 405: Method not allowed
-    - 500: Internal server error
     """
 
     @behaviour Plug
@@ -63,6 +37,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Error
     alias Anubis.MCP.ID
     alias Anubis.MCP.Message
+    alias Anubis.Server.Registry
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.StreamableHTTP
     alias Anubis.SSE.Streaming
@@ -78,15 +53,16 @@ if Code.ensure_loaded?(Plug) do
     @impl Plug
     def init(opts) do
       server = Keyword.fetch!(opts, :server)
-      registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
-      transport = registry.transport(server, :streamable_http)
+      session_config = ServerSupervisor.get_session_config(server)
+      transport_name = Registry.transport_name(server, :streamable_http)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
 
       %{
         server: server,
-        registry: registry,
-        transport: transport,
+        registry_mod: session_config.registry_mod,
+        registry_name: Registry.registry_name(server),
+        transport: transport_name,
         session_header: session_header,
         timeout: request_timeout
       }
@@ -347,47 +323,47 @@ if Code.ensure_loaded?(Plug) do
 
     # Session management
 
-    defp find_session(%{server: server, registry: registry}, session_id) do
-      case registry.whereis_server_session(server, session_id) do
-        nil -> {:error, :not_found}
-        pid -> {:ok, pid}
-      end
+    defp find_session(%{registry_mod: mod, registry_name: name}, session_id) do
+      mod.lookup_session(name, session_id)
     end
 
     defp find_or_create_session(opts, session_id, message) do
-      %{server: server, registry: registry} = opts
+      case find_session(opts, session_id) do
+        {:ok, pid} ->
+          {:ok, pid}
 
-      case registry.whereis_server_session(server, session_id) do
-        nil when Message.is_initialize(message) ->
+        {:error, :not_found} when Message.is_initialize(message) ->
           start_new_session(opts, session_id)
 
-        nil ->
+        {:error, :not_found} ->
           {:error, :no_session}
-
-        pid ->
-          {:ok, pid}
       end
     end
 
-    defp start_new_session(%{server: server, registry: registry} = opts, session_id) do
+    defp start_new_session(%{server: server, registry_mod: registry_mod, registry_name: registry_name} = opts, session_id) do
       session_config = ServerSupervisor.get_session_config(server)
-      session_name = registry.server_session(server, session_id)
+      session_name = Registry.session_name(server, session_id)
 
       session_opts = [
         session_id: session_id,
         server_module: server,
         name: session_name,
         transport: session_config.transport,
-        registry: registry,
         session_idle_timeout: session_config.session_idle_timeout || 1_800_000,
         timeout: opts.timeout,
         task_supervisor: session_config.task_supervisor
       ]
 
-      case ServerSupervisor.start_session(registry, server, session_opts) do
-        {:ok, pid} -> {:ok, pid}
-        {:error, {:already_started, pid}} -> {:ok, pid}
-        {:error, reason} -> {:error, reason}
+      case ServerSupervisor.start_session(server, session_opts) do
+        {:ok, pid} ->
+          registry_mod.register_session(registry_name, session_id, pid)
+          {:ok, pid}
+
+        {:error, {:already_started, pid}} ->
+          {:ok, pid}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
 
@@ -560,8 +536,8 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp stop_session_process(%{server: server, registry: registry}, session_id) do
-      ServerSupervisor.stop_session(registry, server, session_id)
+    defp stop_session_process(%{server: server, registry_mod: registry_mod}, session_id) do
+      ServerSupervisor.stop_session(server, registry_mod, session_id)
     end
   end
 end

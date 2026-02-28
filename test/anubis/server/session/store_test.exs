@@ -1,6 +1,7 @@
 defmodule Anubis.Server.Session.StoreTest do
   use ExUnit.Case, async: false
 
+  alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Test.MockSessionStore
 
@@ -31,25 +32,21 @@ defmodule Anubis.Server.Session.StoreTest do
 
   describe "session persistence" do
     setup do
-      start_supervised!(Anubis.Server.Registry)
-
-      registry = Anubis.Server.Registry
-      task_sup = registry.task_supervisor(StubServer)
+      task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
 
-      transport_name = registry.transport(StubServer, StubTransport)
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
 
-      %{registry: registry, transport_name: transport_name, task_sup: task_sup}
+      %{transport_name: transport_name, task_sup: task_sup}
     end
 
     test "saves session state when initialized", %{
-      registry: registry,
       transport_name: transport_name,
       task_sup: task_sup
     } do
       session_id = "test_session_123"
-      session_name = registry.server_session(StubServer, session_id)
+      session_name = Registry.session_name(StubServer, session_id)
 
       start_supervised!(
         {Session,
@@ -57,7 +54,6 @@ defmodule Anubis.Server.Session.StoreTest do
          server_module: StubServer,
          name: session_name,
          transport: [layer: StubTransport, name: transport_name],
-         registry: registry,
          task_supervisor: task_sup},
         id: :persist_session
       )
@@ -141,15 +137,13 @@ defmodule Anubis.Server.Session.StoreTest do
     test "works without store configured" do
       Application.delete_env(:anubis_mcp, :session_store)
 
-      start_supervised!(Anubis.Server.Registry)
-      registry = Anubis.Server.Registry
-      task_sup = registry.task_supervisor(StubServer)
+      task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
-      transport_name = registry.transport(StubServer, StubTransport)
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
 
       session_id = "no_store_session"
-      session_name = registry.server_session(StubServer, session_id)
+      session_name = Registry.session_name(StubServer, session_id)
 
       session =
         start_supervised!(
@@ -158,7 +152,6 @@ defmodule Anubis.Server.Session.StoreTest do
            server_module: StubServer,
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
-           registry: registry,
            task_supervisor: task_sup},
           id: :no_store_session
         )

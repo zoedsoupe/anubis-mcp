@@ -160,7 +160,7 @@ defmodule StubTransport do
       :ok
     else
       session_name =
-        Anubis.Server.Registry.server_session(StubServer, state.session_id)
+        Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
       {:ok, response} =
         GenServer.call(session_name, {:mcp_request, message, %{}})
@@ -173,14 +173,14 @@ defmodule StubTransport do
 
   defp forward_to_session(message, state) when Message.is_response(message) or Message.is_error(message) do
     session_name =
-      Anubis.Server.Registry.server_session(StubServer, state.session_id)
+      Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
     GenServer.cast(session_name, {:mcp_response, message, %{}})
   end
 
   defp forward_to_session(message, state) when Message.is_notification(message) do
     session_name =
-      Anubis.Server.Registry.server_session(StubServer, state.session_id)
+      Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
     :ok = GenServer.cast(session_name, {:mcp_notification, message, %{}})
   end

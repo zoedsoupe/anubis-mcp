@@ -6,21 +6,46 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   import Plug.Test
 
   alias Anubis.MCP.Message
-  alias Anubis.Server.Session
+  alias Anubis.Server.Registry
   alias Anubis.Server.Supervisor, as: ServerSupervisor
   alias Anubis.Server.Transport.StreamableHTTP
   alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
 
-  setup :with_default_registry
+  defp setup_session_config(opts \\ []) do
+    task_sup = Registry.task_supervisor_name(StubServer)
+    transport_name = Registry.transport_name(StubServer, StubTransport)
+
+    session_config = %{
+      server_module: StubServer,
+      registry_mod: Keyword.get(opts, :registry_mod, Registry.None),
+      transport: [layer: StubTransport, name: transport_name],
+      session_idle_timeout: nil,
+      timeout: 30_000,
+      task_supervisor: task_sup
+    }
+
+    :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)
+    session_config
+  end
+
+  defp cleanup_session_config do
+    :persistent_term.erase({ServerSupervisor, StubServer, :session_config})
+  end
 
   describe "init/1" do
+    setup do
+      setup_session_config()
+      on_exit(&cleanup_session_config/0)
+      :ok
+    end
+
     test "requires server option" do
       assert_raise KeyError, fn ->
         StreamableHTTPPlug.init([])
       end
     end
 
-    test "initializes with valid options", %{registry: registry} do
+    test "initializes with valid options" do
       opts = StreamableHTTPPlug.init(server: StubServer)
 
       assert %{
@@ -29,10 +54,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
                timeout: 30_000
              } = opts
 
-      assert transport == registry.transport(StubServer, :streamable_http)
+      assert transport == Registry.transport_name(StubServer, :streamable_http)
     end
 
-    test "accepts custom session header", %{registry: registry} do
+    test "accepts custom session header" do
       opts =
         StreamableHTTPPlug.init(
           server: StubServer,
@@ -45,33 +70,20 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
                timeout: 30_000
              } = opts
 
-      assert transport == registry.transport(StubServer, :streamable_http)
-    end
-
-    test "uses custom registry when provided" do
-      start_supervised!(MockCustomRegistry)
-      assert Process.whereis(MockCustomRegistry)
-
-      opts =
-        StreamableHTTPPlug.init(
-          server: StubServer,
-          mode: :streamable_http,
-          registry: MockCustomRegistry
-        )
-
-      expected_transport = MockCustomRegistry.transport(StubServer, :streamable_http)
-
-      assert opts.transport == expected_transport
+      assert transport == Registry.transport_name(StubServer, :streamable_http)
     end
   end
 
   describe "GET endpoint" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
+    setup do
+      setup_session_config()
+      on_exit(&cleanup_session_config/0)
+
+      name = Registry.transport_name(StubServer, :streamable_http)
+      sup = Registry.task_supervisor_name(StubServer)
 
       {:ok, transport} =
-        start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: sup})
 
       opts = StreamableHTTPPlug.init(server: StubServer)
 
@@ -109,53 +121,45 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   end
 
   describe "POST endpoint" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
-      start_supervised!({Task.Supervisor, name: sup})
+    setup do
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
 
-      # Store session config in persistent_term for Plug access
-      session_config = %{
-        server_module: StubServer,
-        registry: registry,
-        transport: [layer: StubTransport, name: registry.transport(StubServer, StubTransport)],
-        session_idle_timeout: nil,
-        timeout: 30_000,
-        task_supervisor: sup
-      }
-
-      :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)
-
-      # Start a DynamicSupervisor for sessions
-      session_sup_name = registry.supervisor(:session_supervisor, StubServer)
-      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
-
-      # Start stub transport for Session to use
-      transport_name = registry.transport(StubServer, StubTransport)
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
 
+      registry_name = Registry.registry_name(StubServer)
+      start_supervised!({Registry.Local, name: registry_name})
+
+      session_config = setup_session_config(registry_mod: Registry.Local)
+      on_exit(&cleanup_session_config/0)
+
+      session_sup_name = Registry.session_supervisor_name(StubServer)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      name = Registry.transport_name(StubServer, :streamable_http)
+
       {:ok, transport} =
-        start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: task_sup})
 
       opts = StreamableHTTPPlug.init(server: StubServer)
 
-      # Pre-create an initialized session for notification/request tests
       test_session_id = "post-test-session"
-      session_name = registry.server_session(StubServer, test_session_id)
+      session_name = Registry.session_name(StubServer, test_session_id)
 
       {:ok, _session} =
-        ServerSupervisor.start_session(registry, StubServer,
+        ServerSupervisor.start_session(StubServer,
           session_id: test_session_id,
           server_module: StubServer,
           name: session_name,
-          transport: [layer: StubTransport, name: transport_name],
-          registry: registry,
+          transport: session_config.transport,
           session_idle_timeout: 1_800_000,
           timeout: 30_000,
-          task_supervisor: sup
+          task_supervisor: task_sup
         )
 
-      # Initialize the session
+      Registry.Local.register_session(registry_name, test_session_id, Process.whereis(session_name))
+
       init_req = %{
         "jsonrpc" => "2.0",
         "id" => "setup_init",
@@ -175,10 +179,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       )
 
       Process.sleep(30)
-
-      on_exit(fn ->
-        :persistent_term.erase({ServerSupervisor, StubServer, :session_config})
-      end)
 
       %{opts: opts, transport: transport, test_session_id: test_session_id}
     end
@@ -236,12 +236,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   end
 
   describe "DELETE endpoint" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
+    setup do
+      setup_session_config()
+      on_exit(&cleanup_session_config/0)
+
+      name = Registry.transport_name(StubServer, :streamable_http)
+      sup = Registry.task_supervisor_name(StubServer)
 
       {:ok, transport} =
-        start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: sup})
 
       opts = StreamableHTTPPlug.init(server: StubServer)
 
@@ -272,12 +275,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   end
 
   describe "unsupported methods" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
+    setup do
+      setup_session_config()
+      on_exit(&cleanup_session_config/0)
+
+      name = Registry.transport_name(StubServer, :streamable_http)
+      sup = Registry.task_supervisor_name(StubServer)
 
       {:ok, _transport} =
-        start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: sup})
 
       opts = StreamableHTTPPlug.init(server: StubServer)
 
@@ -297,49 +303,44 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   end
 
   describe "session handling" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
-      start_supervised!({Task.Supervisor, name: sup})
+    setup do
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
 
-      transport_name = registry.transport(StubServer, StubTransport)
-
-      session_config = %{
-        server_module: StubServer,
-        registry: registry,
-        transport: [layer: StubTransport, name: transport_name],
-        session_idle_timeout: nil,
-        timeout: 30_000,
-        task_supervisor: sup
-      }
-
-      :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)
-
-      session_sup_name = registry.supervisor(:session_supervisor, StubServer)
-      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
-
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
 
+      registry_name = Registry.registry_name(StubServer)
+      start_supervised!({Registry.Local, name: registry_name})
+
+      session_config = setup_session_config(registry_mod: Registry.Local)
+      on_exit(&cleanup_session_config/0)
+
+      session_sup_name = Registry.session_supervisor_name(StubServer)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      name = Registry.transport_name(StubServer, :streamable_http)
+
       {:ok, transport} =
-        start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: task_sup})
 
       opts = StreamableHTTPPlug.init(server: StubServer)
 
-      # Pre-create an initialized session
       test_session_id = "session-handling-test"
-      session_name = registry.server_session(StubServer, test_session_id)
+      session_name = Registry.session_name(StubServer, test_session_id)
 
       {:ok, _session} =
-        ServerSupervisor.start_session(registry, StubServer,
+        ServerSupervisor.start_session(StubServer,
           session_id: test_session_id,
           server_module: StubServer,
           name: session_name,
-          transport: [layer: StubTransport, name: transport_name],
-          registry: registry,
+          transport: session_config.transport,
           session_idle_timeout: 1_800_000,
           timeout: 30_000,
-          task_supervisor: sup
+          task_supervisor: task_sup
         )
+
+      Registry.Local.register_session(registry_name, test_session_id, Process.whereis(session_name))
 
       init_req = %{
         "jsonrpc" => "2.0",
@@ -360,10 +361,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       )
 
       Process.sleep(30)
-
-      on_exit(fn ->
-        :persistent_term.erase({ServerSupervisor, StubServer, :session_config})
-      end)
 
       %{opts: opts, transport: transport, test_session_id: test_session_id}
     end

@@ -7,13 +7,12 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
 
   alias Anubis.MCP.Builders
   alias Anubis.MCP.Message
+  alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.SSE.Plug, as: SSEPlug
 
   @moduletag capture_log: true
-
-  setup :with_default_registry
 
   describe "init/1" do
     test "requires server option" do
@@ -34,7 +33,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       end
     end
 
-    test "initializes with valid options", %{registry: registry} do
+    test "initializes with valid options" do
       opts = SSEPlug.init(server: StubServer, mode: :sse, timeout: 5000)
 
       assert %{
@@ -43,28 +42,16 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
                timeout: 5000
              } = opts
 
-      assert transport == registry.transport(StubServer, :sse)
-    end
-
-    test "uses custom registry when provided" do
-      start_supervised!(MockCustomRegistry)
-      assert Process.whereis(MockCustomRegistry)
-
-      opts =
-        SSEPlug.init(server: StubServer, mode: :sse, registry: MockCustomRegistry)
-
-      expected_transport = MockCustomRegistry.transport(StubServer, :sse)
-
-      assert opts.transport == expected_transport
+      assert transport == Registry.transport_name(StubServer, :sse)
     end
   end
 
   describe "SSE endpoint" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :sse)
+    setup do
+      name = Registry.transport_name(StubServer, :sse)
 
       {:ok, transport} =
-        start_supervised({SSE, server: StubServer, name: name, registry: registry})
+        start_supervised({SSE, server: StubServer, name: name})
 
       sse_opts = SSEPlug.init(server: StubServer, mode: :sse)
       %{sse_opts: sse_opts, transport: transport}
@@ -114,18 +101,15 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
   end
 
   describe "POST endpoint" do
-    setup %{registry: registry} do
-      # Start task supervisor
-      task_sup = registry.task_supervisor(StubServer)
+    setup do
+      task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
 
-      # Start stub transport for Session to use
-      transport_name = registry.transport(StubServer, StubTransport)
+      transport_name = Registry.transport_name(StubServer, StubTransport)
       start_supervised!({StubTransport, name: transport_name})
 
-      # Start a session to handle requests
       session_id = "test-session"
-      session_name = registry.server_session(StubServer, session_id)
+      session_name = Registry.session_name(StubServer, session_id)
 
       start_supervised!(
         {Session,
@@ -133,12 +117,10 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
          server_module: StubServer,
          name: session_name,
          transport: [layer: StubTransport, name: transport_name],
-         registry: registry,
          task_supervisor: task_sup},
         id: :sse_post_session
       )
 
-      # Initialize the session
       init_request =
         Builders.init_request(nil, %{"name" => "Test", "version" => "1.0"}, %{})
 
@@ -148,14 +130,13 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       GenServer.cast(session_name, {:mcp_notification, init_notif, %{}})
       Process.sleep(30)
 
-      # Start the SSE transport
-      name = registry.transport(StubServer, :sse)
+      name = Registry.transport_name(StubServer, :sse)
 
       {:ok, transport} =
-        start_supervised({SSE, server: StubServer, name: name, registry: registry})
+        start_supervised({SSE, server: StubServer, name: name})
 
       post_opts = SSEPlug.init(server: StubServer, mode: :post)
-      %{post_opts: post_opts, transport: transport, registry: registry, session_id: session_id}
+      %{post_opts: post_opts, transport: transport, session_id: session_id}
     end
 
     test "POST request with valid JSON returns response", %{
@@ -230,17 +211,17 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
   end
 
   describe "session ID extraction" do
-    setup %{registry: registry} do
-      name = registry.transport(StubServer, :sse)
+    setup do
+      name = Registry.transport_name(StubServer, :sse)
 
       {:ok, transport} =
-        start_supervised({SSE, server: StubServer, name: name, registry: registry})
+        start_supervised({SSE, server: StubServer, name: name})
 
       post_opts = SSEPlug.init(server: StubServer, mode: :post)
       %{post_opts: post_opts, transport: transport}
     end
 
-    test "notification to unknown session returns error", %{post_opts: post_opts} do
+    test "notification to unknown session is accepted", %{post_opts: post_opts} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -255,11 +236,11 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
         |> put_req_header("x-session-id", "nonexistent-session")
         |> SSEPlug.call(post_opts)
 
-      # No session exists so the SSE transport returns an error
-      assert conn.status == 400
+      # SSE transport accepts notifications (fire-and-forget)
+      assert conn.status == 202
     end
 
-    test "notification without session ID returns error", %{post_opts: post_opts} do
+    test "notification without session ID is accepted", %{post_opts: post_opts} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -273,7 +254,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
         |> conn("/messages", body)
         |> SSEPlug.call(post_opts)
 
-      assert conn.status == 400
+      assert conn.status == 202
     end
   end
 end

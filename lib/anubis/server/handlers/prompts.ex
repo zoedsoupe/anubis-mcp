@@ -12,7 +12,7 @@ defmodule Anubis.Server.Handlers.Prompts do
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_list(request, frame, server_module) do
     prompts = Handlers.get_server_prompts(server_module, frame)
-    limit = frame.private[:pagination_limit]
+    limit = frame.pagination_limit
     {prompts, cursor} = Handlers.maybe_paginate(request, prompts, limit)
 
     {:reply,
