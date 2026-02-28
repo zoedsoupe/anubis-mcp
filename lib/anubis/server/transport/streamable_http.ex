@@ -44,6 +44,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   - `:name` - Process registration name
   """
 
+  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   use GenServer
@@ -61,6 +62,100 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   require Message
 
   @type t :: GenServer.server()
+
+  @type http_state :: %{
+          session_id: String.t() | nil,
+          session_header: String.t()
+        }
+
+  @impl Anubis.Transport
+  @spec transport_init(keyword()) :: {:ok, http_state()} | {:error, term()}
+  def transport_init(opts \\ []) do
+    {:ok,
+     %{
+       session_id: Keyword.get(opts, :session_id),
+       session_header: Keyword.get(opts, :session_header, "mcp-session-id")
+     }}
+  end
+
+  @impl Anubis.Transport
+  @spec parse(binary() | map(), http_state()) ::
+          {:ok, [map()], http_state()} | {:error, term()}
+  def parse(raw, state) when is_binary(raw) do
+    case JSON.decode(raw) do
+      {:ok, %{} = message} ->
+        {:ok, [message], state}
+
+      {:ok, messages} when is_list(messages) ->
+        if Enum.all?(messages, &is_map/1) do
+          {:ok, messages, state}
+        else
+          {:error, :invalid_message}
+        end
+
+      {:error, _} ->
+        {:error, :invalid_json}
+    end
+  end
+
+  def parse(raw, state) when is_map(raw) do
+    {:ok, [raw], state}
+  end
+
+  @impl Anubis.Transport
+  @spec encode(map(), http_state()) :: {:ok, binary(), http_state()} | {:error, term()}
+  def encode(message, state) when is_map(message) do
+    {:ok, JSON.encode!(message), state}
+  rescue
+    e in [Protocol.UndefinedError, Jason.EncodeError] ->
+      {:error, {:encode_error, Exception.message(e)}}
+  end
+
+  @impl Anubis.Transport
+  @spec extract_metadata(term(), http_state()) :: map()
+  def extract_metadata(%Plug.Conn{} = conn, state) do
+    session_id =
+      conn
+      |> Plug.Conn.get_req_header(state.session_header)
+      |> List.first()
+      |> Kernel.||(state.session_id)
+
+    %{
+      transport: :streamable_http,
+      type: :server,
+      session_id: session_id,
+      remote_ip: conn.remote_ip,
+      request_path: conn.request_path
+    }
+  end
+
+  def extract_metadata(headers, state) when is_list(headers) do
+    session_id = find_header(headers, state.session_header) || state.session_id
+
+    %{
+      transport: :streamable_http,
+      type: :server,
+      session_id: session_id
+    }
+  end
+
+  def extract_metadata(_raw_input, state) do
+    %{
+      transport: :streamable_http,
+      type: :server,
+      session_id: state.session_id
+    }
+  end
+
+  defp find_header(headers, name) do
+    Enum.find_value(headers, fn
+      {key, value} when is_binary(key) ->
+        if String.downcase(key) == String.downcase(name), do: value
+
+      _ ->
+        nil
+    end)
+  end
 
   @type request_t :: %RequestParams{
           transport: GenServer.server(),
