@@ -39,6 +39,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   This allows the server to send requests and notifications without a client request.
   """
 
+  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   use GenServer
@@ -54,6 +55,82 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   @type t :: GenServer.server()
   @type params_t :: Enumerable.t(option)
+
+  @type http_state :: %{
+          session_id: String.t() | nil,
+          last_event_id: String.t() | nil
+        }
+
+  @impl Anubis.Transport
+  @spec transport_init(keyword()) :: {:ok, http_state()} | {:error, term()}
+  def transport_init(opts \\ []) do
+    {:ok,
+     %{
+       session_id: Keyword.get(opts, :session_id),
+       last_event_id: Keyword.get(opts, :last_event_id)
+     }}
+  end
+
+  @impl Anubis.Transport
+  @spec parse(binary() | map(), http_state()) ::
+          {:ok, [map()], http_state()} | {:error, term()}
+  def parse(raw, state) when is_binary(raw) do
+    case JSON.decode(raw) do
+      {:ok, %{} = message} ->
+        {:ok, [message], state}
+
+      {:ok, messages} when is_list(messages) ->
+        if Enum.all?(messages, &is_map/1) do
+          {:ok, messages, state}
+        else
+          {:error, :invalid_message}
+        end
+
+      {:error, _} ->
+        {:error, :invalid_json}
+    end
+  end
+
+  def parse(raw, state) when is_map(raw) do
+    {:ok, [raw], state}
+  end
+
+  @impl Anubis.Transport
+  @spec encode(map(), http_state()) :: {:ok, binary(), http_state()} | {:error, term()}
+  def encode(message, state) when is_map(message) do
+    {:ok, JSON.encode!(message), state}
+  rescue
+    e in [Protocol.UndefinedError, Jason.EncodeError] ->
+      {:error, {:encode_error, Exception.message(e)}}
+  end
+
+  @impl Anubis.Transport
+  @spec extract_metadata(term(), http_state()) :: map()
+  def extract_metadata(headers, state) when is_list(headers) do
+    session_id = find_header(headers, "mcp-session-id") || state.session_id
+
+    %{
+      transport: :streamable_http,
+      session_id: session_id
+    }
+  end
+
+  def extract_metadata(_raw_input, state) do
+    %{
+      transport: :streamable_http,
+      session_id: state.session_id
+    }
+  end
+
+  defp find_header(headers, name) do
+    Enum.find_value(headers, fn
+      {key, value} when is_binary(key) ->
+        if String.downcase(key) == String.downcase(name), do: value
+
+      _ ->
+        nil
+    end)
+  end
 
   @typedoc """
   The options for the Streamable HTTP transport.
