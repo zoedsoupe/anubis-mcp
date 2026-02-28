@@ -14,13 +14,13 @@ defmodule Anubis.Client.State do
           server_capabilities: map() | nil,
           server_info: map() | nil,
           protocol_version: String.t(),
+          protocol_module: module() | nil,
           timeout: pos_integer(),
           transport: map(),
           pending_requests: %{String.t() => Request.t()},
           progress_callbacks: %{String.t() => Base.progress_callback()},
           log_callback: Base.log_callback() | nil,
           sampling_callback: (map() -> {:ok, map()} | {:error, String.t()}) | nil,
-          # Use a map with URI as key for faster access
           roots: %{String.t() => Base.root()}
         }
 
@@ -31,6 +31,7 @@ defmodule Anubis.Client.State do
     :server_info,
     :timeout,
     :protocol_version,
+    :protocol_module,
     :transport,
     pending_requests: %{},
     progress_callbacks: %{},
@@ -41,10 +42,17 @@ defmodule Anubis.Client.State do
 
   @spec new(map()) :: t()
   def new(opts) do
+    protocol_module =
+      case Anubis.Protocol.Registry.get(opts.protocol_version) do
+        {:ok, mod} -> mod
+        :error -> nil
+      end
+
     %__MODULE__{
       client_info: opts.client_info,
       capabilities: opts.capabilities,
       protocol_version: opts.protocol_version,
+      protocol_module: protocol_module,
       transport: opts.transport,
       timeout: opts.timeout
     }

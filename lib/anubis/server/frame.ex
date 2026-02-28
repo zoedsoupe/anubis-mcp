@@ -359,6 +359,22 @@ defmodule Anubis.Server.Frame do
   end
 
   @doc """
+  Gets the negotiated protocol module from the frame's private data.
+
+  Returns the module implementing `Anubis.Protocol.Behaviour` for the
+  negotiated protocol version, or nil if not yet negotiated.
+
+  ## Examples
+
+      mod = Frame.get_protocol_module(frame)
+      # => Anubis.Protocol.V2025_03_26
+  """
+  @spec get_protocol_module(t) :: module() | nil
+  def get_protocol_module(%__MODULE__{} = frame) do
+    Map.get(frame.private, :protocol_module)
+  end
+
+  @doc """
   Gets a request header value from HTTP transport.
 
   Returns the first value for the header, or nil if the transport

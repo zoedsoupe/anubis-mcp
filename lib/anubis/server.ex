@@ -98,7 +98,7 @@ defmodule Anubis.Server do
   alias Anubis.Server.Response
 
   @server_capabilities ~w(prompts tools resources logging completion)a
-  @protocol_versions ~w(2025-03-26 2024-05-11 2024-10-07)
+  @protocol_versions Anubis.Protocol.Registry.supported_versions()
 
   @type request :: map()
   @type response :: map()

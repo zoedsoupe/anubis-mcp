@@ -633,6 +633,24 @@ defmodule Anubis.MCP.Message do
   def progress_params_schema, do: @progress_notif_params_schema
 
   @doc """
+  Returns the progress notification parameters schema for a given protocol version.
+
+  Delegates to the version module via `Anubis.Protocol.Registry`.
+
+  ## Examples
+
+      iex> Message.progress_params_schema_for("2024-11-05")
+      %{"progressToken" => {:required, {:either, {:string, :integer}}}, ...}
+
+      iex> Message.progress_params_schema_for("2025-03-26")
+      %{"progressToken" => ..., "message" => :string}
+  """
+  @spec progress_params_schema_for(String.t()) :: {:ok, map()} | :error
+  def progress_params_schema_for(version) do
+    Anubis.Protocol.Registry.progress_params_schema(version)
+  end
+
+  @doc """
   Builds a response message map without encoding to JSON.
 
   ## Examples
