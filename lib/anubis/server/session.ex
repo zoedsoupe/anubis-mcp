@@ -1,5 +1,14 @@
 defmodule Anubis.Server.Session do
-  @moduledoc false
+  @moduledoc """
+  Per-client MCP session process.
+
+  Each Session is a GenServer that manages the lifecycle of a single MCP client
+  connection. It handles protocol initialization, request/notification dispatch,
+  server-initiated requests (sampling, roots), and session persistence.
+
+  Sessions are created by the transport layer (STDIO creates one at startup,
+  HTTP transports create them dynamically via `Anubis.Server.Supervisor`).
+  """
 
   use GenServer
   use Anubis.Logging
@@ -60,6 +69,20 @@ defmodule Anubis.Server.Session do
     {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}}
   ])
 
+  @doc """
+  Starts a Session process linked to the current process.
+
+  ## Options
+
+    * `:session_id` — unique session identifier (required)
+    * `:server_module` — the MCP server module implementing `Anubis.Server` (required)
+    * `:name` — GenServer registration name (required)
+    * `:transport` — transport configuration `[layer: module, name: name]` (required)
+    * `:task_supervisor` — name of the `Task.Supervisor` for async work (required)
+    * `:registry` — session registry module (default: `Anubis.Server.Registry`)
+    * `:session_idle_timeout` — idle timeout in ms before session expires (default: 30 min)
+    * `:timeout` — request timeout in ms (default: 30s)
+  """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     opts = parse_options!(opts)
@@ -68,7 +91,7 @@ defmodule Anubis.Server.Session do
     GenServer.start_link(__MODULE__, Map.new(opts), name: name)
   end
 
-  # GenServer callbacks
+  # Lifecycle
 
   @impl GenServer
   def init(opts) do
@@ -122,7 +145,7 @@ defmodule Anubis.Server.Session do
     {:ok, state, :hibernate}
   end
 
-  # Handle MCP requests (from transport layer)
+  # Request/Response handling
 
   @impl GenServer
   def handle_call({:mcp_request, decoded, transport_context}, _from, state) when is_map(decoded) do
@@ -160,7 +183,7 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  # Handle MCP notifications
+  # Notification dispatch
 
   @impl GenServer
   def handle_cast({:mcp_notification, decoded, transport_context}, state) when is_map(decoded) do
@@ -180,7 +203,7 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  # Handle MCP responses (to server-initiated requests like sampling/roots)
+  # Server-initiated request responses (sampling/roots)
 
   def handle_cast({:mcp_response, decoded, _context}, state) when is_map(decoded) do
     cond do
@@ -622,7 +645,9 @@ defmodule Anubis.Server.Session do
   end
 
   defp merge_transport_assigns(state, %{assigns: assigns}) when is_map(assigns) do
+    original_context = state.frame.context
     frame = Frame.assign(state.frame, assigns)
+    frame = %{frame | context: original_context}
     %{state | frame: frame}
   end
 

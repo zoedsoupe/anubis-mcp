@@ -179,21 +179,35 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   @impl Transport
   def supported_protocol_versions, do: ["2025-03-26", "2025-06-18"]
 
+  @doc """
+  Registers the calling process as the SSE handler for a session.
+
+  Called by the Plug when establishing an SSE connection.
+  """
   @spec register_sse_handler(GenServer.server(), String.t()) :: :ok | {:error, term()}
   def register_sse_handler(transport, session_id) do
     GenServer.call(transport, {:register_sse_handler, session_id, self()}, 5000)
   end
 
+  @doc """
+  Unregisters the SSE handler for a session. Called when the SSE connection closes.
+  """
   @spec unregister_sse_handler(GenServer.server(), String.t()) :: :ok
   def unregister_sse_handler(transport, session_id) do
     GenServer.cast(transport, {:unregister_sse_handler, session_id})
   end
 
+  @doc """
+  Returns the SSE handler pid for a session, or `nil` if none is connected.
+  """
   @spec get_sse_handler(GenServer.server(), String.t()) :: pid() | nil
   def get_sse_handler(transport, session_id) do
     GenServer.call(transport, {:get_sse_handler, session_id})
   end
 
+  @doc """
+  Routes a message to a specific session's SSE handler for server-to-client push.
+  """
   @spec route_to_session(GenServer.server(), String.t(), binary()) ::
           :ok | {:error, term()}
   def route_to_session(transport, session_id, message) do

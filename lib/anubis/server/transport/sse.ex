@@ -335,24 +335,15 @@ defmodule Anubis.Server.Transport.SSE do
 
   @impl GenServer
   def handle_call({:handle_message, session_id, message, context}, _from, state) when is_map(message) do
-    session_pid = state.registry.session_name(state.server, session_id)
-    timeout = state.request_timeout
+    case dispatch_session_message(session_id, message, context, state) do
+      {:ok, response} ->
+        maybe_send_through_sse(response, session_id, state)
 
-    if is_nil(session_pid) do
-      {:reply, {:error, :no_session}, state}
-    else
-      if Message.is_notification(message) do
-        GenServer.cast(session_pid, {:mcp_notification, message, context})
+      {:ok_cast} ->
         {:reply, {:ok, nil}, state}
-      else
-        case forward_request_to_session(session_pid, message, context, timeout) do
-          {:ok, response} ->
-            maybe_send_through_sse(response, session_id, state)
 
-          {:error, reason} ->
-            {:reply, {:error, reason}, state}
-        end
-      end
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -402,6 +393,22 @@ defmodule Anubis.Server.Transport.SSE do
     {:reply, endpoint_url, state}
   end
 
+  defp dispatch_session_message(session_id, message, context, state) do
+    session_pid = state.registry.session_name(state.server, session_id)
+
+    cond do
+      is_nil(session_pid) ->
+        {:error, :no_session}
+
+      Message.is_notification(message) ->
+        GenServer.cast(session_pid, {:mcp_notification, message, context})
+        {:ok_cast}
+
+      true ->
+        forward_request_to_session(session_pid, message, context, state.request_timeout)
+    end
+  end
+
   defp maybe_send_through_sse(response, session_id, state) do
     case Map.get(state.sse_handlers, session_id) do
       {pid, _ref} ->
@@ -430,6 +437,10 @@ defmodule Anubis.Server.Transport.SSE do
         {:error, reason}
     end
   catch
+    :exit, {:noproc, _} = reason ->
+      Logging.transport_event("session_not_found", %{reason: reason}, level: :warning)
+      {:error, :no_session}
+
     :exit, reason ->
       Logging.transport_event("server_call_failed", %{reason: reason}, level: :error)
       {:error, :server_unavailable}

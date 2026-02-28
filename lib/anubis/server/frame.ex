@@ -276,7 +276,19 @@ defmodule Anubis.Server.Frame do
   end
 
   @doc """
-  Serializes Frame for persistent storage (omits context).
+  Serializes Frame for persistent storage.
+
+  Only `assigns` and `pagination_limit` are persisted. The following fields are
+  **runtime-only** and excluded from serialization:
+
+    * `tools` — runtime-registered tool definitions (includes validator functions)
+    * `resources` — runtime-registered resource definitions
+    * `prompts` — runtime-registered prompt definitions
+    * `resource_templates` — runtime-registered resource template definitions
+    * `context` — rebuilt by Session before each callback invocation
+
+  Compile-time components (registered via the `component` macro) are always
+  available from the server module and do not need persistence.
   """
   @spec to_saved(t()) :: map()
   def to_saved(%__MODULE__{} = frame) do
@@ -287,11 +299,12 @@ defmodule Anubis.Server.Frame do
   end
 
   @doc """
-  Reconstructs Frame from saved map. Context stays default — Session will set it.
+  Reconstructs Frame from a previously saved map.
 
-  Runtime component validators (functions) are not serializable, so tools/prompts/resources
-  registered at runtime are not restored. Compile-time components (via `component` macro)
-  are always available from the server module.
+  Only `assigns` and `pagination_limit` are restored. Runtime-only fields (`tools`,
+  `resources`, `prompts`, `resource_templates`) are initialized empty — their validator
+  functions are not serializable. `context` is left as the default struct and will be
+  set by Session before each callback invocation.
   """
   @spec from_saved(map()) :: t()
   def from_saved(map) when is_map(map) do

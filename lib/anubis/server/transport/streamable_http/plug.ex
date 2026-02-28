@@ -237,25 +237,11 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_sse_request(conn, session_pid, message, session_id, context, opts) do
-      %{transport: transport, session_header: session_header} = opts
+      %{session_header: session_header} = opts
 
       case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
         {:ok, response} when is_binary(response) ->
-          handler_pid = StreamableHTTP.get_sse_handler(transport, session_id)
-
-          if handler_pid && Process.alive?(handler_pid) do
-            send(handler_pid, {:sse_message, response})
-
-            conn
-            |> put_resp_content_type("application/json")
-            |> send_resp(202, "{}")
-          else
-            if handler_pid do
-              StreamableHTTP.unregister_sse_handler(transport, session_id)
-            end
-
-            establish_sse_for_request(conn, response, session_id, opts)
-          end
+          route_sse_response(conn, response, session_id, opts)
 
         {:ok, nil} ->
           conn
@@ -275,6 +261,26 @@ if Code.ensure_loaded?(Plug) do
           Error.protocol(:internal_error, %{message: "Server unavailable"}),
           extract_request_id(message)
         )
+    end
+
+    defp route_sse_response(conn, response, session_id, %{transport: transport} = opts) do
+      handler_pid = StreamableHTTP.get_sse_handler(transport, session_id)
+
+      cond do
+        handler_pid && Process.alive?(handler_pid) ->
+          send(handler_pid, {:sse_message, response})
+
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(202, "{}")
+
+        handler_pid ->
+          StreamableHTTP.unregister_sse_handler(transport, session_id)
+          establish_sse_for_request(conn, response, session_id, opts)
+
+        true ->
+          establish_sse_for_request(conn, response, session_id, opts)
+      end
     end
 
     defp establish_sse_for_request(conn, response, session_id, opts) do

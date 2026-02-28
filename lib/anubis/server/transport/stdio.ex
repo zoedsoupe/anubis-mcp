@@ -289,7 +289,6 @@ defmodule Anubis.Server.Transport.STDIO do
 
   defp process_message(message, %{server: server_module} = state) do
     session_pid = Registry.stdio_session_name(server_module)
-    timeout = state.request_timeout
 
     context = %{
       type: :stdio,
@@ -297,23 +296,37 @@ defmodule Anubis.Server.Transport.STDIO do
       pid: System.pid()
     }
 
-    if Process.whereis(session_pid) do
-      if Message.is_notification(message) do
-        GenServer.cast(session_pid, {:mcp_notification, message, context})
-      else
-        case GenServer.call(session_pid, {:mcp_request, message, context}, timeout) do
-          {:ok, response} when is_binary(response) ->
-            IO.write(response <> "\n")
+    case get_session_pid(session_pid) do
+      {:ok, pid} ->
+        dispatch_to_session(message, pid, context, state)
 
-          {:ok, nil} ->
-            :ok
+      :error ->
+        Logging.transport_event("no_session", %{server: server_module}, level: :error)
+    end
+  end
 
-          {:error, reason} ->
-            Logging.transport_event("session_error", %{reason: reason}, level: :error)
-        end
-      end
+  defp get_session_pid(session_name) do
+    if Process.whereis(session_name), do: {:ok, session_name}, else: :error
+  end
+
+  defp dispatch_to_session(message, session_pid, context, state) do
+    if Message.is_notification(message) do
+      GenServer.cast(session_pid, {:mcp_notification, message, context})
     else
-      Logging.transport_event("no_session", %{server: server_module}, level: :error)
+      forward_request_to_session(session_pid, message, context, state.request_timeout)
+    end
+  end
+
+  defp forward_request_to_session(session_pid, message, context, timeout) do
+    case GenServer.call(session_pid, {:mcp_request, message, context}, timeout) do
+      {:ok, response} when is_binary(response) ->
+        IO.write(response <> "\n")
+
+      {:ok, nil} ->
+        :ok
+
+      {:error, reason} ->
+        Logging.transport_event("session_error", %{reason: reason}, level: :error)
     end
   catch
     :exit, reason ->

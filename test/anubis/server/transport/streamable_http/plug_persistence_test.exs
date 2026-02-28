@@ -115,12 +115,35 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
   end
 
   describe "session lifecycle with persistence" do
-    test "initialize request triggers session persistence" do
-      message = %{
+    setup do
+      task_sup = :"test_task_sup_#{System.unique_integer([:positive])}"
+      transport_name = :"test_transport_#{System.unique_integer([:positive])}"
+
+      start_supervised!({Task.Supervisor, name: task_sup})
+      start_supervised!({StubTransport, name: transport_name})
+
+      %{task_supervisor: task_sup, transport_name: transport_name}
+    end
+
+    test "initialize request triggers session persistence", ctx do
+      session_id = "persist_init_#{System.unique_integer([:positive])}"
+      session_name = :"session_#{session_id}"
+
+      {:ok, session} =
+        start_supervised(
+          {Anubis.Server.Session,
+           session_id: session_id,
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: ctx.transport_name],
+           task_supervisor: ctx.task_supervisor}
+        )
+
+      init_request = %{
         "jsonrpc" => "2.0",
         "method" => "initialize",
         "params" => %{
-          "protocolVersion" => "2024-11-21",
+          "protocolVersion" => "2025-03-26",
           "capabilities" => %{},
           "clientInfo" => %{
             "name" => "test_client",
@@ -130,13 +153,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
         "id" => "init_1"
       }
 
-      _conn =
-        :post
-        |> conn("/", JSON.encode!(message))
-        |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json")
+      {:ok, _response} = GenServer.call(session, {:mcp_request, init_request, %{}})
 
-      assert true
+      {:ok, stored} = MockSessionStore.load(session_id, [])
+      assert stored.id == session_id
+      assert stored.protocol_version == "2025-03-26"
+      assert stored.client_info == %{"name" => "test_client", "version" => "1.0.0"}
     end
 
     test "session data can be updated in store" do

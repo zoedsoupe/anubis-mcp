@@ -541,7 +541,10 @@ defmodule Anubis.Server do
   @doc """
   Sends a resources list changed notification.
 
-  Must be called from within a Session callback (the current process IS the Session).
+  **Must be called from within a Session callback** — the current process must be
+  the Session GenServer. Calling from outside a callback will silently lose the message.
+
+  For external processes, use `send(session_pid, {:send_notification, "notifications/resources/list_changed", %{}})`.
   """
   @spec send_resources_list_changed :: :ok
   def send_resources_list_changed do
@@ -551,6 +554,8 @@ defmodule Anubis.Server do
 
   @doc """
   Sends a resource updated notification for a specific resource.
+
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_resource_updated(uri :: String.t(), timestamp :: DateTime.t() | nil) :: :ok
   def send_resource_updated(uri, timestamp \\ nil) do
@@ -562,6 +567,8 @@ defmodule Anubis.Server do
 
   @doc """
   Sends a prompts list changed notification.
+
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_prompts_list_changed :: :ok
   def send_prompts_list_changed do
@@ -571,6 +578,8 @@ defmodule Anubis.Server do
 
   @doc """
   Sends a tools list changed notification.
+
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_tools_list_changed :: :ok
   def send_tools_list_changed do
@@ -580,6 +589,8 @@ defmodule Anubis.Server do
 
   @doc """
   Sends a log message to the client.
+
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_log_message(level :: Logger.level(), message :: String.t(), metadata :: map() | nil) :: :ok
   def send_log_message(level, message, data \\ nil) do
