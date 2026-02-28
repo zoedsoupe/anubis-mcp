@@ -8,6 +8,7 @@ defmodule Anubis.Transport.STDIO do
   > the [Transport options](./transport_options.html) guides for reference.
   """
 
+  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   use GenServer
@@ -19,6 +20,72 @@ defmodule Anubis.Transport.STDIO do
   alias Anubis.Transport.Behaviour, as: Transport
 
   @type t :: GenServer.server()
+
+  # Functional transport state
+  @type stdio_state :: %{buffer: binary()}
+
+  @impl Anubis.Transport
+  @spec transport_init(keyword()) :: {:ok, stdio_state()} | {:error, term()}
+  def transport_init(_opts \\ []) do
+    {:ok, %{buffer: ""}}
+  end
+
+  @impl Anubis.Transport
+  @spec parse(binary() | map(), stdio_state()) ::
+          {:ok, [map()], stdio_state()} | {:error, term()}
+  def parse(raw, state) when is_binary(raw) do
+    data = state.buffer <> raw
+    {lines, rest} = split_complete_lines(data)
+
+    case decode_lines(lines) do
+      {:ok, messages} ->
+        {:ok, messages, %{state | buffer: rest}}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @impl Anubis.Transport
+  @spec encode(map(), stdio_state()) :: {:ok, binary(), stdio_state()} | {:error, term()}
+  def encode(message, state) when is_map(message) do
+    {:ok, JSON.encode!(message) <> "\n", state}
+  rescue
+    e in [Protocol.UndefinedError, Jason.EncodeError] ->
+      {:error, {:encode_error, Exception.message(e)}}
+  end
+
+  @impl Anubis.Transport
+  @spec extract_metadata(term(), stdio_state()) :: map()
+  def extract_metadata(_raw_input, _state) do
+    %{transport: :stdio}
+  end
+
+  defp split_complete_lines(data) do
+    case String.split(data, "\n", trim: false) do
+      [] ->
+        {[], ""}
+
+      parts ->
+        {complete, [rest]} = Enum.split(parts, -1)
+        {Enum.reject(complete, &(&1 == "")), rest}
+    end
+  end
+
+  defp decode_lines(lines) do
+    lines
+    |> Enum.reduce_while({:ok, []}, fn line, {:ok, acc} ->
+      case JSON.decode(line) do
+        {:ok, %{} = message} -> {:cont, {:ok, [message | acc]}}
+        {:ok, _} -> {:halt, {:error, :invalid_message}}
+        {:error, _} -> {:halt, {:error, :invalid_json}}
+      end
+    end)
+    |> case do
+      {:ok, messages} -> {:ok, Enum.reverse(messages)}
+      error -> error
+    end
+  end
 
   @type params_t :: Enumerable.t(option)
 

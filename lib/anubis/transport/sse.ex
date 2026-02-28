@@ -22,6 +22,7 @@ defmodule Anubis.Transport.SSE do
   > the [Transport options](./transport_options.html) guides for reference.
   """
 
+  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   use GenServer
@@ -38,6 +39,68 @@ defmodule Anubis.Transport.SSE do
   @deprecated "Use Anubis.Transport.StreamableHTTP instead"
 
   @type t :: GenServer.server()
+
+  @type sse_state :: %{
+          message_url: String.t() | nil,
+          last_event_id: String.t() | nil
+        }
+
+  @impl Anubis.Transport
+  @spec transport_init(keyword()) :: {:ok, sse_state()} | {:error, term()}
+  def transport_init(opts \\ []) do
+    {:ok,
+     %{
+       message_url: Keyword.get(opts, :message_url),
+       last_event_id: Keyword.get(opts, :last_event_id)
+     }}
+  end
+
+  @impl Anubis.Transport
+  @spec parse(binary() | map(), sse_state()) ::
+          {:ok, [map()], sse_state()} | {:error, term()}
+  def parse(raw, state) when is_binary(raw) do
+    case JSON.decode(raw) do
+      {:ok, %{} = message} ->
+        {:ok, [message], state}
+
+      {:ok, _} ->
+        {:error, :invalid_message}
+
+      {:error, _} ->
+        {:error, :invalid_json}
+    end
+  end
+
+  def parse(raw, state) when is_map(raw) do
+    {:ok, [raw], state}
+  end
+
+  @impl Anubis.Transport
+  @spec encode(map(), sse_state()) :: {:ok, binary(), sse_state()} | {:error, term()}
+  def encode(message, state) when is_map(message) do
+    {:ok, JSON.encode!(message) <> "\n", state}
+  rescue
+    e in [Protocol.UndefinedError, Jason.EncodeError] ->
+      {:error, {:encode_error, Exception.message(e)}}
+  end
+
+  @impl Anubis.Transport
+  @spec extract_metadata(term(), sse_state()) :: map()
+  def extract_metadata(%Event{id: id, event: event_type}, state) do
+    %{
+      transport: :sse,
+      event_type: event_type,
+      event_id: id,
+      message_url: state.message_url
+    }
+  end
+
+  def extract_metadata(_raw_input, state) do
+    %{
+      transport: :sse,
+      message_url: state.message_url
+    }
+  end
 
   @typedoc """
   The options for the MCP server.
