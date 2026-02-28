@@ -39,7 +39,7 @@ defmodule Anubis.Server.Session do
     name: {:custom, &Anubis.genserver_name/1},
     client_info: :map,
     client_capabilities: :map,
-    log_level: {:required, :string},
+    log_level: :string,
     id: :string,
     pending_requests: {:map, :string, %{started_at: :integer, method: :string}}
   }
