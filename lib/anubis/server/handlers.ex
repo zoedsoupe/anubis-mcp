@@ -52,15 +52,27 @@ defmodule Anubis.Server.Handlers do
   end
 
   def get_server_resources(module, frame) do
-    (module.__components__(:resource) ++ Frame.get_resources(frame))
-    |> Enum.reject(& &1.uri_template)
-    |> Enum.sort_by(& &1.name)
+    compile_time =
+      :resource
+      |> module.__components__()
+      |> Enum.reject(& &1.uri_template)
+
+    runtime =
+      Map.values(frame.resources)
+
+    Enum.sort_by(compile_time ++ runtime, & &1.name)
   end
 
   def get_server_resource_templates(module, frame) do
-    (module.__components__(:resource) ++ Frame.get_resources(frame))
-    |> Enum.filter(& &1.uri_template)
-    |> Enum.sort_by(& &1.name)
+    compile_time =
+      :resource
+      |> module.__components__()
+      |> Enum.filter(& &1.uri_template)
+
+    runtime =
+      Map.values(frame.resource_templates)
+
+    Enum.sort_by(compile_time ++ runtime, & &1.name)
   end
 
   @spec maybe_paginate(map, list(struct), non_neg_integer | nil) ::

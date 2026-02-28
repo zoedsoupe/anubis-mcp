@@ -3,7 +3,8 @@ defmodule Anubis.Server.Transport.STDIO do
   STDIO transport implementation for MCP servers.
 
   This module handles communication with MCP clients via standard input/output streams,
-  processing incoming JSON-RPC messages and forwarding responses.
+  processing incoming JSON-RPC messages and forwarding responses directly to the
+  Session process.
   """
 
   @behaviour Anubis.Transport
@@ -15,6 +16,7 @@ defmodule Anubis.Server.Transport.STDIO do
   import Peri
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Registry
   alias Anubis.Telemetry
   alias Anubis.Transport.Behaviour, as: Transport
 
@@ -95,7 +97,7 @@ defmodule Anubis.Server.Transport.STDIO do
   @typedoc """
   STDIO transport options
 
-  - `:server` - The server process (required)
+  - `:server` - The server module (required)
   - `:name` - Optional name for registering the GenServer
   """
   @type option ::
@@ -106,23 +108,9 @@ defmodule Anubis.Server.Transport.STDIO do
   defschema(:parse_options, [
     {:server, {:required, {:oneof, [{:custom, &Anubis.genserver_name/1}, :pid, {:tuple, [:atom, :any]}]}}},
     {:name, {:custom, &Anubis.genserver_name/1}},
-    {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}}
   ])
 
-  @doc """
-  Starts a new STDIO transport process.
-
-  ## Parameters
-    * `opts` - Options
-      * `:server` - (required) The server to forward messages to
-      * `:name` - Optional name for the GenServer process
-
-  ## Examples
-
-      iex> Anubis.Server.Transport.STDIO.start_link(server: my_server)
-      {:ok, pid}
-  """
   @impl Transport
   @spec start_link(Enumerable.t(option())) :: GenServer.on_start()
   def start_link(opts) do
@@ -136,28 +124,11 @@ defmodule Anubis.Server.Transport.STDIO do
     end
   end
 
-  @doc """
-  Sends a message to the client via stdout.
-
-  ## Parameters
-    * `transport` - The transport process
-    * `message` - The message to send
-
-  ## Returns
-    * `:ok` if message was sent successfully
-    * `{:error, reason}` otherwise
-  """
   @impl Transport
   def send_message(transport, message, opts) when is_binary(message) do
     GenServer.call(transport, {:send, message}, opts[:timeout])
   end
 
-  @doc """
-  Shuts down the transport connection.
-
-  ## Parameters
-    * `transport` - The transport process
-  """
   @impl Transport
   @spec shutdown(GenServer.server()) :: :ok
   def shutdown(transport) do
@@ -175,7 +146,6 @@ defmodule Anubis.Server.Transport.STDIO do
     state = %{
       server: opts.server,
       reading_task: nil,
-      registry: opts.registry,
       request_timeout: opts.request_timeout
     }
 
@@ -219,7 +189,7 @@ defmodule Anubis.Server.Transport.STDIO do
   end
 
   @impl GenServer
-  def handle_cast({:send, message}, state) do
+  def handle_call({:send, message}, _from, state) do
     Logging.transport_event(
       "outgoing",
       %{transport: :stdio, message_size: byte_size(message)},
@@ -233,7 +203,7 @@ defmodule Anubis.Server.Transport.STDIO do
     )
 
     IO.write(message)
-    {:noreply, state}
+    {:reply, :ok, state}
   end
 
   @impl GenServer
@@ -317,9 +287,8 @@ defmodule Anubis.Server.Transport.STDIO do
     end
   end
 
-  defp process_message(message, %{server: server_name, registry: registry} = state) do
-    server = registry.whereis_server(server_name)
-    timeout = state.request_timeout
+  defp process_message(message, %{server: server_module} = state) do
+    session_pid = Registry.stdio_session_name(server_module)
 
     context = %{
       type: :stdio,
@@ -327,21 +296,40 @@ defmodule Anubis.Server.Transport.STDIO do
       pid: System.pid()
     }
 
-    if Message.is_notification(message) do
-      GenServer.cast(server, {:notification, message, "stdio", context})
-    else
-      case GenServer.call(server, {:request, message, "stdio", context}, timeout) do
-        {:ok, response} when is_binary(response) ->
-          # send_message(self(), response)
-          # NOTE: will be fixed soon, we need to rewrite stdio for server
-          :ok
+    case get_session_pid(session_pid) do
+      {:ok, pid} ->
+        dispatch_to_session(message, pid, context, state)
 
-        {:error, reason} ->
-          Logging.transport_event("server_error", %{reason: reason}, level: :error)
-      end
+      :error ->
+        Logging.transport_event("no_session", %{server: server_module}, level: :error)
+    end
+  end
+
+  defp get_session_pid(session_name) do
+    if Process.whereis(session_name), do: {:ok, session_name}, else: :error
+  end
+
+  defp dispatch_to_session(message, session_pid, context, state) do
+    if Message.is_notification(message) do
+      GenServer.cast(session_pid, {:mcp_notification, message, context})
+    else
+      forward_request_to_session(session_pid, message, context, state.request_timeout)
+    end
+  end
+
+  defp forward_request_to_session(session_pid, message, context, timeout) do
+    case GenServer.call(session_pid, {:mcp_request, message, context}, timeout) do
+      {:ok, response} when is_binary(response) ->
+        IO.write(response <> "\n")
+
+      {:ok, nil} ->
+        :ok
+
+      {:error, reason} ->
+        Logging.transport_event("session_error", %{reason: reason}, level: :error)
     end
   catch
     :exit, reason ->
-      Logging.transport_event("server_call_failed", %{reason: reason}, level: :error)
+      Logging.transport_event("session_call_failed", %{reason: reason}, level: :error)
   end
 end

@@ -10,11 +10,6 @@ if Code.ensure_loaded?(Plug) do
     - POST: Handles JSON-RPC messages from client to server
     - DELETE: Closes a session
 
-    ## SSE Streaming Architecture
-
-    This Plug handles SSE streaming by keeping the request process alive
-    and managing the streaming loop for server-to-client communication.
-
     ## Usage in Phoenix Router
 
         pipeline :mcp do
@@ -26,32 +21,11 @@ if Code.ensure_loaded?(Plug) do
           forward "/", to: Anubis.Server.Transport.StreamableHTTP.Plug, server: :your_server_name
         end
 
-    ## Usage in Plug Router
-
-        forward "/mcp", to: Anubis.Server.Transport.StreamableHTTP.Plug, init_opts: [server: :your_server_name]
-
     ## Configuration Options
 
     - `:server` - The server process name (required)
     - `:session_header` - Custom header name for session ID (default: "mcp-session-id")
     - `:request_timeout` - Request timeout in milliseconds (default: 30000)
-    - `:registry` - The registry to use. See `Anubis.Server.Registry.Adapter` for more information (default: Elixir's Registry implementation)
-
-    ## Security Features
-
-    - Origin header validation for DNS rebinding protection
-    - Session-based request validation
-    - Automatic session cleanup on connection loss
-    - Rate limiting support (when configured)
-
-    ## HTTP Response Codes
-
-    - 200: Successful request
-    - 202: Accepted (for notifications and responses)
-    - 400: Bad request (malformed JSON-RPC)
-    - 404: Session not found
-    - 405: Method not allowed
-    - 500: Internal server error
     """
 
     @behaviour Plug
@@ -63,8 +37,9 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Error
     alias Anubis.MCP.ID
     alias Anubis.MCP.Message
+    alias Anubis.Server.Registry
+    alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.StreamableHTTP
-    alias Anubis.Server.Transport.StreamableHTTP.RequestParams
     alias Anubis.SSE.Streaming
     alias Plug.Conn.Unfetched
 
@@ -78,15 +53,16 @@ if Code.ensure_loaded?(Plug) do
     @impl Plug
     def init(opts) do
       server = Keyword.fetch!(opts, :server)
-      registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
-      transport = registry.transport(server, :streamable_http)
+      session_config = ServerSupervisor.get_session_config(server)
+      transport_name = Registry.transport_name(server, :streamable_http)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
 
       %{
         server: server,
-        registry: registry,
-        transport: transport,
+        registry_mod: session_config.registry_mod,
+        registry_name: Registry.registry_name(server),
+        transport: transport_name,
         session_header: session_header,
         timeout: request_timeout
       }
@@ -122,9 +98,9 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    # POST request handler - processes MCP messages
+    # POST request handler - processes MCP messages directly to Session
 
-    defp handle_post(conn, %{transport: transport, session_header: session_header} = opts) do
+    defp handle_post(conn, %{session_header: session_header} = opts) do
       with :ok <- validate_accept_header(conn),
            {:ok, body, conn} <- maybe_read_request_body(conn, opts),
            {:ok, [message]} <- maybe_parse_messages(body) do
@@ -136,17 +112,7 @@ if Code.ensure_loaded?(Plug) do
           session_id: session_id
         })
 
-        process_message(
-          conn,
-          RequestParams.new(
-            message: message,
-            transport: transport,
-            session_id: session_id,
-            context: context,
-            session_header: session_header,
-            timeout: opts.timeout
-          )
-        )
+        process_message(conn, message, session_id, context, opts)
       else
         {:error, :invalid_accept_header} ->
           send_error(
@@ -173,35 +139,176 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp process_message(conn, %{message: message} = params) when is_map(message) do
-      if Message.is_request(message) do
-        handle_request_with_possible_sse(conn, params)
-      else
-        # Notification
-        params
-        |> StreamableHTTP.handle_message()
-        |> format_notification_response(conn)
+    defp process_message(conn, message, session_id, context, opts) do
+      cond do
+        Message.is_notification(message) ->
+          handle_notification_message(conn, message, session_id, context, opts)
+
+        Message.is_response(message) or Message.is_error(message) ->
+          handle_response_message(conn, message, session_id, context, opts)
+
+        Message.is_request(message) ->
+          handle_request_message(conn, message, session_id, context, opts)
+
+        true ->
+          send_jsonrpc_error(
+            conn,
+            Error.protocol(:invalid_request, %{message: "Invalid message type"}),
+            nil
+          )
       end
     end
 
-    defp format_notification_response({:ok, _}, conn) do
-      conn
-      |> put_resp_content_type("application/json")
-      |> send_resp(202, "{}")
+    defp handle_notification_message(conn, message, session_id, context, opts) do
+      case find_session(opts, session_id) do
+        {:ok, session_pid} ->
+          GenServer.cast(session_pid, {:mcp_notification, message, context})
+
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(202, "{}")
+
+        {:error, :not_found} ->
+          send_error(conn, 400, "No active session")
+      end
     end
 
-    defp format_notification_response({:error, %Error{} = error}, conn) do
-      send_jsonrpc_error(conn, error, nil)
+    defp handle_response_message(conn, message, session_id, context, opts) do
+      case find_session(opts, session_id) do
+        {:ok, session_pid} ->
+          GenServer.cast(session_pid, {:mcp_response, message, context})
+
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(202, "{}")
+
+        {:error, :not_found} ->
+          send_error(conn, 400, "No active session")
+      end
     end
 
-    defp format_notification_response({:error, reason}, conn) do
-      Logging.transport_event("notification_handling_failed", %{reason: reason}, level: :error)
+    defp handle_request_message(conn, message, session_id, context, opts) do
+      case find_or_create_session(opts, session_id, message) do
+        {:ok, session_pid} ->
+          if wants_sse?(conn) do
+            handle_sse_request(conn, session_pid, message, session_id, context, opts)
+          else
+            handle_json_request(conn, session_pid, message, session_id, context, opts)
+          end
 
-      send_jsonrpc_error(
-        conn,
-        Error.protocol(:internal_error, %{reason: reason}),
-        nil
-      )
+        {:error, :no_session} ->
+          send_error(conn, 400, "No active session")
+
+        {:error, reason} ->
+          send_jsonrpc_error(
+            conn,
+            Error.protocol(:internal_error, %{reason: reason}),
+            extract_request_id(message)
+          )
+      end
+    end
+
+    defp handle_json_request(conn, session_pid, message, session_id, context, %{session_header: session_header} = opts) do
+      case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
+        {:ok, response} when is_binary(response) ->
+          conn
+          |> put_resp_content_type("application/json")
+          |> maybe_add_session_header(session_header, session_id)
+          |> send_resp(200, response)
+
+        {:ok, nil} ->
+          conn
+          |> put_resp_content_type("application/json")
+          |> maybe_add_session_header(session_header, session_id)
+          |> send_resp(200, "{}")
+
+        {:error, error} ->
+          handle_request_error(conn, error, message)
+      end
+    catch
+      :exit, reason ->
+        Logging.transport_event("session_call_failed", %{reason: reason}, level: :error)
+
+        send_jsonrpc_error(
+          conn,
+          Error.protocol(:internal_error, %{message: "Server unavailable"}),
+          extract_request_id(message)
+        )
+    end
+
+    defp handle_sse_request(conn, session_pid, message, session_id, context, opts) do
+      %{session_header: session_header} = opts
+
+      case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
+        {:ok, response} when is_binary(response) ->
+          route_sse_response(conn, response, session_id, opts)
+
+        {:ok, nil} ->
+          conn
+          |> put_resp_content_type("application/json")
+          |> maybe_add_session_header(session_header, session_id)
+          |> send_resp(200, "{}")
+
+        {:error, error} ->
+          handle_request_error(conn, error, message)
+      end
+    catch
+      :exit, reason ->
+        Logging.transport_event("session_call_failed", %{reason: reason}, level: :error)
+
+        send_jsonrpc_error(
+          conn,
+          Error.protocol(:internal_error, %{message: "Server unavailable"}),
+          extract_request_id(message)
+        )
+    end
+
+    defp route_sse_response(conn, response, session_id, %{transport: transport} = opts) do
+      handler_pid = StreamableHTTP.get_sse_handler(transport, session_id)
+
+      cond do
+        handler_pid && Process.alive?(handler_pid) ->
+          send(handler_pid, {:sse_message, response})
+
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(202, "{}")
+
+        handler_pid ->
+          StreamableHTTP.unregister_sse_handler(transport, session_id)
+          establish_sse_for_request(conn, response, session_id, opts)
+
+        true ->
+          establish_sse_for_request(conn, response, session_id, opts)
+      end
+    end
+
+    defp establish_sse_for_request(conn, response, session_id, opts) do
+      %{transport: transport, session_header: session_header} = opts
+
+      case StreamableHTTP.register_sse_handler(transport, session_id) do
+        :ok ->
+          self_pid = self()
+          Task.start(fn -> send(self_pid, {:sse_message, response}) end)
+
+          conn
+          |> put_resp_header(session_header, session_id)
+          |> Streaming.prepare_connection()
+          |> Streaming.start(transport, session_id,
+            on_close: fn ->
+              StreamableHTTP.unregister_sse_handler(transport, session_id)
+            end
+          )
+
+        {:error, reason} ->
+          Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
+
+          send_jsonrpc_error(
+            conn,
+            Error.protocol(:internal_error, %{reason: reason}),
+            nil
+          )
+      end
     end
 
     defp handle_delete(conn, %{transport: transport, session_header: session_header} = opts) do
@@ -220,130 +327,50 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    # Handle requests that might need SSE streaming
+    # Session management
 
-    defp handle_request_with_possible_sse(conn, params) do
-      if wants_sse?(conn) do
-        handle_sse_request(conn, params)
-      else
-        handle_json_request(conn, params)
+    defp find_session(%{registry_mod: mod, registry_name: name}, session_id) do
+      mod.lookup_session(name, session_id)
+    end
+
+    defp find_or_create_session(opts, session_id, message) do
+      case find_session(opts, session_id) do
+        {:ok, pid} ->
+          {:ok, pid}
+
+        {:error, :not_found} when Message.is_initialize(message) ->
+          start_new_session(opts, session_id)
+
+        {:error, :not_found} ->
+          {:error, :no_session}
       end
     end
 
-    defp handle_sse_request(conn, params) do
-      case StreamableHTTP.handle_message_for_sse(params) do
-        {:sse, response} ->
-          route_sse_response(conn, response, params)
+    defp start_new_session(%{server: server, registry_mod: registry_mod, registry_name: registry_name} = opts, session_id) do
+      session_config = ServerSupervisor.get_session_config(server)
+      session_name = Registry.session_name(server, session_id)
 
-        {:ok, response} ->
-          conn
-          |> put_resp_content_type("application/json")
-          |> maybe_add_session_header(params.session_header, params.session_id)
-          |> send_resp(200, response)
+      session_opts = [
+        session_id: session_id,
+        server_module: server,
+        name: session_name,
+        transport: session_config.transport,
+        session_idle_timeout: session_config.session_idle_timeout || 1_800_000,
+        timeout: opts.timeout,
+        task_supervisor: session_config.task_supervisor
+      ]
 
-        {:error, error} ->
-          handle_request_error(conn, error, params.message)
-      end
-    end
+      case ServerSupervisor.start_session(server, session_opts) do
+        {:ok, pid} ->
+          registry_mod.register_session(registry_name, session_id, pid)
+          {:ok, pid}
 
-    defp handle_json_request(conn, params) do
-      case StreamableHTTP.handle_message(params) do
-        {:ok, response} ->
-          conn
-          |> put_resp_content_type("application/json")
-          |> maybe_add_session_header(params.session_header, params.session_id)
-          |> send_resp(200, response)
-
-        {:error, error} ->
-          handle_request_error(conn, error, params.message)
-      end
-    end
-
-    defp route_sse_response(conn, response, params) do
-      %{transport: transport, session_id: session_id} = params
-      handler_pid = StreamableHTTP.get_sse_handler(transport, session_id)
-
-      # Check Process.alive? to handle race condition where handler died but
-      # transport hasn't processed the :DOWN message yet. Without this check,
-      # send/2 silently drops the message to a dead process.
-      if handler_pid && Process.alive?(handler_pid) do
-        send(handler_pid, {:sse_message, response})
-
-        conn
-        |> put_resp_content_type("application/json")
-        |> send_resp(202, "{}")
-      else
-        # Handler is missing or stale - clean up stale entry if present
-        if handler_pid do
-          StreamableHTTP.unregister_sse_handler(transport, session_id)
-        end
-
-        establish_sse_for_request(conn, params)
-      end
-    end
-
-    defp handle_request_error(conn, %Error{} = error, body) do
-      send_jsonrpc_error(conn, error, extract_request_id(body))
-    end
-
-    defp handle_request_error(conn, reason, body) do
-      Logging.transport_event("request_error", %{reason: reason}, level: :error)
-
-      send_jsonrpc_error(
-        conn,
-        Error.protocol(:internal_error, %{reason: reason}),
-        extract_request_id(body)
-      )
-    end
-
-    defp establish_sse_for_request(conn, params) do
-      %{transport: transport, session_id: session_id} = params
-
-      case StreamableHTTP.register_sse_handler(transport, session_id) do
-        :ok ->
-          start_background_request(params)
-          start_sse_streaming(conn, params)
+        {:error, {:already_started, pid}} ->
+          {:ok, pid}
 
         {:error, reason} ->
-          Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
-
-          send_jsonrpc_error(
-            conn,
-            Error.protocol(:internal_error, %{reason: reason}),
-            extract_request_id(params.message)
-          )
+          {:error, reason}
       end
-    end
-
-    defp start_background_request(params) do
-      self_pid = self()
-
-      Task.start(fn ->
-        case StreamableHTTP.handle_message(params) do
-          {:ok, response} when is_binary(response) ->
-            send(self_pid, {:sse_message, response})
-
-          {:error, reason} ->
-            Logging.transport_event(
-              "sse_background_request_error",
-              %{reason: reason},
-              level: :error
-            )
-        end
-      end)
-    end
-
-    defp start_sse_streaming(conn, params) do
-      %{transport: transport, session_id: session_id} = params
-
-      conn
-      |> put_resp_header(params.session_header, session_id)
-      |> Streaming.prepare_connection()
-      |> Streaming.start(transport, session_id,
-        on_close: fn ->
-          StreamableHTTP.unregister_sse_handler(transport, session_id)
-        end
-      )
     end
 
     # Helper functions
@@ -361,8 +388,6 @@ if Code.ensure_loaded?(Plug) do
         |> get_req_header("accept")
         |> List.first("")
 
-      # For POST requests, client must accept application/json at minimum
-      # text/event-stream is optional and indicates client wants SSE responses
       if String.contains?(accept_header, "application/json") do
         :ok
       else
@@ -381,14 +406,11 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp determine_session_id(conn, session_header, message) when Message.is_initialize(message) do
-      # For initialize messages, check if client provided a session ID to resume
       case get_req_header(conn, session_header) do
         [session_id] when is_binary(session_id) and session_id != "" ->
-          # Client wants to resume existing session - use their ID
           session_id
 
         _ ->
-          # No session ID provided - generate new one for fresh session
           ID.generate_session_id()
       end
     end
@@ -463,6 +485,20 @@ if Code.ensure_loaded?(Plug) do
       |> send_resp(400, encoded_error)
     end
 
+    defp handle_request_error(conn, %Error{} = error, body) do
+      send_jsonrpc_error(conn, error, extract_request_id(body))
+    end
+
+    defp handle_request_error(conn, reason, body) do
+      Logging.transport_event("request_error", %{reason: reason}, level: :error)
+
+      send_jsonrpc_error(
+        conn,
+        Error.protocol(:internal_error, %{reason: reason}),
+        extract_request_id(body)
+      )
+    end
+
     defp extract_request_id(%{"id" => request_id}), do: request_id
     defp extract_request_id(_), do: nil
 
@@ -487,18 +523,27 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    defp start_sse_streaming(conn, params) do
+      %{transport: transport, session_id: session_id, session_header: session_header} = params
+
+      conn
+      |> put_resp_header(session_header, session_id)
+      |> Streaming.prepare_connection()
+      |> Streaming.start(transport, session_id,
+        on_close: fn ->
+          StreamableHTTP.unregister_sse_handler(transport, session_id)
+        end
+      )
+    end
+
     defp delete_session_from_store(session_id) do
       if store = Anubis.get_session_store_adapter() do
         store.delete(session_id, [])
       end
     end
 
-    defp stop_session_process(%{server: server, registry: registry}, session_id) do
-      session_name = registry.server_session(server, session_id)
-
-      if pid = GenServer.whereis(session_name) do
-        GenServer.stop(pid, :normal)
-      end
+    defp stop_session_process(%{server: server, registry_mod: registry_mod}, session_id) do
+      ServerSupervisor.stop_session(server, registry_mod, session_id)
     end
   end
 end

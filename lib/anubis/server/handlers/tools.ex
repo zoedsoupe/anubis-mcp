@@ -12,7 +12,7 @@ defmodule Anubis.Server.Handlers.Tools do
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_list(request, frame, server_module) do
     tools = Handlers.get_server_tools(server_module, frame)
-    limit = frame.private[:pagination_limit]
+    limit = frame.pagination_limit
     {tools, cursor} = Handlers.maybe_paginate(request, tools, limit)
 
     {:reply,

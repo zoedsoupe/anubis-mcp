@@ -11,7 +11,7 @@ defmodule Anubis.Server.Handlers.Resources do
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_list(request, frame, server_module) do
     resources = Handlers.get_server_resources(server_module, frame)
-    limit = frame.private[:pagination_limit]
+    limit = frame.pagination_limit
     {resources, cursor} = Handlers.maybe_paginate(request, resources, limit)
 
     {:reply,
@@ -25,7 +25,7 @@ defmodule Anubis.Server.Handlers.Resources do
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_templates_list(request, frame, server_module) do
     templates = Handlers.get_server_resource_templates(server_module, frame)
-    limit = frame.private[:pagination_limit]
+    limit = frame.pagination_limit
     {templates, cursor} = Handlers.maybe_paginate(request, templates, limit)
 
     {:reply,

@@ -86,6 +86,18 @@ defmodule Anubis.Server do
 
   Most protocol handling is automatic - you typically only implement `init/2` for setup
   and occasionally override other callbacks for custom behavior.
+
+  ## Sending Notifications
+
+  Notification functions use `send(self(), ...)` and must be called from within the
+  Session process (i.e., inside callbacks). For sending from external processes or tasks,
+  use `send/2` with the session PID directly.
+
+      # Inside a callback:
+      def handle_info(:data_changed, frame) do
+        Anubis.Server.send_tools_list_changed()
+        {:noreply, frame}
+      end
   """
 
   alias Anubis.Server.Component
@@ -112,15 +124,12 @@ defmodule Anubis.Server do
 
   This callback is invoked while the MCP handshake starts and so the client may not sent
   the `notifications/initialized` message yet. For checking if the notification was already sent
-  and the MCP handshake was successfully completed, you can call the `initialized?/1` function.
+  and the MCP handshake was successfully completed, you can check the `context.initialized` field
+  in the frame.
 
   It receives the client's information and
   the current frame, allowing you to perform client-specific setup, validate capabilities,
   or prepare resources based on the connected client.
-
-  The client_info parameter contains details about the connected client including its
-  name, version, and any additional metadata. Use this to tailor your server's behavior
-  to specific client implementations or versions.
   """
   @callback init(client_info :: map(), Frame.t()) :: {:ok, Frame.t()}
 
@@ -128,12 +137,7 @@ defmodule Anubis.Server do
   Handles a tool call request.
 
   This callback is invoked when a client calls a specific tool. It receives the tool name,
-  the arguments provided by the client, and the current frame. Developers's implementation should
-  execute the tool's logic and return the result.
-
-  This callback handles both module-based components (registered with `component`) and
-  runtime components (registered with `Frame.register_tool/3`). For module-based tools,
-  the framework automatically generates pattern-matched clauses during compilation.
+  the arguments provided by the client, and the current frame.
   """
   @callback handle_tool_call(name :: String.t(), arguments :: map(), Frame.t()) ::
               {:reply, result :: term(), Frame.t()}
@@ -141,14 +145,6 @@ defmodule Anubis.Server do
 
   @doc """
   Handles a resource read request.
-
-  This callback is invoked when a client requests to read a specific resource. It receives
-  the resource URI and the current frame. Developer's implementation should retrieve and return
-  the resource content.
-
-  This callback handles both module-based components (registered with `component`) and
-  runtime components (registered with `Frame.register_resource/3`). For module-based resources,
-  the framework automatically generates pattern-matched clauses during compilation.
   """
   @callback handle_resource_read(uri :: String.t(), Frame.t()) ::
               {:reply, content :: map(), Frame.t()}
@@ -156,13 +152,6 @@ defmodule Anubis.Server do
 
   @doc """
   Handles a prompt get request.
-
-  This callback is invoked when a client requests a specific prompt template. It receives
-  the prompt name, any arguments to fill into the template, and the current frame.
-
-  This callback handles both module-based components (registered with `component`) and
-  runtime components (registered with `Frame.register_prompt/3`). For module-based prompts,
-  the framework automatically generates pattern-matched clauses during compilation.
   """
   @callback handle_prompt_get(name :: String.t(), arguments :: map(), Frame.t()) ::
               {:reply, messages :: list(), Frame.t()}
@@ -171,19 +160,7 @@ defmodule Anubis.Server do
   @doc """
   Low-level handler for any MCP request.
 
-  This is an advanced callback that gives you complete control over request handling.
-  When implemented, it bypasses the automatic routing to `handle_tool_call/3`,
-  `handle_resource_read/2`, and `handle_prompt_get/3` and all other requests that are
-  handled internally, like `tools/list` and `logging/setLevel`.
-
-  Use this when you need to:
-  - Implement custom request methods beyond the standard MCP protocol
-  - Add middleware-like processing before requests reach specific handlers
-  - Override the framework's default request routing behavior
-
-  Note: If you implement this callback, you become responsible for handling ALL
-  MCP requests, including standard protocol methods like `tools/list`, `resources/list`, etc.
-  Consider using the specific callbacks instead unless you need this level of control.
+  When implemented, it bypasses automatic routing to specific handlers.
   """
   @callback handle_request(request :: request(), state :: Frame.t()) ::
               {:reply, response :: response(), new_state :: Frame.t()}
@@ -192,99 +169,20 @@ defmodule Anubis.Server do
 
   @doc """
   Handles incoming MCP notifications from clients.
-
-  Notifications are one-way messages in the MCP protocol - the client informs the server
-  about events or state changes without expecting a response. This fire-and-forget pattern
-  is perfect for status updates, progress tracking, and lifecycle events.
-
-  **Standard MCP Notifications from Clients:**
-  - `notifications/initialized` - Client signals it's ready after successful initialization
-  - `notifications/cancelled` - Client requests cancellation of an in-progress operation
-  - `notifications/progress` - Client reports progress on a long-running operation
-  - `notifications/roots/list_changed` - Client's available filesystem roots have changed
-
-  Unlike requests, notifications never receive responses. Any errors during processing
-  are typically logged but not communicated back to the client. This makes notifications
-  ideal for optional features like progress tracking where delivery isn't guaranteed.
-
-  The server processes these notifications to update its internal state, trigger side effects,
-  or coordinate with other parts of the system. When using `use Anubis.Server`, basic
-  notification handling is provided, but you'll often want to override this callback
-  to handle progress updates or cancellations specific to your server's operations.
   """
   @callback handle_notification(notification :: notification(), state :: Frame.t()) ::
               {:noreply, new_state :: Frame.t()}
               | {:error, error :: mcp_error(), new_state :: Frame.t()}
 
-  @doc """
-  Provides the server's identity information during initialization.
-
-  This callback is called during the MCP handshake to identify your server to connecting clients.
-  The information returned here helps clients understand which server they're talking to and
-  ensures version compatibility.
-
-  When using `use Anubis.Server`, this callback is automatically implemented using the
-  `name` and `version` options you provide. You only need to implement this manually if
-  you require dynamic server information based on runtime conditions.
-  """
   @callback server_info :: server_info()
-
-  @doc """
-  Declares the server's capabilities during initialization.
-
-  This callback tells clients what features your server supports - which types of resources
-  it can provide, what tools it can execute, whether it supports logging configuration, etc.
-  The capabilities you declare here directly impact which requests the client will send.
-
-  When using `use Anubis.Server` with the `capabilities` option, this callback is automatically
-  implemented based on your configuration. The macro analyzes your registered components and
-  builds the appropriate capability map, so you rarely need to implement this manually.
-  """
   @callback server_capabilities :: server_capabilities()
-
-  @doc """
-  Specifies which MCP protocol versions this server can speak.
-
-  Protocol version negotiation ensures client and server can communicate effectively.
-  During initialization, the client and server agree on a mutually supported version.
-  This callback returns the list of versions your server understands, typically in
-  order of preference from newest to oldest.
-
-  When using `use Anubis.Server`, this is automatically implemented with sensible defaults
-  covering current and recent protocol versions. Override only if you need to restrict
-  or extend version support for specific compatibility requirements.
-  """
   @callback supported_protocol_versions() :: [String.t()]
 
-  @doc """
-  Handles non-MCP messages sent to the server process.
-
-  While `handle_request` and `handle_notification` deal with MCP protocol messages,
-  this callback handles everything else - timer events, messages from other processes,
-  system signals, and any custom inter-process communication your server needs.
-
-  This is particularly useful for servers that need to react to external events
-  (like file system changes or database updates) and notify connected clients through
-  MCP notifications. Think of it as the bridge between your Elixir application's
-  internal events and the MCP protocol's notification system.
-  """
   @callback handle_info(event :: term, Frame.t()) ::
               {:noreply, Frame.t()}
               | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, Frame.t()}
 
-  @doc """
-  Handles synchronous calls to the server process.
-
-  This optional callback allows you to handle custom synchronous calls made to your
-  MCP server process using `GenServer.call/2`. This is useful for implementing
-  administrative functions, status queries, or any synchronous operations that
-  need to interact with the server's internal state.
-
-  The callback follows standard GenServer semantics and should return appropriate
-  reply tuples. If not implemented, the Base module provides a default implementation
-  that handles standard MCP operations.
-  """
   @callback handle_call(request :: term, from :: GenServer.from(), Frame.t()) ::
               {:reply, reply :: term, Frame.t()}
               | {:reply, reply :: term, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
@@ -293,64 +191,13 @@ defmodule Anubis.Server do
               | {:stop, reason :: term, reply :: term, Frame.t()}
               | {:stop, reason :: term, Frame.t()}
 
-  @doc """
-  Handles asynchronous casts to the server process.
-
-  This optional callback allows you to handle custom asynchronous messages sent to your
-  MCP server process using `GenServer.cast/2`. This is useful for fire-and-forget
-  operations, background tasks, or any asynchronous operations that don't require
-  an immediate response.
-
-  The callback follows standard GenServer semantics. If not implemented, the Base
-  module provides a default implementation that handles standard MCP operations.
-  """
   @callback handle_cast(request :: term, Frame.t()) ::
               {:noreply, Frame.t()}
               | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
               | {:stop, reason :: term, Frame.t()}
 
-  @doc """
-  Cleans up when the server process terminates.
-
-  This optional callback is invoked when the server process is about to terminate.
-  It allows you to perform cleanup operations, close connections, save state,
-  or release resources before the process exits.
-
-  The callback receives the termination reason and the current frame. Any return
-  value is ignored. If not implemented, the Base module provides a default
-  implementation that logs the termination event.
-  """
   @callback terminate(reason :: term, Frame.t()) :: term
 
-  @doc """
-  Handles the response from a sampling/createMessage request sent to the client.
-
-  This callback is invoked when the client responds to a sampling request initiated
-  by the server. The response contains the generated message from the client's LLM.
-
-  ## Parameters
-
-    * `response` - The response from the client containing:
-      * `"role"` - The role of the generated message (typically "assistant")
-      * `"content"` - The content object with type and data
-      * `"model"` - The model used for generation
-      * `"stopReason"` - Why generation stopped (e.g., "endTurn")
-    * `request_id` - The ID of the original request for correlation
-    * `frame` - The current server frame
-
-  ## Returns
-
-    * `{:noreply, frame}` - Continue processing
-    * `{:stop, reason, frame}` - Stop the server
-
-  ## Examples
-
-      def handle_sampling(response, request_id, frame) do
-        %{"content" => %{"text" => text}} = response
-        # Process the generated text...
-        {:noreply, frame}
-      end
-  """
   @callback handle_sampling(
               response :: map(),
               request_id :: String.t(),
@@ -359,25 +206,10 @@ defmodule Anubis.Server do
               {:noreply, Frame.t()}
               | {:stop, reason :: term(), Frame.t()}
 
-  @doc """
-  Handles completion requests from the client.
-
-  This callback is invoked when a client requests completions for a reference.
-  The reference indicates what type of completion is being requested.
-
-  Note: This callback will only be invoked if user declared the `completion` capability
-  on server definition
-  """
   @callback handle_completion(ref :: String.t(), argument :: map(), Frame.t()) ::
               {:reply, Response.t() | map(), Frame.t()}
               | {:error, mcp_error(), Frame.t()}
 
-  @doc """
-  Handles the response from a roots/list request sent to the client.
-
-  This callback is invoked when the client responds to a roots list request
-  initiated by the server. The response contains the available root URIs.
-  """
   @callback handle_roots(
               roots :: list(map()),
               request_id :: String.t(),
@@ -399,28 +231,6 @@ defmodule Anubis.Server do
                       handle_sampling: 3,
                       handle_completion: 3,
                       handle_roots: 3
-
-  @doc """
-  Checks if the MCP session has been initialized.
-
-  Returns true if the client has completed the initialization handshake and sent
-  the `notifications/initialized` message. This is useful for guarding operations
-  that require an active session.
-
-  ## Examples
-
-      def handle_info(:check_status, frame) do
-        if Anubis.Server.initialized?(frame) do
-          # Perform operations requiring initialized session
-          {:noreply, frame}
-        else
-          # Wait for initialization
-          {:noreply, frame}
-        end
-      end
-  """
-  @spec initialized?(Frame.t()) :: boolean()
-  def initialized?(%Frame{initialized: initialized}), do: initialized
 
   @doc false
   defguard is_server_capability(capability) when capability in @server_capabilities
@@ -462,14 +272,6 @@ defmodule Anubis.Server do
 
   @doc """
   Registers a component (tool, prompt, or resource) with the server.
-
-  ## Examples
-
-      # Register with auto-derived name
-      component MyServer.Tools.Calculator
-
-      # Register with custom name
-      component MyServer.Tools.FileManager, name: "files"
   """
   defmacro component(module, opts \\ []) do
     quote bind_quoted: [module: module, opts: opts] do
@@ -734,75 +536,68 @@ defmodule Anubis.Server do
 
   def validate_server_info!(_, name, version) when is_binary(name) and is_binary(version), do: :ok
 
-  # Notification Functions
+  # Notification Functions — all use send(self(), ...) to the current Session process
 
   @doc """
-  Sends a resources list changed notification to connected clients.
+  Sends a resources list changed notification.
 
-  Use this when the available resources have changed (added, removed, or modified).
-  The client will typically re-fetch the resource list in response.
+  **Must be called from within a Session callback** — the current process must be
+  the Session GenServer. Calling from outside a callback will silently lose the message.
+
+  For external processes, use `send(session_pid, {:send_notification, "notifications/resources/list_changed", %{}})`.
   """
-  @spec send_resources_list_changed(Frame.t()) :: :ok
-  def send_resources_list_changed(%Frame{} = frame) do
-    queue_notification(frame, "notifications/resources/list_changed", %{})
+  @spec send_resources_list_changed :: :ok
+  def send_resources_list_changed do
+    send(self(), {:send_notification, "notifications/resources/list_changed", %{}})
+    :ok
   end
 
   @doc """
   Sends a resource updated notification for a specific resource.
 
-  Use this when the content of a specific resource has changed.
-  Clients that have subscribed to this resource will be notified.
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
-  @spec send_resource_updated(
-          Frame.t(),
-          uri :: String.t(),
-          timestamp :: DateTime.t() | nil
-        ) ::
-          :ok
-  def send_resource_updated(%Frame{} = frame, uri, timestamp \\ nil) do
+  @spec send_resource_updated(uri :: String.t(), timestamp :: DateTime.t() | nil) :: :ok
+  def send_resource_updated(uri, timestamp \\ nil) do
     params = %{"uri" => uri}
     params = if timestamp, do: Map.put(params, "timestamp", timestamp), else: params
-    queue_notification(frame, "notifications/resources/updated", params)
+    send(self(), {:send_notification, "notifications/resources/updated", params})
+    :ok
   end
 
   @doc """
-  Sends a prompts list changed notification to connected clients.
+  Sends a prompts list changed notification.
 
-  Use this when the available prompts have changed (added, removed, or modified).
-  The client will typically re-fetch the prompt list in response.
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
-  @spec send_prompts_list_changed(Frame.t()) :: :ok
-  def send_prompts_list_changed(%Frame{} = frame) do
-    queue_notification(frame, "notifications/prompts/list_changed", %{})
+  @spec send_prompts_list_changed :: :ok
+  def send_prompts_list_changed do
+    send(self(), {:send_notification, "notifications/prompts/list_changed", %{}})
+    :ok
   end
 
   @doc """
-  Sends a tools list changed notification to connected clients.
+  Sends a tools list changed notification.
 
-  Use this when the available tools have changed (added, removed, or modified).
-  The client will typically re-fetch the tool list in response.
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
-  @spec send_tools_list_changed(Frame.t()) :: :ok
-  def send_tools_list_changed(%Frame{} = frame) do
-    queue_notification(frame, "notifications/tools/list_changed", %{})
+  @spec send_tools_list_changed :: :ok
+  def send_tools_list_changed do
+    send(self(), {:send_notification, "notifications/tools/list_changed", %{}})
+    :ok
   end
 
   @doc """
   Sends a log message to the client.
 
-  Use this to send diagnostic or informational messages to the client's logging system.
+  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
-  @spec send_log_message(
-          Frame.t(),
-          level :: Logger.level(),
-          message :: String.t(),
-          metadata :: map() | nil
-        ) :: :ok
-  def send_log_message(%Frame{} = frame, level, message, data \\ nil) do
+  @spec send_log_message(level :: Logger.level(), message :: String.t(), metadata :: map() | nil) :: :ok
+  def send_log_message(level, message, data \\ nil) do
     params = %{"level" => level, "message" => message}
     params = if data, do: Map.put(params, "data", data), else: params
-
-    queue_notification(frame, "notifications/log/message", params)
+    send(self(), {:send_notification, "notifications/log/message", params})
+    :ok
   end
 
   @type progress_token :: String.t() | non_neg_integer
@@ -811,66 +606,34 @@ defmodule Anubis.Server do
 
   @doc """
   Sends a progress notification for an ongoing operation.
-
-  Use this to update the client on the progress of long-running operations.
   """
-  @spec send_progress(Frame.t(), progress_token, progress_step, opts) :: :ok
+  @spec send_progress(progress_token, progress_step, opts) :: :ok
         when opts: list({:total, progress_total} | {:message, String.t()})
-  def send_progress(%Frame{} = frame, progress_token, progress, opts \\ []) do
+  def send_progress(progress_token, progress, opts \\ []) do
     total = opts[:total]
     message = opts[:message]
     params = %{"progressToken" => progress_token, "progress" => progress}
     params = if total, do: Map.put(params, "total", total), else: params
     params = if message, do: Map.put(params, "message", message), else: params
-
-    queue_notification(frame, "notifications/progress", params)
-  end
-
-  defp queue_notification(frame, method, params) do
-    registry = frame.private.server_registry
-    server = frame.private.server_module
-    pid = registry.whereis_server(server)
-    send(pid, {:send_notification, method, params})
+    send(self(), {:send_notification, "notifications/progress", params})
     :ok
   end
-
-  # Sampling Request Functions
 
   @doc """
   Sends a sampling/createMessage request to the client.
 
-  This function is used when the server needs the client to generate a message
-  using its language model. The client must have declared the sampling capability
-  during initialization.
-
-  Note: This is an asynchronous operation. The response will be delivered to your
+  This is an asynchronous operation. The response will be delivered to your
   `handle_sampling/3` callback.
-
-  Check https://modelcontextprotocol.io/specification/2025-06-18/client/sampling for more information
-
-  ## Examples
-
-      messages = [
-        %{"role" => "user", "content" => %{"type" => "text", "text" => "Hello"}}
-      ]
-
-      model_preferences = %{"costPriority" => 1.0, "speedPriority" => 0.1, "hints" => [%{"name" => "claude"}]}
-
-      :ok = Anubis.Server.send_sampling_request(frame, messages,
-        model_preferences: model_preferences,
-        system_prompt: "You are a helpful assistant",
-        max_tokens: 100
-      )
   """
-  @spec send_sampling_request(Frame.t(), list(map()), configuration) :: :ok
+  @spec send_sampling_request(list(map()), configuration) :: :ok
         when configuration:
                list(
-                 {:model_preferences, map | nil}
+                 {:model_preferences, map() | nil}
                  | {:system_prompt, String.t() | nil}
-                 | {:max_token, non_neg_integer | nil}
-                 | {:timeout, non_neg_integer | nil}
+                 | {:max_tokens, non_neg_integer() | nil}
+                 | {:timeout, non_neg_integer() | nil}
                )
-  def send_sampling_request(%Frame{} = frame, messages, opts \\ []) when is_list(messages) do
+  def send_sampling_request(messages, opts \\ []) when is_list(messages) do
     params = %{"messages" => messages}
 
     params =
@@ -883,27 +646,17 @@ defmodule Anubis.Server do
       end)
 
     timeout = Keyword.get(opts, :timeout, 30_000)
-    registry = frame.private.server_registry
-    server = frame.private.server_module
-    pid = registry.whereis_server(server)
-    send(pid, {:send_sampling_request, params, timeout})
+    send(self(), {:send_sampling_request, params, timeout})
     :ok
   end
 
   @doc """
   Sends a roots/list request to the client.
-
-  This function queries the client for available root URIs. The client must have
-  declared the roots capability during initialization.
   """
-  @spec send_roots_request(Frame.t(), list({:timeout, non_neg_integer | nil})) :: :ok
-  def send_roots_request(%Frame{} = frame, opts \\ []) do
+  @spec send_roots_request(list({:timeout, non_neg_integer() | nil})) :: :ok
+  def send_roots_request(opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 30_000)
-
-    registry = frame.private.server_registry
-    server = frame.private.server_module
-    pid = registry.whereis_server(server)
-    send(pid, {:send_roots_request, timeout})
+    send(self(), {:send_roots_request, timeout})
     :ok
   end
 end
