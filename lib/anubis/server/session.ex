@@ -213,12 +213,11 @@ defmodule Anubis.Server.Session do
     if store = Anubis.get_session_store_adapter() do
       Logging.log(:debug, "Persisting session #{inspect(state.id)} to store", [])
 
-      # Convert struct to mapand remove runtime fields
       state_map =
         state
         |> Map.from_struct()
-        # Don't persist process names
         |> Map.delete(:name)
+        |> dbg()
 
       case store.save(state.id, state_map, []) do
         :ok ->

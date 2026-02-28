@@ -108,20 +108,17 @@ if Code.ensure_loaded?(Redix) do
       pool_size = Keyword.get(opts, :pool_size, 10)
       namespace = Keyword.get(opts, :namespace, @default_namespace)
       ttl = Keyword.get(opts, :ttl, @default_ttl)
-      # Strip :name from custom opts to preserve internal pool naming
+
       custom_redix_opts =
         opts
         |> Keyword.get(:redix_opts, [])
         |> validate_redix_opts()
         |> Keyword.delete(:name)
 
-      # Start Redix connection pool with anubis_ prefix to avoid conflicts
       children =
         for i <- 1..pool_size do
           child_id = :"anubis_#{conn_name}_#{i}"
 
-          # Default Redix options, merged with custom options (custom takes precedence)
-          # Note: :name is always set internally to maintain pool integrity
           redix_opts =
             Keyword.merge([name: child_id, sync_connect: false, exit_on_disconnection: false], custom_redix_opts)
 
@@ -131,10 +128,8 @@ if Code.ensure_loaded?(Redix) do
           }
         end
 
-      # Use anubis_ prefix for supervisor name
       supervisor_name = :"anubis_#{conn_name}_supervisor"
 
-      # Start connections under a supervisor
       case Supervisor.start_link(children, strategy: :one_for_one, name: supervisor_name) do
         {:ok, _pid} ->
           state = %State{
@@ -335,9 +330,16 @@ if Code.ensure_loaded?(Redix) do
       div(milliseconds, 1000)
     end
 
+    defp filter_data(data) do
+      data
+      |> Map.from_struct()
+      |> Map.delete(:name)
+    end
+
     defp encode_and_save(state, key, data, ttl) do
       conn = get_connection(state)
       ttl_seconds = ms_to_seconds(ttl)
+      data = filter_data(data)
 
       case json_encode(data) do
         {:ok, json} ->
