@@ -409,15 +409,16 @@ defmodule Anubis.Server.Base do
       "protocolVersion" => requested_version
     } = params
 
-    protocol_version =
-      negotiate_protocol_version(state.supported_versions, requested_version)
+    {:ok, protocol_version, protocol_module} =
+      Anubis.Protocol.Registry.negotiate(requested_version, state.supported_versions)
 
     :ok =
       Session.update_from_initialization(
         session.name,
         protocol_version,
         client_info,
-        client_capabilities
+        client_capabilities,
+        protocol_module: protocol_module
       )
 
     result = %{
@@ -657,17 +658,10 @@ defmodule Anubis.Server.Base do
       client_info: session.client_info,
       client_capabilities: session.client_capabilities,
       protocol_version: session.protocol_version,
+      protocol_module: session.protocol_module,
       server_registry: state.registry,
       server_module: state.module
     })
-  end
-
-  defp negotiate_protocol_version([latest | _] = supported_versions, requested_version) do
-    if requested_version in supported_versions do
-      requested_version
-    else
-      latest
-    end
   end
 
   defp encode_notification(method, params) do

@@ -8,6 +8,7 @@ defmodule Anubis.Server.Session do
 
   @type t :: %__MODULE__{
           protocol_version: String.t() | nil,
+          protocol_module: module() | nil,
           initialized: boolean(),
           name: GenServer.name() | nil,
           client_info: map() | nil,
@@ -22,6 +23,7 @@ defmodule Anubis.Server.Session do
   defstruct [
     :id,
     :protocol_version,
+    :protocol_module,
     :log_level,
     :name,
     initialized: false,
@@ -32,11 +34,12 @@ defmodule Anubis.Server.Session do
 
   defschema :state_t, %{
     protocol_version: :string,
+    protocol_module: :atom,
     initialized: {:required, :boolean},
     name: {:custom, &Anubis.genserver_name/1},
     client_info: :map,
     client_capabilities: :map,
-    log_level: {:required, :string},
+    log_level: :string,
     id: :string,
     pending_requests: {:map, :string, %{started_at: :integer, method: :string}}
   }
@@ -99,12 +102,15 @@ defmodule Anubis.Server.Session do
 
   Note: Call `mark_initialized/1` separately to set the initialized flag.
   """
-  @spec update_from_initialization(GenServer.name(), String.t(), map, map) :: :ok
-  def update_from_initialization(session, negotiated_version, client_info, capabilities) do
+  @spec update_from_initialization(GenServer.name(), String.t(), map, map, keyword()) :: :ok
+  def update_from_initialization(session, negotiated_version, client_info, capabilities, opts \\ []) do
+    protocol_module = Keyword.get(opts, :protocol_module)
+
     Agent.update(session, fn state ->
       new_state = %{
         state
         | protocol_version: negotiated_version,
+          protocol_module: protocol_module || state.protocol_module,
           client_info: client_info,
           client_capabilities: capabilities
       }
