@@ -3,24 +3,19 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
   import ExUnit.CaptureLog
 
+  alias Anubis.Server.Registry
   alias Anubis.Server.Transport.StreamableHTTP
-  alias Anubis.Server.Transport.StreamableHTTP.RequestParams
-
-  setup :with_default_registry
 
   describe "start_link/1" do
     test "starts with valid options" do
-      server = Anubis.Server.Registry.server(StubServer)
-      name = Anubis.Server.Registry.transport(StubServer, :streamable_http)
-      sup = Anubis.Server.Registry.task_supervisor(StubServer)
+      server = :"test_server_#{System.unique_integer([:positive])}"
+      name = Registry.transport_name(server, :streamable_http)
+      sup = Registry.task_supervisor_name(server)
 
       assert {:ok, pid} =
                StreamableHTTP.start_link(server: server, name: name, task_supervisor: sup)
 
       assert Process.alive?(pid)
-
-      assert Anubis.Server.Registry.whereis_transport(StubServer, :streamable_http) ==
-               pid
     end
 
     test "requires server option" do
@@ -32,13 +27,12 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
   describe "with running transport" do
     setup do
-      registry = Anubis.Server.Registry
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
+      name = Registry.transport_name(StubServer, :streamable_http)
+      sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: sup})
 
       {:ok, transport} =
-        start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: sup})
 
       %{transport: transport, server: StubServer}
     end
@@ -53,32 +47,6 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       refute StreamableHTTP.get_sse_handler(transport, session_id)
     end
 
-    test "handle_message_for_sse fails when server is not in registry", %{
-      transport: transport
-    } do
-      session_id = "test-session-456"
-
-      assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
-      message = build_request("ping", %{})
-
-      params = %RequestParams{
-        transport: transport,
-        session_id: session_id,
-        message: message,
-        context: %{},
-        session_header: nil,
-        timeout: 5
-      }
-
-      StreamableHTTP.handle_message_for_sse(params)
-
-      # Clean up to avoid logs after test ends
-      capture_log(fn ->
-        StreamableHTTP.unregister_sse_handler(transport, session_id)
-        Process.sleep(10)
-      end)
-    end
-
     test "routes messages to sessions", %{transport: transport} do
       session_id = "test-session-789"
 
@@ -89,7 +57,6 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
       assert_receive {:sse_message, ^message}
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         StreamableHTTP.unregister_sse_handler(transport, session_id)
         Process.sleep(10)

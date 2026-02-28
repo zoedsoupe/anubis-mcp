@@ -2,7 +2,37 @@ defmodule Anubis.Server.FrameTest do
   use ExUnit.Case, async: true
 
   alias Anubis.Server.Component.Resource
+  alias Anubis.Server.Context
   alias Anubis.Server.Frame
+
+  describe "assign/2 preserves context" do
+    test "assigning values does not modify context" do
+      original_context = %Context{
+        session_id: "session-123",
+        client_info: %{"name" => "test"},
+        headers: %{"authorization" => "Bearer token"},
+        remote_ip: {127, 0, 0, 1}
+      }
+
+      frame = %Frame{context: original_context, assigns: %{existing: true}}
+      updated_frame = Frame.assign(frame, %{new_key: "value", another: 42})
+
+      assert updated_frame.context == original_context
+      assert updated_frame.assigns[:new_key] == "value"
+      assert updated_frame.assigns[:another] == 42
+      assert updated_frame.assigns[:existing] == true
+    end
+
+    test "assigning does not allow overwriting context struct fields" do
+      context = %Context{session_id: "original"}
+      frame = %Frame{context: context}
+
+      updated_frame = Frame.assign(frame, %{context: "malicious"})
+
+      assert updated_frame.context == context
+      assert updated_frame.assigns[:context] == "malicious"
+    end
+  end
 
   describe "register_resource_template/3" do
     test "registers a resource template at runtime" do

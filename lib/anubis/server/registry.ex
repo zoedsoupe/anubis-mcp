@@ -1,91 +1,46 @@
 defmodule Anubis.Server.Registry do
-  @moduledoc false
+  @moduledoc """
+  Behaviour for pluggable session registries and deterministic naming utilities.
 
-  def child_spec(_) do
-    Registry.child_spec(keys: :unique, name: __MODULE__)
-  end
+  The registry is responsible for mapping session IDs to PIDs. Different transports
+  have different needs:
 
-  @doc """
-  Returns a via tuple for naming a server process.
+  - STDIO: single session, no registry needed (`Registry.None`)
+  - HTTP: multiple sessions, need lookup by session ID (`Registry.Local`)
+
+  ## Naming Utilities
+
+  The module also provides deterministic atom naming for internal processes.
+  These are safe because server modules are compile-time bounded.
   """
-  @spec server(server_module :: module()) :: GenServer.name()
-  def server(module) do
-    {:via, Registry, {__MODULE__, {:server, module}}}
-  end
 
-  @spec task_supervisor(server_module :: module()) :: GenServer.name()
-  def task_supervisor(module) when is_atom(module) do
-    {:via, Registry, {__MODULE__, {:task_supervisor, module}}}
-  end
+  @type session_id :: String.t()
 
-  @doc """
-  Returns a via tuple for naming a server session process.
-  """
-  @spec server_session(server_module :: module(), session_id :: String.t()) ::
-          GenServer.name()
-  def server_session(server, session_id) do
-    {:via, Registry, {__MODULE__, {:session, server, session_id}}}
-  end
+  @callback child_spec(keyword()) :: Supervisor.child_spec() | :ignore
+  @callback register_session(name :: term(), session_id(), pid()) :: :ok | {:error, term()}
+  @callback lookup_session(name :: term(), session_id()) :: {:ok, pid()} | {:error, :not_found}
+  @callback unregister_session(name :: term(), session_id()) :: :ok
 
-  @doc """
-  Returns a via tuple for naming a transport process.
-  """
-  @spec transport(server_module :: module(), transport_type :: atom()) ::
-          GenServer.name()
-  def transport(module, type) when is_atom(module) do
-    {:via, Registry, {__MODULE__, {:transport, module, type}}}
-  end
+  # Deterministic atom naming for internal processes
 
-  @doc """
-  Returns a via tuple for naming a supervisor process.
-  """
-  @spec supervisor(kind :: atom(), server_module :: module()) :: GenServer.name()
-  def supervisor(kind \\ :supervisor, module) do
-    {:via, Registry, {__MODULE__, {kind, module}}}
-  end
+  @spec transport_name(module(), atom()) :: atom()
+  def transport_name(server, type), do: :"Anubis.#{server}.transport.#{type}"
 
-  @doc """
-  Gets the PID of a session-specific server.
-  """
-  @spec whereis_server_session(server_module :: module(), session_id :: String.t()) ::
-          pid | nil
-  def whereis_server_session(module, session_id) do
-    case Registry.lookup(__MODULE__, {:session, module, session_id}) do
-      [{pid, _}] -> pid
-      [] -> nil
-    end
-  end
+  @spec task_supervisor_name(module()) :: atom()
+  def task_supervisor_name(server), do: :"Anubis.#{server}.task_supervisor"
 
-  @doc """
-  Gets the PID of a supervisor process.
-  """
-  @spec whereis_supervisor(atom(), module()) :: pid() | nil
-  def whereis_supervisor(server, kind \\ :supervisor) when is_atom(server) do
-    case Registry.lookup(__MODULE__, {kind, server}) do
-      [{pid, _}] -> pid
-      [] -> nil
-    end
-  end
+  @spec session_supervisor_name(module()) :: atom()
+  def session_supervisor_name(server), do: :"Anubis.#{server}.session_supervisor"
 
-  @doc """
-  Gets the PID of a registered server.
-  """
-  @spec whereis_server(module()) :: pid | nil
-  def whereis_server(module) when is_atom(module) do
-    case Registry.lookup(__MODULE__, {:server, module}) do
-      [{pid, _}] -> pid
-      [] -> nil
-    end
-  end
+  @spec supervisor_name(module()) :: atom()
+  def supervisor_name(server), do: :"Anubis.#{server}.supervisor"
 
-  @doc """
-  Gets the PID of a registered transport.
-  """
-  @spec whereis_transport(module(), atom()) :: pid | nil
-  def whereis_transport(module, type) when is_atom(module) and is_atom(type) do
-    case Registry.lookup(__MODULE__, {:transport, module, type}) do
-      [{pid, _}] -> pid
-      [] -> nil
-    end
-  end
+  @spec session_name(module(), String.t()) :: atom()
+  def session_name(server, session_id), do: :"Anubis.#{server}.session.#{session_id}"
+
+  @spec stdio_session_name(module()) :: atom()
+  def stdio_session_name(server), do: :"Anubis.#{server}.session.stdio"
+
+  @spec registry_name(module()) :: atom()
+  def registry_name(server), do: :"Anubis.#{server}.registry"
 end

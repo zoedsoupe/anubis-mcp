@@ -91,6 +91,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Error
     alias Anubis.MCP.ID
     alias Anubis.MCP.Message
+    alias Anubis.Server.Registry
     alias Anubis.Server.Transport.SSE
     alias Anubis.SSE.Streaming
     alias Plug.Conn.Unfetched
@@ -112,8 +113,7 @@ if Code.ensure_loaded?(Plug) do
         raise ArgumentError, "SSE.Plug requires :mode to be either :sse or :post"
       end
 
-      registry = Keyword.get(opts, :registry, Anubis.Server.Registry)
-      transport = registry.transport(server, :sse)
+      transport = Registry.transport_name(server, :sse)
       timeout = Keyword.get(opts, :timeout, @default_timeout)
 
       %{

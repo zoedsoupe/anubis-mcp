@@ -3,9 +3,9 @@ defmodule Anubis.Server.Transport.SSETest do
 
   import ExUnit.CaptureLog
 
+  alias Anubis.Server.Registry
+  alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
-
-  setup :with_default_registry
 
   describe "start_link/1" do
     test "starts with valid options" do
@@ -46,11 +46,10 @@ defmodule Anubis.Server.Transport.SSETest do
 
   describe "with running transport" do
     setup do
-      registry = Anubis.Server.Registry
-      name = registry.transport(StubServer, :sse)
+      name = Registry.transport_name(StubServer, :sse)
 
       {:ok, transport} =
-        start_supervised({SSE, server: StubServer, name: name, registry: registry})
+        start_supervised({SSE, server: StubServer, name: name})
 
       %{transport: transport, server: StubServer}
     end
@@ -68,13 +67,30 @@ defmodule Anubis.Server.Transport.SSETest do
     test "handle_message processes notifications", %{transport: transport} do
       session_id = "test-session-456"
 
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name}, id: :sse_stub_transport)
+
+      session_name = Registry.session_name(StubServer, session_id)
+
+      start_supervised!(
+        {Session,
+         session_id: session_id,
+         server_module: StubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         task_supervisor: task_sup},
+        id: :sse_session
+      )
+
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
           "data" => "test"
         })
 
-      # Should return nil for notifications and send them to server
       assert {:ok, nil} =
                SSE.handle_message(transport, session_id, notification, %{})
     end
@@ -89,7 +105,6 @@ defmodule Anubis.Server.Transport.SSETest do
 
       assert_receive {:sse_message, ^message}
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         SSE.unregister_sse_handler(transport, session_id)
         Process.sleep(10)
@@ -108,10 +123,8 @@ defmodule Anubis.Server.Transport.SSETest do
       session1 = "session-1"
       session2 = "session-2"
 
-      # Register two handlers
       assert :ok = SSE.register_sse_handler(transport, session1)
 
-      # Second handler in a different process
       test_pid = self()
 
       spawn(fn ->
@@ -128,11 +141,9 @@ defmodule Anubis.Server.Transport.SSETest do
       message = "broadcast message"
       assert :ok = SSE.send_message(transport, message, timeout: 5000)
 
-      # Both handlers should receive the message
       assert_receive {:sse_message, ^message}
       assert_receive {:handler2_received, ^message}
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         SSE.unregister_sse_handler(transport, session1)
         SSE.unregister_sse_handler(transport, session2)
@@ -172,17 +183,11 @@ defmodule Anubis.Server.Transport.SSETest do
     end
 
     test "get_endpoint_url with custom base_url and post_path" do
-      registry = Anubis.Server.Registry
       name = :custom_sse_transport
 
       {:ok, transport} =
         start_supervised(
-          {SSE,
-           server: StubServer,
-           name: name,
-           base_url: "http://localhost:8080",
-           post_path: "/api/messages",
-           registry: registry},
+          {SSE, server: StubServer, name: name, base_url: "http://localhost:8080", post_path: "/api/messages"},
           id: :custom_sse
         )
 
@@ -192,13 +197,11 @@ defmodule Anubis.Server.Transport.SSETest do
     test "shutdown/1 gracefully shuts down", %{transport: transport} do
       session_id = "shutdown-test"
 
-      # Register a handler
       assert :ok = SSE.register_sse_handler(transport, session_id)
 
       assert Process.alive?(transport)
       assert :ok = SSE.shutdown(transport)
 
-      # Should send close message to handler
       assert_receive :close_sse
 
       Process.sleep(100)

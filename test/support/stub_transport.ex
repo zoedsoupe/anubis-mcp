@@ -29,7 +29,7 @@ defmodule StubTransport do
   """
   @impl true
   def start_link(opts \\ []) do
-    state = %{messages: [], client: nil, server: nil, test_pid: nil}
+    state = %{messages: [], client: nil, test_pid: nil}
 
     if name = opts[:name] do
       GenServer.start_link(__MODULE__, state, name: name)
@@ -127,16 +127,15 @@ defmodule StubTransport do
   def handle_call({:send_message, message}, _from, state) do
     new_messages = [message | state.messages]
 
-    # Send to test process if configured
     if state.test_pid do
       send(state.test_pid, {:send_message, message})
     end
 
     if is_binary(message) do
       message = decode_message(message)
-      forward_to_server(message, state)
+      forward_to_session(message, state)
     else
-      forward_to_server(message, state)
+      forward_to_session(message, state)
     end
 
     {:reply, :ok, %{state | messages: new_messages}}
@@ -156,26 +155,33 @@ defmodule StubTransport do
     message
   end
 
-  defp forward_to_server(message, state) when Message.is_request(message) do
+  defp forward_to_session(message, state) when Message.is_request(message) do
     if message["method"] == "sampling/createMessage" do
       :ok
     else
-      name = Anubis.Server.Registry.server(StubServer)
+      session_name =
+        Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
       {:ok, response} =
-        GenServer.call(name, {:request, message, state.session_id, %{}})
+        GenServer.call(session_name, {:mcp_request, message, %{}})
 
-      GenServer.cast(state.client, {:response, response})
+      if state.client do
+        GenServer.cast(state.client, {:response, response})
+      end
     end
   end
 
-  defp forward_to_server(message, state) when Message.is_response(message) or Message.is_error(message) do
-    name = Anubis.Server.Registry.server(StubServer)
-    GenServer.cast(name, {:response, message, state.session_id, %{}})
+  defp forward_to_session(message, state) when Message.is_response(message) or Message.is_error(message) do
+    session_name =
+      Anubis.Server.Registry.session_name(StubServer, state.session_id)
+
+    GenServer.cast(session_name, {:mcp_response, message, %{}})
   end
 
-  defp forward_to_server(message, state) when Message.is_notification(message) do
-    name = Anubis.Server.Registry.server(StubServer)
-    :ok = GenServer.cast(name, {:notification, message, state.session_id})
+  defp forward_to_session(message, state) when Message.is_notification(message) do
+    session_name =
+      Anubis.Server.Registry.session_name(StubServer, state.session_id)
+
+    :ok = GenServer.cast(session_name, {:mcp_notification, message, %{}})
   end
 end

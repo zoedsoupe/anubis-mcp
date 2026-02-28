@@ -1,59 +1,28 @@
 defmodule Anubis.Server.Frame do
   @moduledoc """
-  The Anubis Frame.
-
-  This module defines a struct and functions for working with
-  MCP server state throughout the request/response lifecycle.
+  The Anubis Frame — pure user state + read-only context.
 
   ## User fields
 
-  These fields contain user-controlled data:
-
     * `assigns` - shared user data as a map. For HTTP transports, this inherits
-      from `Plug.Conn.assigns`. Users are responsible for populating authentication
-      data through their Plug pipeline before it reaches the MCP server.
+      from `Plug.Conn.assigns`.
 
-  ## Transport fields
+  ## Component maps
 
-  These fields contain transport-specific context. The structure varies by transport type:
+  Runtime-registered components are stored in typed maps keyed by name/URI:
 
-  ### HTTP transport (when `transport.type == :http`)
+    * `tools` - `%{name => %Tool{}}`
+    * `resources` - `%{uri => %Resource{}}`
+    * `prompts` - `%{name => %Prompt{}}`
+    * `resource_templates` - `%{name => %Resource{uri_template: ...}}`
 
-    * `req_headers` - the request headers as a list, example: `[{"content-type", "application/json"}]`.
-      All header names are downcased.
-    * `query_params` - the request query params as a map, example: `%{"session" => "abc123"}`.
-      Returns `nil` if query params were not fetched by the Plug pipeline.
-    * `remote_ip` - the IP of the client, example: `{151, 236, 219, 228}`.
-      This field is set by the transport layer.
-    * `scheme` - the request scheme as an atom, example: `:https`
-    * `host` - the requested host as a binary, example: `"api.example.com"`
-    * `port` - the requested port as an integer, example: `443`
-    * `request_path` - the requested path, example: `"/mcp"`
+  ## Pagination
 
-  ### STDIO transport (when `transport.type == :stdio`)
+    * `pagination_limit` - optional limit for listing operations
 
-    * `env` - environment variables as a map, example: `%{"USER" => "alice", "HOME" => "/home/alice"}`
-    * `pid` - the OS process ID as a string, example: `"12345"`
+  ## Context
 
-  ## MCP protocol fields
-
-  These fields contain MCP-specific data:
-
-    * `request` - the current MCP request being processed, with fields:
-      * `id` - the request ID for correlation
-      * `method` - the MCP method being called, example: `"tools/call"`
-      * `params` - the raw request parameters (before validation)
-    * `initialized` - boolean indicating if the MCP session has been initialized
-
-  ## Private fields
-
-  These fields are reserved for framework usage:
-
-    * `private` - shared framework data as a map. Contains MCP session context:
-      * `session_id` - unique identifier for the current client session being handled
-      * `client_info` - client information from initialization, example: `%{"name" => "my-client", "version" => "1.0.0"}`
-      * `client_capabilities` - negotiated client capabilities
-      * `protocol_version` - active MCP protocol version, example: `"2025-03-26"`
+    * `context` - read-only `%Context{}`, refreshed by Session before each callback
   """
 
   alias Anubis.Server.Component
@@ -61,58 +30,27 @@ defmodule Anubis.Server.Frame do
   alias Anubis.Server.Component.Resource
   alias Anubis.Server.Component.Schema
   alias Anubis.Server.Component.Tool
+  alias Anubis.Server.Context
 
   @type server_component_t :: Tool.t() | Resource.t() | Prompt.t()
 
-  @type private_t :: %{
-          optional(:session_id) => String.t(),
-          optional(:client_info) => map(),
-          optional(:client_capabilities) => map(),
-          optional(:protocol_version) => String.t(),
-          optional(:server_module) => module(),
-          optional(:server_registry) => module(),
-          optional(:pagination_limit) => non_neg_integer(),
-          optional(:__mcp_components__) => list(server_component_t)
-        }
-
-  @type request_t :: %{
-          id: String.t(),
-          method: String.t(),
-          params: map()
-        }
-
-  @type http_t :: %{
-          type: :http,
-          req_headers: [{String.t(), String.t()}],
-          query_params: %{optional(String.t()) => String.t()} | nil,
-          remote_ip: term,
-          scheme: :http | :https,
-          host: String.t(),
-          port: non_neg_integer,
-          request_path: String.t()
-        }
-
-  @type stdio_t :: %{
-          type: :stdio,
-          os_pid: non_neg_integer,
-          env: map
-        }
-
-  @type transport_t :: http_t | stdio_t
-
   @type t :: %__MODULE__{
-          assigns: Enumerable.t(),
-          initialized: boolean,
-          private: private_t,
-          request: request_t | nil,
-          transport: transport_t
+          assigns: map(),
+          tools: %{optional(String.t()) => Tool.t()},
+          resources: %{optional(String.t()) => Resource.t()},
+          prompts: %{optional(String.t()) => Prompt.t()},
+          resource_templates: %{optional(String.t()) => Resource.t()},
+          pagination_limit: non_neg_integer() | nil,
+          context: Context.t()
         }
 
   defstruct assigns: %{},
-            initialized: false,
-            private: %{},
-            request: nil,
-            transport: %{}
+            tools: %{},
+            resources: %{},
+            prompts: %{},
+            resource_templates: %{},
+            pagination_limit: nil,
+            context: %Context{}
 
   @doc """
   Creates a new frame with optional initial assigns.
@@ -120,13 +58,13 @@ defmodule Anubis.Server.Frame do
   ## Examples
 
       iex> Frame.new()
-      %Frame{assigns: %{}, initialized: false}
+      %Frame{assigns: %{}}
 
       iex> Frame.new(%{user: "alice"})
-      %Frame{assigns: %{user: "alice"}, initialized: false}
+      %Frame{assigns: %{user: "alice"}}
   """
-  @spec new :: t
-  @spec new(assigns :: Enumerable.t()) :: t
+  @spec new :: t()
+  @spec new(assigns :: map()) :: t()
   def new(assigns \\ %{}), do: struct(__MODULE__, assigns: assigns)
 
   @doc """
@@ -134,17 +72,12 @@ defmodule Anubis.Server.Frame do
 
   ## Examples
 
-      # Single assignment
       frame = Frame.assign(frame, :status, :active)
-
-      # Multiple assignments via map
       frame = Frame.assign(frame, %{status: :active, count: 5})
-
-      # Multiple assignments via keyword list
       frame = Frame.assign(frame, status: :active, count: 5)
   """
-  @spec assign(t, Enumerable.t()) :: t
-  @spec assign(t, key :: atom, value :: any) :: t
+  @spec assign(t(), Enumerable.t()) :: t()
+  @spec assign(t(), key :: atom(), value :: any()) :: t()
   def assign(%__MODULE__{} = frame, assigns) when is_map(assigns) or is_list(assigns) do
     Enum.reduce(assigns, frame, fn {key, value}, frame ->
       assign(frame, key, value)
@@ -158,20 +91,13 @@ defmodule Anubis.Server.Frame do
   @doc """
   Assigns a value to the frame only if the key doesn't already exist.
 
-  The value is computed lazily using the provided function, which is only
-  called if the key is not present in assigns.
+  The value is computed lazily using the provided function.
 
   ## Examples
 
-      # Only assigns if :timestamp doesn't exist
       frame = Frame.assign_new(frame, :timestamp, fn -> DateTime.utc_now() end)
-
-      # Function is not called if key exists
-      frame = frame |> Frame.assign(:count, 5)
-                    |> Frame.assign_new(:count, fn -> expensive_computation() end)
-      # count remains 5
   """
-  @spec assign_new(t, key :: atom, value_fun :: (-> term)) :: t
+  @spec assign_new(t(), key :: atom(), value_fun :: (-> term())) :: t()
   def assign_new(%__MODULE__{} = frame, key, fun) when is_atom(key) and is_function(fun, 0) do
     case frame.assigns do
       %{^key => _} -> frame
@@ -180,260 +106,29 @@ defmodule Anubis.Server.Frame do
   end
 
   @doc """
-  Sets or updates private session data in the frame.
-
-  Private data is used for framework-internal session context that persists
-  across requests, similar to Plug.Conn.private.
-
-  ## Examples
-
-      # Set single private value
-      frame = Frame.put_private(frame, :session_id, "abc123")
-
-      # Set multiple private values
-      frame = Frame.put_private(frame, %{
-        session_id: "abc123",
-        client_info: %{name: "my-client", version: "1.0.0"}
-      })
-  """
-  @spec put_private(t, atom, any) :: t
-  @spec put_private(t, Enumerable.t()) :: t
-  def put_private(%__MODULE__{} = frame, key, value) when is_atom(key) do
-    %{frame | private: Map.put(frame.private, key, value)}
-  end
-
-  def put_private(%__MODULE__{} = frame, private) when is_map(private) or is_list(private) do
-    Enum.reduce(private, frame, fn {key, value}, frame ->
-      put_private(frame, key, value)
-    end)
-  end
-
-  @doc """
-  Sets or updates transport data in the frame.
-
-  Check `transport_t()` for reference.
-
-  ## Examples
-
-      # Set single transport value
-      frame = Frame.put_transport(frame, :session_id, "abc123")
-
-      # Set multiple transport values
-      frame = Frame.put_transport(frame, %{
-        session_id: "abc123",
-        client_info: %{name: "my-client", version: "1.0.0"}
-      })
-  """
-  @spec put_transport(t, atom, any) :: t
-  @spec put_transport(t, Enumerable.t()) :: t
-  def put_transport(%__MODULE__{} = frame, key, value) when is_atom(key) do
-    %{frame | transport: Map.put(frame.transport, key, value)}
-  end
-
-  def put_transport(%__MODULE__{} = frame, transport) when is_map(transport) or is_list(transport) do
-    Enum.reduce(transport, frame, fn {key, value}, frame ->
-      put_transport(frame, key, value)
-    end)
-  end
-
-  @doc """
-  Sets the current request being processed.
-
-  The request includes the request ID, method, and raw parameters before validation.
-
-  ## Examples
-
-      frame = Frame.put_request(frame, %{
-        id: "req_123",
-        method: "tools/call",
-        params: %{"name" => "calculator", "arguments" => %{}}
-      })
-  """
-  @spec put_request(t, map) :: t
-  def put_request(%__MODULE__{} = frame, request) when is_map(request) do
-    %{frame | request: request}
-  end
-
-  @doc """
   Sets the pagination limit for listing operations.
 
-  This limit is used by handlers when returning lists of tools, prompts, or resources
-  to control the maximum number of items returned in a single response. When the limit
-  is set and the total number of items exceeds it, the response will include a
-  `nextCursor` field for pagination.
-
   ## Examples
 
-      # Set pagination limit to 10 items per page
       frame = Frame.put_pagination_limit(frame, 10)
-
-      # The limit is stored in private data
-      frame.private.pagination_limit
+      frame.pagination_limit
       # => 10
   """
-  @spec put_pagination_limit(t, non_neg_integer) :: t
+  @spec put_pagination_limit(t(), non_neg_integer()) :: t()
   def put_pagination_limit(%__MODULE__{} = frame, limit) when limit > 0 do
-    put_private(frame, %{pagination_limit: limit})
+    %{frame | pagination_limit: limit}
   end
 
   @doc """
-  Clears the current request from the frame.
-
-  This should be called after processing a request to ensure the frame doesn't
-  retain stale request data.
-
-  ## Examples
-
-      frame = Frame.clear_request(frame)
+  Registers a tool definition at runtime.
   """
-  @spec clear_request(t) :: t
-  def clear_request(%__MODULE__{} = frame) do
-    %{frame | request: nil}
-  end
-
-  @doc """
-  Clears all session-specific private data from the frame.
-
-  This should be called when a session ends to ensure the frame doesn't
-  retain stale session data.
-
-  ## Examples
-
-      frame = Frame.clear_session(frame)
-  """
-  @spec clear_session(t) :: t
-  def clear_session(%__MODULE__{} = frame) do
-    %{frame | private: %{}}
-  end
-
-  @doc """
-  Gets the MCP session ID from the frame's private data.
-
-  ## Examples
-
-      session_id = Frame.get_mcp_session_id(frame)
-      # => "session_abc123"
-  """
-  @spec get_mcp_session_id(t) :: String.t() | nil
-  def get_mcp_session_id(%__MODULE__{} = frame) do
-    Map.get(frame.private, :session_id)
-  end
-
-  @doc """
-  Gets the client info from the frame's private data.
-
-  ## Examples
-
-      client_info = Frame.get_client_info(frame)
-      # => %{"name" => "my-client", "version" => "1.0.0"}
-  """
-  @spec get_client_info(t) :: map() | nil
-  def get_client_info(%__MODULE__{} = frame) do
-    Map.get(frame.private, :client_info)
-  end
-
-  @doc """
-  Gets the client capabilities from the frame's private data.
-
-  ## Examples
-
-      capabilities = Frame.get_client_capabilities(frame)
-      # => %{"tools" => %{}, "resources" => %{}}
-  """
-  @spec get_client_capabilities(t) :: map() | nil
-  def get_client_capabilities(%__MODULE__{} = frame) do
-    Map.get(frame.private, :client_capabilities)
-  end
-
-  @doc """
-  Gets the protocol version from the frame's private data.
-
-  ## Examples
-
-      version = Frame.get_protocol_version(frame)
-      # => "2025-03-26"
-  """
-  @spec get_protocol_version(t) :: String.t() | nil
-  def get_protocol_version(%__MODULE__{} = frame) do
-    Map.get(frame.private, :protocol_version)
-  end
-
-  @doc """
-  Gets the negotiated protocol module from the frame's private data.
-
-  Returns the module implementing `Anubis.Protocol.Behaviour` for the
-  negotiated protocol version, or nil if not yet negotiated.
-
-  ## Examples
-
-      mod = Frame.get_protocol_module(frame)
-      # => Anubis.Protocol.V2025_03_26
-  """
-  @spec get_protocol_module(t) :: module() | nil
-  def get_protocol_module(%__MODULE__{} = frame) do
-    Map.get(frame.private, :protocol_module)
-  end
-
-  @doc """
-  Gets a request header value from HTTP transport.
-
-  Returns the first value for the header, or nil if the transport
-  is not HTTP or the header is not present.
-
-  ## Examples
-
-      # HTTP transport
-      auth_header = Frame.get_req_header(frame, "authorization")
-      # => "Bearer token123"
-
-      # Non-HTTP transport or missing header
-      auth_header = Frame.get_req_header(frame, "authorization")
-      # => nil
-  """
-  @spec get_req_header(t, String.t()) :: String.t() | nil
-  def get_req_header(%__MODULE__{transport: %{type: :http, req_headers: headers}}, name) when is_binary(name) do
-    case List.keyfind(headers, String.downcase(name), 0) do
-      {_, value} -> value
-      nil -> nil
-    end
-  end
-
-  def get_req_header(%__MODULE__{}, _name), do: nil
-
-  @doc """
-  Gets a query parameter value from HTTP transport.
-
-  Returns the parameter value, or nil if the transport is not HTTP,
-  query params weren't fetched, or the parameter doesn't exist.
-
-  ## Examples
-
-      # HTTP transport with query params
-      session = Frame.get_query_param(frame, "session")
-      # => "abc123"
-
-      # Missing parameter or non-HTTP transport
-      missing = Frame.get_query_param(frame, "nonexistent")
-      # => nil
-  """
-  @spec get_query_param(t, String.t()) :: String.t() | nil
-  def get_query_param(%__MODULE__{transport: %{type: :http, query_params: params}}, key)
-      when is_map(params) and is_binary(key) do
-    Map.get(params, key)
-  end
-
-  def get_query_param(%__MODULE__{}, _key), do: nil
-
-  @doc """
-  Registers a tool definition.
-  """
-  @spec register_tool(t, String.t(), list(tool_opt)) :: t
+  @spec register_tool(t(), String.t(), list(tool_opt)) :: t()
         when tool_opt:
                {:description, String.t() | nil}
-               | {:input_schema, map | nil}
-               | {:output_schema, map | nil}
+               | {:input_schema, map() | nil}
+               | {:output_schema, map() | nil}
                | {:title, String.t() | nil}
-               | {:annotations, map | nil}
+               | {:annotations, map() | nil}
   def register_tool(%__MODULE__{} = frame, name, opts) when is_binary(name) do
     input_schema = Schema.normalize(opts[:input_schema] || %{})
     raw_schema = Component.__clean_schema_for_peri__(input_schema)
@@ -450,7 +145,7 @@ defmodule Anubis.Server.Frame do
     annotations = opts[:annotations]
     title = annotations[:title] || annotations["title"] || opts[:title] || name
 
-    update_components(frame, %Tool{
+    tool = %Tool{
       name: name,
       description: opts[:description],
       input_schema: Schema.to_json_schema(input_schema),
@@ -459,27 +154,31 @@ defmodule Anubis.Server.Frame do
       title: title,
       validate_input: validate_input,
       validate_output: validate_output
-    })
+    }
+
+    %{frame | tools: Map.put(frame.tools, name, tool)}
   end
 
   @doc """
-  Registers a prompt definition.
+  Registers a prompt definition at runtime.
   """
-  @spec register_prompt(t, String.t(), list(prompt_opt)) :: t
-        when prompt_opt: {:description, String.t() | nil} | {:arguments, map | nil} | {:title, String.t() | nil}
+  @spec register_prompt(t(), String.t(), list(prompt_opt)) :: t()
+        when prompt_opt: {:description, String.t() | nil} | {:arguments, map() | nil} | {:title, String.t() | nil}
   def register_prompt(%__MODULE__{} = frame, name, opts) when is_binary(name) do
     arguments = Schema.normalize(opts[:arguments] || %{})
     raw_schema = Component.__clean_schema_for_peri__(arguments)
     validate_input = fn params -> Peri.validate(raw_schema, params) end
     title = opts[:title] || name
 
-    update_components(frame, %Prompt{
+    prompt = %Prompt{
       name: name,
       title: title,
       description: opts[:description],
       arguments: Schema.to_prompt_arguments(arguments),
       validate_input: validate_input
-    })
+    }
+
+    %{frame | prompts: Map.put(frame.prompts, name, prompt)}
   end
 
   @doc """
@@ -487,7 +186,7 @@ defmodule Anubis.Server.Frame do
 
   For parameterized resources, use `register_resource_template/3` instead.
   """
-  @spec register_resource(t, String.t(), list(resource_opt)) :: t
+  @spec register_resource(t(), String.t(), list(resource_opt)) :: t()
         when resource_opt:
                {:title, String.t() | nil}
                | {:name, String.t() | nil}
@@ -496,19 +195,19 @@ defmodule Anubis.Server.Frame do
   def register_resource(%__MODULE__{} = frame, uri, opts) when is_binary(uri) do
     name = opts[:name] || Path.basename(uri)
 
-    update_components(frame, %Resource{
+    resource = %Resource{
       uri: uri,
       title: opts[:title] || name,
       name: name,
       description: opts[:description],
       mime_type: opts[:mime_type] || "text/plain"
-    })
+    }
+
+    %{frame | resources: Map.put(frame.resources, uri, resource)}
   end
 
   @doc """
   Registers a resource template definition using a URI template (RFC 6570).
-
-  URI templates allow parameterized resources like `file:///{path}` or `db:///{table}/{id}`.
 
   ## Examples
 
@@ -518,106 +217,120 @@ defmodule Anubis.Server.Frame do
         description: "Access files in the project directory"
       )
   """
-  @spec register_resource_template(t, String.t(), list(resource_template_opt)) :: t
+  @spec register_resource_template(t(), String.t(), list(resource_template_opt)) :: t()
         when resource_template_opt:
                {:title, String.t() | nil}
                | {:name, String.t()}
                | {:description, String.t() | nil}
                | {:mime_type, String.t() | nil}
   def register_resource_template(%__MODULE__{} = frame, uri_template, opts) when is_binary(uri_template) do
-    # name is required as it serves as a semantic identifier for the template.
-    # Unlike static resources, templates like "file:///{path}" cannot derive meaningful names.
     name = Keyword.fetch!(opts, :name)
 
-    update_components(frame, %Resource{
+    resource = %Resource{
       uri_template: uri_template,
       title: opts[:title] || name,
       name: name,
       description: opts[:description],
       mime_type: opts[:mime_type] || "text/plain"
-    })
+    }
+
+    %{frame | resource_templates: Map.put(frame.resource_templates, name, resource)}
   end
 
-  @doc "Clears all current registered components (tools, resources, prompts)"
-  @spec clear_components(t) :: t
+  @doc "Clears all runtime-registered components"
+  @spec clear_components(t()) :: t()
   def clear_components(%__MODULE__{} = frame) do
-    put_in(frame, [Access.key!(:private), :__mcp_components__], [])
+    %{frame | tools: %{}, resources: %{}, prompts: %{}, resource_templates: %{}}
   end
 
-  @doc "Retrieves all current registered components (tools, resources, prompts)"
-  @spec get_components(t) :: list(server_component_t)
+  @doc "Retrieves all runtime-registered components as a flat list"
+  @spec get_components(t()) :: list(server_component_t())
   def get_components(%__MODULE__{} = frame) do
-    Map.get(frame.private, :__mcp_components__, [])
+    Map.values(frame.tools) ++
+      Map.values(frame.resources) ++
+      Map.values(frame.prompts) ++
+      Map.values(frame.resource_templates)
   end
 
   @doc false
-  @spec get_tools(t) :: list(Tool.t())
-  def get_tools(%__MODULE__{} = frame) do
-    frame
-    |> get_components()
-    |> Enum.filter(&match?(%Tool{}, &1))
-  end
+  @spec get_tools(t()) :: list(Tool.t())
+  def get_tools(%__MODULE__{} = frame), do: Map.values(frame.tools)
 
   @doc false
-  @spec get_prompts(t) :: list(Prompt.t())
-  def get_prompts(%__MODULE__{} = frame) do
-    frame
-    |> get_components()
-    |> Enum.filter(&match?(%Prompt{}, &1))
-  end
+  @spec get_prompts(t()) :: list(Prompt.t())
+  def get_prompts(%__MODULE__{} = frame), do: Map.values(frame.prompts)
 
   @doc false
-  @spec get_resources(t) :: list(Resource.t())
+  @spec get_resources(t()) :: list(Resource.t())
   def get_resources(%__MODULE__{} = frame) do
-    frame
-    |> get_components()
-    |> Enum.filter(&match?(%Resource{}, &1))
+    Map.values(frame.resources) ++ Map.values(frame.resource_templates)
   end
 
   @doc false
-  @spec get_component(t, name :: String.t()) :: server_component_t | nil
+  @spec get_component(t(), name :: String.t()) :: server_component_t() | nil
   def get_component(%__MODULE__{} = frame, name) do
-    frame
-    |> get_components()
-    |> Enum.find(&(&1.name == name))
+    frame.tools[name] ||
+      frame.prompts[name] ||
+      frame.resource_templates[name] ||
+      Enum.find(Map.values(frame.resources), &(&1.name == name))
   end
 
-  # Private helpers
+  @doc """
+  Serializes Frame for persistent storage.
 
-  defp update_components(frame, component) do
-    components = [component | get_components(frame)]
-    put_private(frame, :__mcp_components__, Enum.uniq_by(components, &unique_component/1))
+  Only `assigns` and `pagination_limit` are persisted. The following fields are
+  **runtime-only** and excluded from serialization:
+
+    * `tools` — runtime-registered tool definitions (includes validator functions)
+    * `resources` — runtime-registered resource definitions
+    * `prompts` — runtime-registered prompt definitions
+    * `resource_templates` — runtime-registered resource template definitions
+    * `context` — rebuilt by Session before each callback invocation
+
+  Compile-time components (registered via the `component` macro) are always
+  available from the server module and do not need persistence.
+  """
+  @spec to_saved(t()) :: map()
+  def to_saved(%__MODULE__{} = frame) do
+    %{
+      "assigns" => frame.assigns,
+      "pagination_limit" => frame.pagination_limit
+    }
   end
 
-  defp unique_component(%struct{name: name}) do
-    {struct, name}
+  @doc """
+  Reconstructs Frame from a previously saved map.
+
+  Only `assigns` and `pagination_limit` are restored. Runtime-only fields (`tools`,
+  `resources`, `prompts`, `resource_templates`) are initialized empty — their validator
+  functions are not serializable. `context` is left as the default struct and will be
+  set by Session before each callback invocation.
+  """
+  @spec from_saved(map()) :: t()
+  def from_saved(map) when is_map(map) do
+    %__MODULE__{
+      assigns: Map.get(map, "assigns", %{}),
+      pagination_limit: Map.get(map, "pagination_limit")
+    }
   end
+
+  def from_saved(_), do: %__MODULE__{}
 end
 
 defimpl Inspect, for: Anubis.Server.Frame do
   import Inspect.Algebra
 
   def inspect(frame, opts) do
-    components = frame.private[:__mcp_components__] || []
-    tools_count = Enum.count(components, &match?(%Anubis.Server.Component.Tool{}, &1))
-
-    resources_count =
-      Enum.count(components, &match?(%Anubis.Server.Component.Resource{}, &1))
-
-    prompts_count = Enum.count(components, &match?(%Anubis.Server.Component.Prompt{}, &1))
-
     info = [
       assigns: frame.assigns,
-      initialized: frame.initialized,
-      tools: tools_count,
-      resources: resources_count,
-      prompts: prompts_count
+      tools: map_size(frame.tools),
+      resources: map_size(frame.resources),
+      prompts: map_size(frame.prompts),
+      resource_templates: map_size(frame.resource_templates)
     ]
 
-    info = if frame.request, do: [{:request, frame.request.method} | info], else: info
-
     info =
-      if session_id = frame.private[:session_id],
+      if session_id = frame.context.session_id,
         do: [{:session_id, session_id} | info],
         else: info
 

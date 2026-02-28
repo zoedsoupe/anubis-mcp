@@ -259,7 +259,7 @@ defmodule Anubis.MCP.Error do
     }
     |> Enum.reject(fn {_, v} -> is_nil(v) end)
     |> Map.new()
-    |> then(&%{"error" => &1, "id" => id})
+    |> then(&%{"jsonrpc" => "2.0", "error" => &1, "id" => id})
   end
 
   # Private helpers
