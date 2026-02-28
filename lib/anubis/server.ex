@@ -827,9 +827,7 @@ defmodule Anubis.Server do
   end
 
   defp queue_notification(frame, method, params) do
-    registry = frame.private.server_registry
-    server = frame.private.server_module
-    pid = registry.whereis_server(server)
+    pid = frame.private.session_pid
     send(pid, {:send_notification, method, params})
     :ok
   end
@@ -883,9 +881,7 @@ defmodule Anubis.Server do
       end)
 
     timeout = Keyword.get(opts, :timeout, 30_000)
-    registry = frame.private.server_registry
-    server = frame.private.server_module
-    pid = registry.whereis_server(server)
+    pid = frame.private.session_pid
     send(pid, {:send_sampling_request, params, timeout})
     :ok
   end
@@ -899,10 +895,7 @@ defmodule Anubis.Server do
   @spec send_roots_request(Frame.t(), list({:timeout, non_neg_integer | nil})) :: :ok
   def send_roots_request(%Frame{} = frame, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 30_000)
-
-    registry = frame.private.server_registry
-    server = frame.private.server_module
-    pid = registry.whereis_server(server)
+    pid = frame.private.session_pid
     send(pid, {:send_roots_request, timeout})
     :ok
   end

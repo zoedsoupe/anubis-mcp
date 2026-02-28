@@ -2,6 +2,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
   use Anubis.MCP.Case, async: true
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Session
 
   describe "tool annotations" do
     test "annotations callback is optional" do
@@ -59,46 +60,47 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     setup do
-      start_supervised!(Anubis.Server.Registry)
-      transport = start_supervised!(StubTransport)
+      registry = Anubis.Server.Registry
+      start_supervised!(registry)
 
-      # Start session supervisor
-      start_supervised!(
-        {Anubis.Server.Session.Supervisor, server: ServerWithAnnotatedTools, registry: Anubis.Server.Registry}
-      )
+      transport_name = registry.transport(ServerWithAnnotatedTools, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
 
-      server_opts = [
-        module: ServerWithAnnotatedTools,
-        name: :test_server,
-        registry: Anubis.Server.Registry,
-        transport: [layer: StubTransport, name: transport]
-      ]
+      task_sup = registry.task_supervisor(ServerWithAnnotatedTools)
+      start_supervised!({Task.Supervisor, name: task_sup})
 
-      server = start_supervised!({Anubis.Server.Base, server_opts})
-
-      # Initialize the server
       session_id = "test-session"
+      session_name = registry.server_session(ServerWithAnnotatedTools, session_id)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: ServerWithAnnotatedTools,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           registry: registry,
+           task_supervisor: task_sup}
+        )
 
       request =
         init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
 
-      assert {:ok, _} = GenServer.call(server, {:request, request, session_id, %{}})
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
       notification = build_notification("notifications/initialized", %{})
+      assert :ok = GenServer.cast(session, {:mcp_notification, notification, %{}})
+      Process.sleep(30)
 
-      assert :ok =
-               GenServer.cast(server, {:notification, notification, session_id, %{}})
-
-      %{server: server, session_id: session_id}
+      %{server: session, session_id: session_id}
     end
 
     test "lists tools with and without annotations", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request = build_request("tools/list", %{})
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       {:ok, [response]} = Message.decode(response_string)
 
@@ -132,13 +134,12 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     test "lists tools with output schemas", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request = build_request("tools/list", %{})
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       {:ok, [response]} = Message.decode(response_string)
 
@@ -184,41 +185,43 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     setup do
-      start_supervised!(Anubis.Server.Registry)
-      transport = start_supervised!(StubTransport)
+      registry = Anubis.Server.Registry
+      start_supervised!(registry)
 
-      # Start session supervisor
-      start_supervised!(
-        {Anubis.Server.Session.Supervisor, server: ServerWithOutputSchemaTools, registry: Anubis.Server.Registry}
-      )
+      transport_name = registry.transport(ServerWithOutputSchemaTools, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
 
-      server_opts = [
-        module: ServerWithOutputSchemaTools,
-        name: :test_output_server,
-        registry: Anubis.Server.Registry,
-        transport: [layer: StubTransport, name: transport]
-      ]
+      task_sup = registry.task_supervisor(ServerWithOutputSchemaTools)
+      start_supervised!({Task.Supervisor, name: task_sup})
 
-      server = start_supervised!({Anubis.Server.Base, server_opts})
-
-      # Initialize the server
       session_id = "test-session-output"
+      session_name = registry.server_session(ServerWithOutputSchemaTools, session_id)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: ServerWithOutputSchemaTools,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           registry: registry,
+           task_supervisor: task_sup},
+          id: :output_session
+        )
 
       request =
         init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
 
-      assert {:ok, _} = GenServer.call(server, {:request, request, session_id, %{}})
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
       notification = build_notification("notifications/initialized", %{})
+      assert :ok = GenServer.cast(session, {:mcp_notification, notification, %{}})
+      Process.sleep(30)
 
-      assert :ok =
-               GenServer.cast(server, {:notification, notification, session_id, %{}})
-
-      %{server: server, session_id: session_id}
+      %{server: session, session_id: session_id}
     end
 
     test "tool with valid output schema returns structured content", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request =
         build_request("tools/call", %{
@@ -227,7 +230,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
         })
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       {:ok, [response]} = Message.decode(response_string)
 
@@ -253,8 +256,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     test "tool error response skips output schema validation", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request =
         build_request("tools/call", %{
@@ -263,14 +265,13 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
         })
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       assert {:ok, [%{"result" => %{"isError" => true}}]} = Message.decode(response_string)
     end
 
     test "tool without output schema works normally", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request =
         build_request("tools/call", %{
@@ -279,7 +280,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
         })
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       {:ok, [response]} = Message.decode(response_string)
 
@@ -297,8 +298,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     test "tool with invalid output fails validation", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request =
         build_request("tools/call", %{
@@ -307,7 +307,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
         })
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       {:ok, [response]} = Message.decode(response_string)
 
@@ -319,8 +319,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     test "tool call with missing arguments parameter should not crash server", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request =
         build_request("tools/call", %{
@@ -328,7 +327,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
         })
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       {:ok, [response]} = Message.decode(response_string)
 
@@ -341,8 +340,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
     end
 
     test "tool call with missing arguments parameter works for tools without required params", %{
-      server: server,
-      session_id: session_id
+      server: server
     } do
       request =
         build_request("tools/call", %{
@@ -350,7 +348,7 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
         })
 
       {:ok, response_string} =
-        GenServer.call(server, {:request, request, session_id, %{}})
+        GenServer.call(server, {:mcp_request, request, %{}})
 
       {:ok, [response]} = Message.decode(response_string)
 

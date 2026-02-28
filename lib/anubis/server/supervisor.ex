@@ -4,7 +4,6 @@ defmodule Anubis.Server.Supervisor do
   use Supervisor, restart: :permanent
   use Anubis.Logging
 
-  alias Anubis.Server.Base
   alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.STDIO
@@ -60,6 +59,30 @@ defmodule Anubis.Server.Supervisor do
     Supervisor.start_link(__MODULE__, opts, name: name)
   end
 
+  @doc """
+  Starts a new session under the DynamicSupervisor.
+
+  Called by transport layer when a new client connects.
+  """
+  @spec start_session(module(), keyword()) :: DynamicSupervisor.on_start_child()
+  def start_session(registry \\ Anubis.Server.Registry, server, opts) do
+    sup_name = registry.supervisor(:session_supervisor, server)
+    DynamicSupervisor.start_child(sup_name, {Session, opts})
+  end
+
+  @doc """
+  Terminates a session.
+  """
+  @spec stop_session(module(), module(), String.t()) :: :ok | {:error, :not_found}
+  def stop_session(registry \\ Anubis.Server.Registry, server, session_id) do
+    if pid = registry.whereis_server_session(server, session_id) do
+      sup_name = registry.supervisor(:session_supervisor, server)
+      DynamicSupervisor.terminate_child(sup_name, pid)
+    else
+      {:error, :not_found}
+    end
+  end
+
   @impl true
   def init(opts) do
     server = Keyword.fetch!(opts, :module)
@@ -69,26 +92,23 @@ defmodule Anubis.Server.Supervisor do
     if should_start?(transport) do
       {layer, transport_opts} = parse_transport_child(transport, server, registry)
 
-      server_name = registry.server(opts[:server_name] || server)
-      server_transport = [layer: layer, name: transport_opts[:name]]
-
-      server_opts = [
-        module: server,
-        name: server_name,
-        transport: server_transport,
-        registry: registry
-      ]
-
-      server_opts =
-        if timeout = Keyword.get(opts, :session_idle_timeout) do
-          Keyword.put(server_opts, :session_idle_timeout, timeout)
-        else
-          server_opts
-        end
-
+      session_idle_timeout = Keyword.get(opts, :session_idle_timeout)
       request_timeout = Keyword.get(opts, :request_timeout, to_timeout(second: 30))
-
       task_supervisor = registry.task_supervisor(server)
+      transport_name = transport_opts[:name]
+
+      # Session configuration shared across all sessions
+      # Stored as a persistent term or passed through DynamicSupervisor
+      session_config = %{
+        server_module: server,
+        registry: registry,
+        transport: [layer: layer, name: transport_name],
+        session_idle_timeout: session_idle_timeout,
+        timeout: request_timeout,
+        task_supervisor: task_supervisor
+      }
+
+      :persistent_term.put({__MODULE__, server, :session_config}, session_config)
 
       transport_opts =
         Keyword.merge(transport_opts,
@@ -96,17 +116,57 @@ defmodule Anubis.Server.Supervisor do
           task_supervisor: task_supervisor
         )
 
-      children = [
-        {Task.Supervisor, name: task_supervisor},
-        {Session.Supervisor, server: server, registry: registry},
-        {Base, server_opts},
-        {layer, transport_opts}
-      ]
+      children =
+        case transport do
+          :stdio ->
+            build_stdio_children(server, registry, layer, transport_opts, task_supervisor, session_config)
+
+          _ ->
+            build_http_children(server, registry, layer, transport_opts, task_supervisor)
+        end
 
       Supervisor.init(children, strategy: :one_for_all)
     else
       :ignore
     end
+  end
+
+  @doc false
+  def get_session_config(server) do
+    :persistent_term.get({__MODULE__, server, :session_config})
+  end
+
+  # For STDIO: single session, no DynamicSupervisor needed
+  defp build_stdio_children(server, registry, layer, transport_opts, task_supervisor, session_config) do
+    session_name = registry.server_session(server, "stdio")
+
+    session_opts = [
+      session_id: "stdio",
+      server_module: server,
+      name: session_name,
+      transport: session_config.transport,
+      registry: registry,
+      session_idle_timeout: session_config.session_idle_timeout || to_timeout(minute: 30),
+      timeout: session_config.timeout,
+      task_supervisor: task_supervisor
+    ]
+
+    [
+      {Task.Supervisor, name: task_supervisor},
+      {Session, session_opts},
+      {layer, transport_opts}
+    ]
+  end
+
+  # For HTTP transports: DynamicSupervisor for sessions
+  defp build_http_children(server, registry, layer, transport_opts, task_supervisor) do
+    session_sup_name = registry.supervisor(:session_supervisor, server)
+
+    [
+      {Task.Supervisor, name: task_supervisor},
+      {DynamicSupervisor, name: session_sup_name, strategy: :one_for_one},
+      {layer, transport_opts}
+    ]
   end
 
   defp normalize_transport(t) when t in [:stdio, StubTransport], do: t

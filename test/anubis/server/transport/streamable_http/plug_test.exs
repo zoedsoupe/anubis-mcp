@@ -6,6 +6,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   import Plug.Test
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Session
+  alias Anubis.Server.Supervisor, as: ServerSupervisor
   alias Anubis.Server.Transport.StreamableHTTP
   alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
 
@@ -88,10 +90,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       session_id = "test-session-123"
       assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
 
-      # Note: We don't actually call the plug here because it would
-      # establish a persistent connection and hang the test
-
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         StreamableHTTP.unregister_sse_handler(transport, session_id)
         Process.sleep(10)
@@ -112,41 +110,80 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
 
   describe "POST endpoint" do
     setup %{registry: registry} do
-      # Start the session supervisor
-      {:ok, _session_sup} =
-        start_supervised({
-          Anubis.Server.Session.Supervisor,
-          server: StubServer, registry: registry
-        })
-
-      # Start a stub transport for the server
-      stub_transport =
-        start_supervised!({StubTransport, name: registry.transport(StubServer, :stub)})
-
-      # Start the Base server with stub transport
-      {:ok, _server} =
-        start_supervised({
-          Anubis.Server.Base,
-          module: StubServer,
-          name: registry.server(StubServer),
-          transport: [layer: StubTransport, name: stub_transport],
-          registry: registry
-        })
-
-      # Now start the StreamableHTTP transport
       name = registry.transport(StubServer, :streamable_http)
       sup = registry.task_supervisor(StubServer)
       start_supervised!({Task.Supervisor, name: sup})
+
+      # Store session config in persistent_term for Plug access
+      session_config = %{
+        server_module: StubServer,
+        registry: registry,
+        transport: [layer: StubTransport, name: registry.transport(StubServer, StubTransport)],
+        session_idle_timeout: nil,
+        timeout: 30_000,
+        task_supervisor: sup
+      }
+
+      :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)
+
+      # Start a DynamicSupervisor for sessions
+      session_sup_name = registry.supervisor(:session_supervisor, StubServer)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      # Start stub transport for Session to use
+      transport_name = registry.transport(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
 
       {:ok, transport} =
         start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
 
       opts = StreamableHTTPPlug.init(server: StubServer)
 
-      %{opts: opts, transport: transport}
+      # Pre-create an initialized session for notification/request tests
+      test_session_id = "post-test-session"
+      session_name = registry.server_session(StubServer, test_session_id)
+
+      {:ok, _session} =
+        ServerSupervisor.start_session(registry, StubServer,
+          session_id: test_session_id,
+          server_module: StubServer,
+          name: session_name,
+          transport: [layer: StubTransport, name: transport_name],
+          registry: registry,
+          session_idle_timeout: 1_800_000,
+          timeout: 30_000,
+          task_supervisor: sup
+        )
+
+      # Initialize the session
+      init_req = %{
+        "jsonrpc" => "2.0",
+        "id" => "setup_init",
+        "method" => "initialize",
+        "params" => %{
+          "protocolVersion" => "2025-03-26",
+          "clientInfo" => %{"name" => "Test", "version" => "1.0"},
+          "capabilities" => %{}
+        }
+      }
+
+      {:ok, _} = GenServer.call(session_name, {:mcp_request, init_req, %{}})
+
+      GenServer.cast(
+        session_name,
+        {:mcp_notification, %{"jsonrpc" => "2.0", "method" => "notifications/initialized"}, %{}}
+      )
+
+      Process.sleep(30)
+
+      on_exit(fn ->
+        :persistent_term.erase({ServerSupervisor, StubServer, :session_config})
+      end)
+
+      %{opts: opts, transport: transport, test_session_id: test_session_id}
     end
 
-    test "POST request with notification returns 202", %{opts: opts} do
+    test "POST request with notification returns 202", %{opts: opts, test_session_id: session_id} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -159,14 +196,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         :post
         |> conn("/", body)
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json, text/event-stream")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 202
       assert conn.resp_body == "{}"
     end
 
-    test "POST request with valid request returns response", %{opts: opts} do
+    test "POST request with valid request returns response", %{opts: opts, test_session_id: session_id} do
       request = build_request("ping", %{})
       {:ok, body} = Message.encode_request(request, 1)
 
@@ -174,7 +212,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         :post
         |> conn("/", body)
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json, text/event-stream")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 200
@@ -187,7 +226,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         :post
         |> conn("/", "invalid json")
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json, text/event-stream")
+        |> put_req_header("accept", "application/json")
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 400
@@ -259,41 +298,77 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
 
   describe "session handling" do
     setup %{registry: registry} do
-      # Start the session supervisor
-      {:ok, _session_sup} =
-        start_supervised({
-          Anubis.Server.Session.Supervisor,
-          server: StubServer, registry: registry
-        })
-
-      # Start a stub transport for the server
-      stub_transport =
-        start_supervised!({StubTransport, name: registry.transport(StubServer, :stub)})
-
-      # Start the Base server with stub transport
-      {:ok, _server} =
-        start_supervised({
-          Anubis.Server.Base,
-          module: StubServer,
-          name: registry.server(StubServer),
-          transport: [layer: StubTransport, name: stub_transport],
-          registry: registry
-        })
-
-      # Now start the StreamableHTTP transport
       name = registry.transport(StubServer, :streamable_http)
       sup = registry.task_supervisor(StubServer)
       start_supervised!({Task.Supervisor, name: sup})
+
+      transport_name = registry.transport(StubServer, StubTransport)
+
+      session_config = %{
+        server_module: StubServer,
+        registry: registry,
+        transport: [layer: StubTransport, name: transport_name],
+        session_idle_timeout: nil,
+        timeout: 30_000,
+        task_supervisor: sup
+      }
+
+      :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)
+
+      session_sup_name = registry.supervisor(:session_supervisor, StubServer)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      start_supervised!({StubTransport, name: transport_name})
 
       {:ok, transport} =
         start_supervised({StreamableHTTP, server: StubServer, name: name, registry: registry, task_supervisor: sup})
 
       opts = StreamableHTTPPlug.init(server: StubServer)
 
-      %{opts: opts, transport: transport}
+      # Pre-create an initialized session
+      test_session_id = "session-handling-test"
+      session_name = registry.server_session(StubServer, test_session_id)
+
+      {:ok, _session} =
+        ServerSupervisor.start_session(registry, StubServer,
+          session_id: test_session_id,
+          server_module: StubServer,
+          name: session_name,
+          transport: [layer: StubTransport, name: transport_name],
+          registry: registry,
+          session_idle_timeout: 1_800_000,
+          timeout: 30_000,
+          task_supervisor: sup
+        )
+
+      init_req = %{
+        "jsonrpc" => "2.0",
+        "id" => "setup_init",
+        "method" => "initialize",
+        "params" => %{
+          "protocolVersion" => "2025-03-26",
+          "clientInfo" => %{"name" => "Test", "version" => "1.0"},
+          "capabilities" => %{}
+        }
+      }
+
+      {:ok, _} = GenServer.call(session_name, {:mcp_request, init_req, %{}})
+
+      GenServer.cast(
+        session_name,
+        {:mcp_notification, %{"jsonrpc" => "2.0", "method" => "notifications/initialized"}, %{}}
+      )
+
+      Process.sleep(30)
+
+      on_exit(fn ->
+        :persistent_term.erase({ServerSupervisor, StubServer, :session_config})
+      end)
+
+      %{opts: opts, transport: transport, test_session_id: test_session_id}
     end
 
-    test "extracts session ID from header", %{opts: opts} do
+    test "extracts session ID from header", %{opts: opts, test_session_id: session_id} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -306,14 +381,14 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         :post
         |> conn("/", body)
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json, text/event-stream")
-        |> put_req_header("mcp-session-id", "header-session-123")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 202
     end
 
-    test "generates session ID if not provided", %{opts: opts} do
+    test "notification to unknown session returns 400", %{opts: opts} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -326,17 +401,19 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         :post
         |> conn("/", body)
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json, text/event-stream")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", "unknown-session")
         |> StreamableHTTPPlug.call(opts)
 
-      assert conn.status == 202
+      assert conn.status == 400
     end
 
-    test "initialize request generates new session ID", %{opts: opts} do
+    test "initialize request creates new session", %{opts: opts} do
       init_request =
         build_request("initialize", %{
           "protocolVersion" => "2025-03-26",
-          "clientInfo" => %{"name" => "test", "version" => "1.0.0"}
+          "clientInfo" => %{"name" => "test", "version" => "1.0.0"},
+          "capabilities" => %{}
         })
 
       {:ok, body} = Message.encode_request(init_request, 1)
@@ -345,11 +422,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         :post
         |> conn("/", body)
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json, text/event-stream")
-        |> put_req_header("mcp-session-id", "should-be-ignored")
+        |> put_req_header("accept", "application/json")
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 200
+      {:ok, response} = Jason.decode(conn.resp_body)
+      assert response["result"]["protocolVersion"]
     end
   end
 end

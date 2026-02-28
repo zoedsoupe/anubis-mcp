@@ -335,19 +335,23 @@ defmodule Anubis.Server.Transport.SSE do
 
   @impl GenServer
   def handle_call({:handle_message, session_id, message, context}, _from, state) when is_map(message) do
-    server = state.registry.whereis_server(state.server)
+    session_pid = state.registry.whereis_server_session(state.server, session_id)
     timeout = state.request_timeout
 
-    if Message.is_notification(message) do
-      GenServer.cast(server, {:notification, message, session_id, context})
-      {:reply, {:ok, nil}, state}
+    if is_nil(session_pid) do
+      {:reply, {:error, :no_session}, state}
     else
-      case forward_request_to_server(server, message, session_id, context, timeout) do
-        {:ok, response} ->
-          maybe_send_through_sse(response, session_id, state)
+      if Message.is_notification(message) do
+        GenServer.cast(session_pid, {:mcp_notification, message, context})
+        {:reply, {:ok, nil}, state}
+      else
+        case forward_request_to_session(session_pid, message, context, timeout) do
+          {:ok, response} ->
+            maybe_send_through_sse(response, session_id, state)
 
-        {:error, reason} ->
-          {:reply, {:error, reason}, state}
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
       end
     end
   end
@@ -409,17 +413,17 @@ defmodule Anubis.Server.Transport.SSE do
     end
   end
 
-  defp forward_request_to_server(server, message, session_id, context, timeout) do
-    msg = {:request, message, session_id, context}
+  defp forward_request_to_session(session_pid, message, context, timeout) do
+    msg = {:mcp_request, message, context}
 
-    case GenServer.call(server, msg, timeout) do
+    case GenServer.call(session_pid, msg, timeout) do
       {:ok, response} ->
         {:ok, response}
 
       {:error, reason} ->
         Logging.transport_event(
           "server_error",
-          %{reason: reason, session_id: session_id},
+          %{reason: reason},
           level: :error
         )
 

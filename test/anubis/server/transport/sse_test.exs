@@ -3,6 +3,7 @@ defmodule Anubis.Server.Transport.SSETest do
 
   import ExUnit.CaptureLog
 
+  alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
 
   setup :with_default_registry
@@ -45,8 +46,7 @@ defmodule Anubis.Server.Transport.SSETest do
   end
 
   describe "with running transport" do
-    setup do
-      registry = Anubis.Server.Registry
+    setup %{registry: registry} do
       name = registry.transport(StubServer, :sse)
 
       {:ok, transport} =
@@ -65,8 +65,28 @@ defmodule Anubis.Server.Transport.SSETest do
       refute SSE.get_sse_handler(transport, session_id)
     end
 
-    test "handle_message processes notifications", %{transport: transport} do
+    test "handle_message processes notifications", %{transport: transport, registry: registry} do
       session_id = "test-session-456"
+
+      # Start task supervisor and a session for this test
+      task_sup = registry.task_supervisor(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      transport_name = registry.transport(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name}, id: :sse_stub_transport)
+
+      session_name = registry.server_session(StubServer, session_id)
+
+      start_supervised!(
+        {Session,
+         session_id: session_id,
+         server_module: StubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         registry: registry,
+         task_supervisor: task_sup},
+        id: :sse_session
+      )
 
       notification =
         build_notification("notifications/message", %{
@@ -74,7 +94,6 @@ defmodule Anubis.Server.Transport.SSETest do
           "data" => "test"
         })
 
-      # Should return nil for notifications and send them to server
       assert {:ok, nil} =
                SSE.handle_message(transport, session_id, notification, %{})
     end
@@ -89,7 +108,6 @@ defmodule Anubis.Server.Transport.SSETest do
 
       assert_receive {:sse_message, ^message}
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         SSE.unregister_sse_handler(transport, session_id)
         Process.sleep(10)
@@ -108,10 +126,8 @@ defmodule Anubis.Server.Transport.SSETest do
       session1 = "session-1"
       session2 = "session-2"
 
-      # Register two handlers
       assert :ok = SSE.register_sse_handler(transport, session1)
 
-      # Second handler in a different process
       test_pid = self()
 
       spawn(fn ->
@@ -128,11 +144,9 @@ defmodule Anubis.Server.Transport.SSETest do
       message = "broadcast message"
       assert :ok = SSE.send_message(transport, message, timeout: 5000)
 
-      # Both handlers should receive the message
       assert_receive {:sse_message, ^message}
       assert_receive {:handler2_received, ^message}
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         SSE.unregister_sse_handler(transport, session1)
         SSE.unregister_sse_handler(transport, session2)
@@ -192,13 +206,11 @@ defmodule Anubis.Server.Transport.SSETest do
     test "shutdown/1 gracefully shuts down", %{transport: transport} do
       session_id = "shutdown-test"
 
-      # Register a handler
       assert :ok = SSE.register_sse_handler(transport, session_id)
 
       assert Process.alive?(transport)
       assert :ok = SSE.shutdown(transport)
 
-      # Should send close message to handler
       assert_receive :close_sse
 
       Process.sleep(100)

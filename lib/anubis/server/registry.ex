@@ -6,19 +6,6 @@ defmodule Anubis.Server.Registry do
   end
 
   @doc """
-  Returns a via tuple for naming a server process.
-  """
-  @spec server(server_module :: module()) :: GenServer.name()
-  def server(module) do
-    {:via, Registry, {__MODULE__, {:server, module}}}
-  end
-
-  @spec task_supervisor(server_module :: module()) :: GenServer.name()
-  def task_supervisor(module) when is_atom(module) do
-    {:via, Registry, {__MODULE__, {:task_supervisor, module}}}
-  end
-
-  @doc """
   Returns a via tuple for naming a server session process.
   """
   @spec server_session(server_module :: module(), session_id :: String.t()) ::
@@ -34,6 +21,11 @@ defmodule Anubis.Server.Registry do
           GenServer.name()
   def transport(module, type) when is_atom(module) do
     {:via, Registry, {__MODULE__, {:transport, module, type}}}
+  end
+
+  @spec task_supervisor(server_module :: module()) :: GenServer.name()
+  def task_supervisor(module) when is_atom(module) do
+    {:via, Registry, {__MODULE__, {:task_supervisor, module}}}
   end
 
   @doc """
@@ -68,22 +60,39 @@ defmodule Anubis.Server.Registry do
   end
 
   @doc """
-  Gets the PID of a registered server.
-  """
-  @spec whereis_server(module()) :: pid | nil
-  def whereis_server(module) when is_atom(module) do
-    case Registry.lookup(__MODULE__, {:server, module}) do
-      [{pid, _}] -> pid
-      [] -> nil
-    end
-  end
-
-  @doc """
   Gets the PID of a registered transport.
   """
   @spec whereis_transport(module(), atom()) :: pid | nil
   def whereis_transport(module, type) when is_atom(module) and is_atom(type) do
     case Registry.lookup(__MODULE__, {:transport, module, type}) do
+      [{pid, _}] -> pid
+      [] -> nil
+    end
+  end
+
+  # Backward compatibility - these functions are kept for any existing code
+  # that may reference them, but the Base server no longer exists.
+
+  @doc """
+  Returns a via tuple for naming a server process.
+
+  Deprecated: In the new architecture, there is no single server process.
+  Sessions are individual processes looked up via server_session/2.
+  """
+  @spec server(server_module :: module()) :: GenServer.name()
+  def server(module) do
+    {:via, Registry, {__MODULE__, {:server, module}}}
+  end
+
+  @doc """
+  Gets the PID of a registered server.
+
+  Deprecated: In the new architecture, there is no single server process.
+  Use whereis_server_session/2 to find specific session processes.
+  """
+  @spec whereis_server(module()) :: pid | nil
+  def whereis_server(module) when is_atom(module) do
+    case Registry.lookup(__MODULE__, {:server, module}) do
       [{pid, _}] -> pid
       [] -> nil
     end

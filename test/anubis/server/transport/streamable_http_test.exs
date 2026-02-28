@@ -4,7 +4,6 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
   import ExUnit.CaptureLog
 
   alias Anubis.Server.Transport.StreamableHTTP
-  alias Anubis.Server.Transport.StreamableHTTP.RequestParams
 
   setup :with_default_registry
 
@@ -53,32 +52,6 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       refute StreamableHTTP.get_sse_handler(transport, session_id)
     end
 
-    test "handle_message_for_sse fails when server is not in registry", %{
-      transport: transport
-    } do
-      session_id = "test-session-456"
-
-      assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
-      message = build_request("ping", %{})
-
-      params = %RequestParams{
-        transport: transport,
-        session_id: session_id,
-        message: message,
-        context: %{},
-        session_header: nil,
-        timeout: 5
-      }
-
-      StreamableHTTP.handle_message_for_sse(params)
-
-      # Clean up to avoid logs after test ends
-      capture_log(fn ->
-        StreamableHTTP.unregister_sse_handler(transport, session_id)
-        Process.sleep(10)
-      end)
-    end
-
     test "routes messages to sessions", %{transport: transport} do
       session_id = "test-session-789"
 
@@ -89,7 +62,6 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
       assert_receive {:sse_message, ^message}
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         StreamableHTTP.unregister_sse_handler(transport, session_id)
         Process.sleep(10)

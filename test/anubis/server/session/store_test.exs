@@ -2,17 +2,14 @@ defmodule Anubis.Server.Session.StoreTest do
   use ExUnit.Case, async: false
 
   alias Anubis.Server.Session
-  alias Anubis.Server.Session.Supervisor, as: SessionSupervisor
   alias Anubis.Test.MockSessionStore
 
   @moduletag capture_log: true
 
   setup do
-    # Start the mock store
     start_supervised!(MockSessionStore)
     MockSessionStore.reset!()
 
-    # Configure the application to use the mock store
     original_config = Application.get_env(:anubis_mcp, :session_store)
 
     Application.put_env(:anubis_mcp, :session_store,
@@ -33,80 +30,67 @@ defmodule Anubis.Server.Session.StoreTest do
   end
 
   describe "session persistence" do
-    test "saves session state when initialized" do
+    setup do
+      start_supervised!(Anubis.Server.Registry)
+
+      registry = Anubis.Server.Registry
+      task_sup = registry.task_supervisor(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      transport_name = registry.transport(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+
+      %{registry: registry, transport_name: transport_name, task_sup: task_sup}
+    end
+
+    test "saves session state when initialized", %{
+      registry: registry,
+      transport_name: transport_name,
+      task_sup: task_sup
+    } do
       session_id = "test_session_123"
-      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry})
-      session_name = {:via, Registry, {TestSessionRegistry, session_id}}
+      session_name = registry.server_session(StubServer, session_id)
 
-      # Start a session
-      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
-
-      # Initialize the session
-      Session.update_from_initialization(
-        session_name,
-        "2024-11-21",
-        %{"name" => "test_client", "version" => "1.0.0"},
-        %{"tools" => %{}}
+      start_supervised!(
+        {Session,
+         session_id: session_id,
+         server_module: StubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         registry: registry,
+         task_supervisor: task_sup},
+        id: :persist_session
       )
 
-      Session.mark_initialized(session_name)
-
-      # Check that session was persisted
-      {:ok, stored_state} = MockSessionStore.load(session_id, [])
-      assert stored_state.protocol_version == "2024-11-21"
-      assert stored_state.initialized == true
-      assert stored_state.client_info["name"] == "test_client"
-    end
-
-    test "restores session from store on startup" do
-      session_id = "existing_session_456"
-      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry2})
-
-      # Pre-populate store with session data
-      session_data = %{
-        id: session_id,
-        protocol_version: "2024-11-21",
-        initialized: true,
-        client_info: %{"name" => "restored_client"},
-        client_capabilities: %{"tools" => %{}},
-        log_level: "info",
-        pending_requests: %{}
+      init_request = %{
+        "jsonrpc" => "2.0",
+        "id" => "init_1",
+        "method" => "initialize",
+        "params" => %{
+          "protocolVersion" => "2025-03-26",
+          "clientInfo" => %{"name" => "test_client", "version" => "1.0.0"},
+          "capabilities" => %{"tools" => %{}}
+        }
       }
 
-      :ok = MockSessionStore.save(session_id, session_data, [])
+      {:ok, _} = GenServer.call(session_name, {:mcp_request, init_request, %{}})
 
-      # Start a new session with the same ID
-      session_name = {:via, Registry, {TestSessionRegistry2, session_id}}
+      init_notif = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/initialized"
+      }
 
-      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
+      GenServer.cast(session_name, {:mcp_notification, init_notif, %{}})
+      Process.sleep(50)
 
-      # Verify the session was restored with the persisted data
-      session = Session.get(session_name)
-      assert session.protocol_version == "2024-11-21"
-      assert session.initialized == true
-      assert session.client_info["name"] == "restored_client"
-    end
-
-    test "persists sessions without tokens" do
-      session_id = "simple_session_789"
-      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry3})
-      session_name = {:via, Registry, {TestSessionRegistry3, session_id}}
-
-      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
-
-      # Mark as initialized to trigger persistence
-      Session.mark_initialized(session_name)
-
-      # Verify session was persisted
       {:ok, stored_state} = MockSessionStore.load(session_id, [])
       assert stored_state.initialized == true
-      assert stored_state.id == session_id
+      assert stored_state.client_info["name"] == "test_client"
     end
 
     test "handles session updates atomically" do
       session_id = "update_session_111"
 
-      # Save initial session to store
       initial_data = %{
         id: session_id,
         log_level: "info",
@@ -115,7 +99,6 @@ defmodule Anubis.Server.Session.StoreTest do
 
       :ok = MockSessionStore.save(session_id, initial_data, [])
 
-      # Perform atomic update
       updates = %{
         log_level: "debug",
         initialized: true
@@ -123,7 +106,6 @@ defmodule Anubis.Server.Session.StoreTest do
 
       :ok = MockSessionStore.update(session_id, updates, [])
 
-      # Verify updates were actually persisted to the store
       {:ok, stored_session} = MockSessionStore.load(session_id, [])
       assert stored_session[:log_level] == "debug"
       assert stored_session[:initialized] == true
@@ -131,14 +113,12 @@ defmodule Anubis.Server.Session.StoreTest do
     end
 
     test "lists active sessions" do
-      # Create multiple sessions
       session_ids = ["session_a", "session_b", "session_c"]
 
       for session_id <- session_ids do
         MockSessionStore.save(session_id, %{id: session_id}, [])
       end
 
-      # List active sessions
       {:ok, active} = MockSessionStore.list_active([])
       assert length(active) == 3
       assert Enum.all?(session_ids, &(&1 in active))
@@ -147,95 +127,65 @@ defmodule Anubis.Server.Session.StoreTest do
     test "deletes sessions from store" do
       session_id = "delete_session_222"
 
-      # Save a session
       :ok = MockSessionStore.save(session_id, %{id: session_id}, [])
 
-      # Verify it exists
       assert {:ok, _} = MockSessionStore.load(session_id, [])
 
-      # Delete it
       :ok = MockSessionStore.delete(session_id, [])
 
-      # Verify it's gone
       assert {:error, :not_found} = MockSessionStore.load(session_id, [])
-    end
-  end
-
-  describe "session recovery on supervisor startup" do
-    setup do
-      # Start a test registry
-      start_supervised!({Registry, keys: :unique, name: Anubis.Server.Session.StoreTest.TestRegistry})
-      :ok
-    end
-
-    defmodule TestRegistry do
-      @moduledoc false
-      alias Anubis.Server.Session.StoreTest.TestRegistry
-
-      def supervisor(:session_supervisor, _server), do: {:via, Registry, {TestRegistry, :supervisor}}
-      def server_session(_server, session_id), do: {:via, Registry, {TestRegistry, {:session, session_id}}}
-
-      def whereis_server_session(_server, session_id) do
-        case Registry.lookup(TestRegistry, {:session, session_id}) do
-          [{pid, _}] -> pid
-          [] -> nil
-        end
-      end
-    end
-
-    test "supervisor restores sessions on startup" do
-      # Pre-populate store with sessions
-      session_ids = ["restored_1", "restored_2"]
-
-      for session_id <- session_ids do
-        MockSessionStore.save(
-          session_id,
-          %{
-            id: session_id,
-            initialized: true,
-            protocol_version: "2024-11-21",
-            log_level: "info"
-          },
-          []
-        )
-      end
-
-      # Start the supervisor (this should restore sessions)
-      start_supervised!({SessionSupervisor, server: TestServer, registry: TestRegistry})
-
-      # Wait a bit for sessions to be restored
-      Process.sleep(100)
-
-      # Verify sessions were restored
-      for session_id <- session_ids do
-        pid = TestRegistry.whereis_server_session(TestServer, session_id)
-        assert is_pid(pid)
-
-        # Get the session and verify it has restored data
-        session_name = TestRegistry.server_session(TestServer, session_id)
-        session = Session.get(session_name)
-        assert session.id == session_id
-        assert session.initialized == true
-      end
     end
   end
 
   describe "session store configuration" do
     test "works without store configured" do
-      # Remove store configuration
       Application.delete_env(:anubis_mcp, :session_store)
 
+      start_supervised!(Anubis.Server.Registry)
+      registry = Anubis.Server.Registry
+      task_sup = registry.task_supervisor(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+      transport_name = registry.transport(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+
       session_id = "no_store_session"
-      start_supervised!({Registry, keys: :unique, name: TestSessionRegistry5})
-      session_name = {:via, Registry, {TestSessionRegistry5, session_id}}
+      session_name = registry.server_session(StubServer, session_id)
 
-      # Should still be able to create sessions
-      start_supervised!({Session, session_id: session_id, name: session_name, server_module: TestServer})
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           registry: registry,
+           task_supervisor: task_sup},
+          id: :no_store_session
+        )
 
-      # Session should work normally
-      Session.mark_initialized(session_name)
-      session = Session.get(session_name)
-      assert session.initialized == true
+      init_request = %{
+        "jsonrpc" => "2.0",
+        "id" => "init_1",
+        "method" => "initialize",
+        "params" => %{
+          "protocolVersion" => "2025-03-26",
+          "clientInfo" => %{"name" => "test", "version" => "1.0.0"},
+          "capabilities" => %{}
+        }
+      }
+
+      {:ok, _} = GenServer.call(session_name, {:mcp_request, init_request, %{}})
+
+      init_notif = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/initialized"
+      }
+
+      GenServer.cast(session_name, {:mcp_notification, init_notif, %{}})
+      Process.sleep(30)
+
+      state = :sys.get_state(session)
+      assert state.initialized == true
     end
   end
 end

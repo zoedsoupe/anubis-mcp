@@ -5,8 +5,9 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
   import Plug.Conn
   import Plug.Test
 
+  alias Anubis.MCP.Builders
   alias Anubis.MCP.Message
-  alias Anubis.Server.Base
+  alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.SSE.Plug, as: SSEPlug
 
@@ -84,7 +85,6 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       endpoint_url = SSE.get_endpoint_url(transport)
       assert endpoint_url == "/messages"
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         SSE.unregister_sse_handler(transport, session_id)
         Process.sleep(10)
@@ -115,42 +115,54 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
 
   describe "POST endpoint" do
     setup %{registry: registry} do
-      # Start the session supervisor
-      {:ok, _session_sup} =
-        start_supervised({
-          Anubis.Server.Session.Supervisor,
-          server: StubServer, registry: registry
-        })
+      # Start task supervisor
+      task_sup = registry.task_supervisor(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
 
-      # Start a stub transport for the server
-      stub_transport =
-        start_supervised!({StubTransport, name: registry.transport(StubServer, :stub)})
+      # Start stub transport for Session to use
+      transport_name = registry.transport(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
 
-      # Start the Base server with stub transport
-      {:ok, _server} =
-        start_supervised({
-          Base,
-          module: StubServer,
-          name: registry.server(StubServer),
-          transport: [layer: StubTransport, name: stub_transport],
-          registry: registry
-        })
+      # Start a session to handle requests
+      session_id = "test-session"
+      session_name = registry.server_session(StubServer, session_id)
 
-      # Now start the SSE transport
+      start_supervised!(
+        {Session,
+         session_id: session_id,
+         server_module: StubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         registry: registry,
+         task_supervisor: task_sup},
+        id: :sse_post_session
+      )
+
+      # Initialize the session
+      init_request =
+        Builders.init_request(nil, %{"name" => "Test", "version" => "1.0"}, %{})
+
+      {:ok, _} = GenServer.call(session_name, {:mcp_request, init_request, %{}})
+
+      init_notif = Builders.build_notification("notifications/initialized", %{})
+      GenServer.cast(session_name, {:mcp_notification, init_notif, %{}})
+      Process.sleep(30)
+
+      # Start the SSE transport
       name = registry.transport(StubServer, :sse)
 
       {:ok, transport} =
         start_supervised({SSE, server: StubServer, name: name, registry: registry})
 
       post_opts = SSEPlug.init(server: StubServer, mode: :post)
-      %{post_opts: post_opts, transport: transport, registry: registry}
+      %{post_opts: post_opts, transport: transport, registry: registry, session_id: session_id}
     end
 
     test "POST request with valid JSON returns response", %{
       post_opts: post_opts,
-      transport: transport
+      transport: transport,
+      session_id: session_id
     } do
-      session_id = "test-session"
       :ok = SSE.register_sse_handler(transport, session_id)
 
       request = build_request("ping", %{})
@@ -166,14 +178,13 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       assert conn.status == 202
       assert conn.resp_body == "{}"
 
-      # Clean up to avoid logs after test ends
       capture_log(fn ->
         SSE.unregister_sse_handler(transport, session_id)
         Process.sleep(10)
       end)
     end
 
-    test "POST request with notification returns 202", %{post_opts: post_opts} do
+    test "POST request with notification returns 202", %{post_opts: post_opts, session_id: session_id} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -186,6 +197,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
         :post
         |> conn("/messages", body)
         |> put_req_header("content-type", "application/json")
+        |> put_req_header("x-session-id", session_id)
         |> SSEPlug.call(post_opts)
 
       assert conn.status == 202
@@ -228,7 +240,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       %{post_opts: post_opts, transport: transport}
     end
 
-    test "extracts session ID from header", %{post_opts: post_opts} do
+    test "notification to unknown session returns error", %{post_opts: post_opts} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -240,30 +252,14 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       conn =
         :post
         |> conn("/messages", body)
-        |> put_req_header("x-session-id", "header-session-123")
+        |> put_req_header("x-session-id", "nonexistent-session")
         |> SSEPlug.call(post_opts)
 
-      assert conn.status == 202
+      # No session exists so the SSE transport returns an error
+      assert conn.status == 400
     end
 
-    test "extracts session ID from query params", %{post_opts: post_opts} do
-      notification =
-        build_notification("notifications/message", %{
-          "level" => "info",
-          "data" => "test"
-        })
-
-      {:ok, body} = Message.encode_notification(notification)
-
-      conn =
-        :post
-        |> conn("/messages?session_id=query-session-456", body)
-        |> SSEPlug.call(post_opts)
-
-      assert conn.status == 202
-    end
-
-    test "generates session ID if not provided", %{post_opts: post_opts} do
+    test "notification without session ID returns error", %{post_opts: post_opts} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -277,7 +273,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
         |> conn("/messages", body)
         |> SSEPlug.call(post_opts)
 
-      assert conn.status == 202
+      assert conn.status == 400
     end
   end
 end
