@@ -7,8 +7,10 @@ defmodule Anubis.Client.Base do
   import Peri
 
   alias Anubis.Client.Cache
+  alias Anubis.Client.Handlers
   alias Anubis.Client.Operation
   alias Anubis.Client.Request
+  alias Anubis.Client.Sampling
   alias Anubis.Client.State
   alias Anubis.MCP.Error
   alias Anubis.MCP.Message
@@ -461,7 +463,7 @@ defmodule Anubis.Client.Base do
       ref = %{"type" => "ref/prompt", "name" => "code_review"}
       argument = %{"name" => "language", "value" => "py"}
       {:ok, response} = Anubis.Client.complete(client, ref, argument)
-      
+
       # Access the completion values
       values = get_in(Response.unwrap(response), ["completion", "values"])
   """
@@ -738,14 +740,14 @@ defmodule Anubis.Client.Base do
 
       MyClient.register_sampling_callback(fn params ->
         messages = params["messages"]
-        
+
         # Show UI for user approval
         case MyUI.approve_sampling(messages) do
           {:approved, edited_messages} ->
             # Call LLM with approved/edited messages
             response = MyLLM.generate(edited_messages, params["modelPreferences"])
             {:ok, response}
-            
+
           :rejected ->
             {:error, "User rejected sampling request"}
         end
@@ -1066,16 +1068,8 @@ defmodule Anubis.Client.Base do
     end
   end
 
-  defp handle_server_request(%{"method" => "sampling/createMessage", "id" => id} = request, state) do
-    params = Map.get(request, "params", %{})
-
-    case validate_sampling_capability(state) do
-      :ok ->
-        handle_sampling_with_callback(id, params, state)
-
-      {:error, reason} ->
-        send_sampling_error(id, reason, "capability_disabled", %{}, state)
-    end
+  defp handle_server_request(%{"method" => "sampling/createMessage"} = request, state) do
+    {:noreply, Sampling.handle_request(request, state)}
   end
 
   @impl true
@@ -1160,7 +1154,7 @@ defmodule Anubis.Client.Base do
 
       Message.is_notification(message) ->
         Logging.message("incoming", "notification", nil, message)
-        handle_notification(message, state)
+        Handlers.handle_notification(message, state)
 
       Message.is_request(message) ->
         Logging.message("incoming", "request", message["id"], message)
@@ -1332,151 +1326,6 @@ defmodule Anubis.Client.Base do
     )
   end
 
-  # Notification handling
-
-  defp handle_notification(%{"method" => "notifications/progress"} = notification, state) do
-    handle_progress_notification(notification, state)
-  end
-
-  defp handle_notification(%{"method" => "notifications/message"} = notification, state) do
-    handle_log_notification(notification, state)
-  end
-
-  defp handle_notification(%{"method" => "notifications/cancelled"} = notification, state) do
-    handle_cancelled_notification(notification, state)
-  end
-
-  defp handle_notification(%{"method" => "notifications/resources/list_changed"} = notification, state) do
-    handle_resources_list_changed_notification(notification, state)
-  end
-
-  defp handle_notification(%{"method" => "notifications/resources/updated"} = notification, state) do
-    handle_resource_updated_notification(notification, state)
-  end
-
-  defp handle_notification(%{"method" => "notifications/prompts/list_changed"} = notification, state) do
-    handle_prompts_list_changed_notification(notification, state)
-  end
-
-  defp handle_notification(%{"method" => "notifications/tools/list_changed"} = notification, state) do
-    handle_tools_list_changed_notification(notification, state)
-  end
-
-  defp handle_notification(_, state), do: state
-
-  defp handle_cancelled_notification(%{"params" => params}, state) do
-    request_id = params["requestId"]
-    reason = Map.get(params, "reason", "unknown")
-
-    {request, updated_state} = State.remove_request(state, request_id)
-
-    if request do
-      Logging.client_event("request_cancelled", %{
-        id: request_id,
-        reason: reason
-      })
-
-      error =
-        Error.transport(:request_cancelled, %{
-          message: "Request cancelled by server",
-          reason: reason
-        })
-
-      GenServer.reply(request.from, {:error, error})
-    end
-
-    updated_state
-  end
-
-  defp handle_progress_notification(%{"params" => params}, state) do
-    progress_token = params["progressToken"]
-    progress = params["progress"]
-    total = Map.get(params, "total")
-
-    if callback = State.get_progress_callback(state, progress_token) do
-      Task.start(fn -> callback.(progress_token, progress, total) end)
-    end
-
-    state
-  end
-
-  defp handle_log_notification(%{"params" => params}, state) do
-    level = params["level"]
-    data = params["data"]
-    logger = Map.get(params, "logger")
-
-    if callback = State.get_log_callback(state) do
-      Task.start(fn -> callback.(level, data, logger) end)
-    end
-
-    log_to_logger(level, data, logger)
-
-    state
-  end
-
-  defp log_to_logger(level, data, logger) do
-    elixir_level =
-      case level do
-        level when level in ["debug"] -> :debug
-        level when level in ["info", "notice"] -> :info
-        level when level in ["warning"] -> :warning
-        level when level in ["error", "critical", "alert", "emergency"] -> :error
-        _ -> :info
-      end
-
-    Logging.client_event("server_log", %{level: level, data: data, logger: logger}, level: elixir_level)
-  end
-
-  defp handle_resources_list_changed_notification(_notification, state) do
-    Logging.client_event("resources_list_changed", nil)
-
-    Telemetry.execute(
-      Telemetry.event_client_notification(),
-      %{system_time: System.system_time()},
-      %{method: "resources/list_changed"}
-    )
-
-    state
-  end
-
-  defp handle_resource_updated_notification(%{"params" => params}, state) do
-    uri = params["uri"]
-
-    Logging.client_event("resource_updated", %{uri: uri})
-
-    Telemetry.execute(
-      Telemetry.event_client_notification(),
-      %{system_time: System.system_time()},
-      %{method: "resources/updated", uri: uri}
-    )
-
-    state
-  end
-
-  defp handle_prompts_list_changed_notification(_notification, state) do
-    Logging.client_event("prompts_list_changed", nil)
-
-    Telemetry.execute(
-      Telemetry.event_client_notification(),
-      %{system_time: System.system_time()},
-      %{method: "prompts/list_changed"}
-    )
-
-    state
-  end
-
-  defp handle_tools_list_changed_notification(_notification, state) do
-    Logging.client_event("tools_list_changed", nil)
-
-    Telemetry.execute(
-      Telemetry.event_client_notification(),
-      %{system_time: System.system_time()},
-      %{method: "tools/list_changed"}
-    )
-
-    state
-  end
-
   # Helper functions
 
   defp encode_request(method, params, request_id) do
@@ -1515,120 +1364,5 @@ defmodule Anubis.Client.Base do
   defp send_roots_list_changed_notification(state) do
     Logging.client_event("sending_roots_list_changed", nil)
     send_notification(state, "notifications/roots/list_changed")
-  end
-
-  defp validate_sampling_capability(state) do
-    if Map.has_key?(state.capabilities, "sampling") do
-      :ok
-    else
-      {:error, "Client does not have sampling capability enabled"}
-    end
-  end
-
-  defp handle_sampling_with_callback(id, params, state) do
-    case State.get_sampling_callback(state) do
-      nil ->
-        send_sampling_error(
-          id,
-          "No sampling callback registered",
-          "sampling_not_configured",
-          %{},
-          state
-        )
-
-      callback when is_function(callback, 1) ->
-        execute_sampling_callback(id, params, callback, state)
-    end
-  end
-
-  defp execute_sampling_callback(id, params, callback, state) do
-    Task.start(fn ->
-      try do
-        case callback.(params) do
-          {:ok, result} ->
-            handle_sampling_result(id, result, state)
-
-          {:error, message} ->
-            send_sampling_error(id, message, "sampling_error", %{}, state)
-        end
-      rescue
-        e ->
-          error_message = "Sampling callback error: #{Exception.message(e)}"
-
-          send_sampling_error(
-            id,
-            error_message,
-            "sampling_callback_error",
-            %{},
-            state
-          )
-      end
-    end)
-
-    {:noreply, state}
-  end
-
-  defp handle_sampling_result(id, result, state) do
-    case Message.encode_sampling_response(%{"result" => result}, id) do
-      {:ok, validated} ->
-        send_sampling_response(id, validated, state)
-
-      {:error, [%Peri.Error{} | _] = errors} ->
-        error_message = "Invalid sampling response"
-
-        send_sampling_error(
-          id,
-          error_message,
-          "invalid_sampling_response",
-          errors,
-          state
-        )
-
-      {:error, reason} ->
-        error_message = "Invalid sampling response: #{reason}"
-
-        send_sampling_error(
-          id,
-          error_message,
-          "invalid_sampling_response",
-          reason,
-          state
-        )
-    end
-  end
-
-  defp send_sampling_response(id, response, state) do
-    transport = state.transport
-    :ok = transport.layer.send_message(transport.name, response, timeout: state.timeout)
-
-    Telemetry.execute(
-      Telemetry.event_client_response(),
-      %{system_time: System.system_time()},
-      %{id: id, method: "sampling/createMessage"}
-    )
-  end
-
-  defp send_sampling_error(id, message, code, reason, %{transport: transport} = state) do
-    error = %Error{code: -1, message: message, data: %{"reason" => reason}}
-    {:ok, response} = Error.to_json_rpc(error, id)
-    :ok = transport.layer.send_message(transport.name, response, timeout: state.timeout)
-
-    Logging.client_event(
-      "sampling_error",
-      %{
-        id: id,
-        error_code: code,
-        error_message: message
-      },
-      level: :error
-    )
-
-    Telemetry.execute(
-      Telemetry.event_client_error(),
-      %{system_time: System.system_time()},
-      %{id: id, method: "sampling/createMessage", error_code: code}
-    )
-
-    {:noreply, state}
   end
 end
