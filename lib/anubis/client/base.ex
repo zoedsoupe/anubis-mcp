@@ -1069,7 +1069,7 @@ defmodule Anubis.Client.Base do
   end
 
   defp handle_server_request(%{"method" => "sampling/createMessage"} = request, state) do
-    Sampling.handle_request(request, state)
+    {:noreply, Sampling.handle_request(request, state)}
   end
 
   @impl true

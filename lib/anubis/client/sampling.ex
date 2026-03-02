@@ -69,7 +69,7 @@ defmodule Anubis.Client.Sampling do
       end
     end)
 
-    {:noreply, state}
+    state
   end
 
   defp handle_sampling_result(id, result, state) do
@@ -133,6 +133,6 @@ defmodule Anubis.Client.Sampling do
       %{id: id, method: "sampling/createMessage", error_code: code}
     )
 
-    {:noreply, state}
+    state
   end
 end
