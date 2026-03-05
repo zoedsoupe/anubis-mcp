@@ -235,7 +235,7 @@ if Code.ensure_loaded?(Redix) do
           session_ids =
             keys
             |> Enum.map(&extract_session_id(state.namespace, &1))
-            |> filter_by_server(server_filter)
+            |> filter_by_server(server_filter, state)
 
           {:reply, {:ok, session_ids}, state}
 
@@ -417,13 +417,23 @@ if Code.ensure_loaded?(Redix) do
       end
     end
 
-    defp filter_by_server(session_ids, nil), do: session_ids
+    defp filter_by_server(session_ids, nil, _state), do: session_ids
 
-    defp filter_by_server(session_ids, server) do
-      # If we need server-specific filtering, we'd need to load each session
-      # and check its server field. For now, return all.
-      _ = server
-      session_ids
+    defp filter_by_server(session_ids, server, state) do
+      server_string = to_string(server)
+
+      Enum.filter(session_ids, fn session_id ->
+        key = make_key(state.namespace, session_id)
+
+        case load_and_decode(state, key) do
+          {:ok, data} ->
+            stored_server = data["server_module"] || data[:server_module]
+            is_nil(stored_server) or to_string(stored_server) == server_string
+
+          _error ->
+            false
+        end
+      end)
     end
   end
 end

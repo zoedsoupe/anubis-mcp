@@ -9,6 +9,7 @@ defmodule Anubis.Server.Session do
   @type t :: %__MODULE__{
           protocol_version: String.t() | nil,
           protocol_module: module() | nil,
+          server_module: module() | nil,
           initialized: boolean(),
           name: GenServer.name() | nil,
           client_info: map() | nil,
@@ -24,6 +25,7 @@ defmodule Anubis.Server.Session do
     :id,
     :protocol_version,
     :protocol_module,
+    :server_module,
     :log_level,
     :name,
     initialized: false,
@@ -35,6 +37,7 @@ defmodule Anubis.Server.Session do
   defschema :state_t, %{
     protocol_version: :string,
     protocol_module: :atom,
+    server_module: :atom,
     initialized: {:required, :boolean},
     name: {:custom, &Anubis.genserver_name/1},
     client_info: :map,
@@ -67,7 +70,7 @@ defmodule Anubis.Server.Session do
           state
 
         {:error, _reason} ->
-          new(id: session_id, name: name)
+          new(id: session_id, name: name, server_module: server_module)
       end
 
     Agent.start_link(fn -> initial_state end, name: name)

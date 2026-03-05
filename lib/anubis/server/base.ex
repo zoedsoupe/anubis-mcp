@@ -132,6 +132,15 @@ defmodule Anubis.Server.Base do
           if request_id, do: Session.complete_request(session.name, request_id)
           {:reply, {:error, error}, new_state}
       end
+    else
+      {:error, reason} ->
+        Logging.server_event("session_attach_failed", %{
+          session_id: session_id,
+          reason: inspect(reason)
+        }, level: :error)
+
+        error = Error.protocol(:internal_error, %{message: "Failed to attach session"})
+        {:reply, {:ok, Error.build_json_rpc(error, decoded["id"])}, state}
     end
   end
 
@@ -172,6 +181,14 @@ defmodule Anubis.Server.Base do
 
         {:noreply, state}
       end
+    else
+      {:error, reason} ->
+        Logging.server_event("session_attach_failed", %{
+          session_id: session_id,
+          reason: inspect(reason)
+        }, level: :error)
+
+        {:noreply, state}
     end
   end
 
