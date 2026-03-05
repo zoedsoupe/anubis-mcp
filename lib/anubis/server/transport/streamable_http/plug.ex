@@ -81,7 +81,9 @@ if Code.ensure_loaded?(Plug) do
     # GET request handler - establishes SSE connection
 
     defp handle_get(conn, %{transport: transport, session_header: session_header} = opts) do
-      if wants_sse?(conn) do
+      accept = conn |> get_req_header("accept") |> List.first("")
+
+      if String.contains?(accept, "text/event-stream") do
         session_id = get_or_create_session_id(conn, session_header)
 
         case StreamableHTTP.register_sse_handler(transport, session_id) do
@@ -190,11 +192,7 @@ if Code.ensure_loaded?(Plug) do
     defp handle_request_message(conn, message, session_id, context, opts) do
       case find_or_create_session(opts, session_id, message) do
         {:ok, session_pid} ->
-          if wants_sse?(conn) do
-            handle_sse_request(conn, session_pid, message, session_id, context, opts)
-          else
-            handle_json_request(conn, session_pid, message, session_id, context, opts)
-          end
+          handle_json_request(conn, session_pid, message, session_id, context, opts)
 
         {:error, :no_session} ->
           send_error(conn, 400, "No active session")
@@ -208,13 +206,37 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp handle_json_request(conn, session_pid, message, session_id, context, %{session_header: session_header} = opts) do
+    # Handles a JSON-RPC request from the client. After receiving the response from the
+    # session, routes it via an existing SSE channel if one is live for the session
+    # (returning 202), otherwise returns the response inline as 200 JSON.
+    #
+    # Per the MCP spec (2025-03-26), the server — not the client — decides whether to
+    # respond via SSE or inline JSON. The client's Accept header is a capability
+    # declaration (both application/json and text/event-stream are required by spec),
+    # not a demand for SSE. Routing based on Accept would incorrectly trigger SSE
+    # responses for clients such as OpenAI and Anthropic that include text/event-stream
+    # in Accept but expect inline JSON when no SSE channel has been established.
+    defp handle_json_request(conn, session_pid, message, session_id, context, opts) do
+      %{session_header: session_header, transport: transport} = opts
+
       case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
         {:ok, response} when is_binary(response) ->
-          conn
-          |> put_resp_content_type("application/json")
-          |> maybe_add_session_header(session_header, session_id)
-          |> send_resp(200, response)
+          handler_pid = StreamableHTTP.get_sse_handler(transport, session_id)
+
+          if handler_pid && Process.alive?(handler_pid) do
+            send(handler_pid, {:sse_message, response})
+
+            conn
+            |> put_resp_content_type("application/json")
+            |> send_resp(202, "{}")
+          else
+            if handler_pid, do: StreamableHTTP.unregister_sse_handler(transport, session_id)
+
+            conn
+            |> put_resp_content_type("application/json")
+            |> maybe_add_session_header(session_header, session_id)
+            |> send_resp(200, response)
+          end
 
         {:ok, nil} ->
           conn
@@ -234,81 +256,6 @@ if Code.ensure_loaded?(Plug) do
           Error.protocol(:internal_error, %{message: "Server unavailable"}),
           extract_request_id(message)
         )
-    end
-
-    defp handle_sse_request(conn, session_pid, message, session_id, context, opts) do
-      %{session_header: session_header} = opts
-
-      case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
-        {:ok, response} when is_binary(response) ->
-          route_sse_response(conn, response, session_id, opts)
-
-        {:ok, nil} ->
-          conn
-          |> put_resp_content_type("application/json")
-          |> maybe_add_session_header(session_header, session_id)
-          |> send_resp(200, "{}")
-
-        {:error, error} ->
-          handle_request_error(conn, error, message)
-      end
-    catch
-      :exit, reason ->
-        Logging.transport_event("session_call_failed", %{reason: reason}, level: :error)
-
-        send_jsonrpc_error(
-          conn,
-          Error.protocol(:internal_error, %{message: "Server unavailable"}),
-          extract_request_id(message)
-        )
-    end
-
-    defp route_sse_response(conn, response, session_id, %{transport: transport} = opts) do
-      handler_pid = StreamableHTTP.get_sse_handler(transport, session_id)
-
-      cond do
-        handler_pid && Process.alive?(handler_pid) ->
-          send(handler_pid, {:sse_message, response})
-
-          conn
-          |> put_resp_content_type("application/json")
-          |> send_resp(202, "{}")
-
-        handler_pid ->
-          StreamableHTTP.unregister_sse_handler(transport, session_id)
-          establish_sse_for_request(conn, response, session_id, opts)
-
-        true ->
-          establish_sse_for_request(conn, response, session_id, opts)
-      end
-    end
-
-    defp establish_sse_for_request(conn, response, session_id, opts) do
-      %{transport: transport, session_header: session_header} = opts
-
-      case StreamableHTTP.register_sse_handler(transport, session_id) do
-        :ok ->
-          self_pid = self()
-          Task.start(fn -> send(self_pid, {:sse_message, response}) end)
-
-          conn
-          |> put_resp_header(session_header, session_id)
-          |> Streaming.prepare_connection()
-          |> Streaming.start(transport, session_id,
-            on_close: fn ->
-              StreamableHTTP.unregister_sse_handler(transport, session_id)
-            end
-          )
-
-        {:error, reason} ->
-          Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
-
-          send_jsonrpc_error(
-            conn,
-            Error.protocol(:internal_error, %{reason: reason}),
-            nil
-          )
-      end
     end
 
     defp handle_delete(conn, %{transport: transport, session_header: session_header} = opts) do
@@ -374,13 +321,6 @@ if Code.ensure_loaded?(Plug) do
     end
 
     # Helper functions
-
-    defp wants_sse?(conn) do
-      conn
-      |> get_req_header("accept")
-      |> List.first("")
-      |> String.contains?("text/event-stream")
-    end
 
     defp validate_accept_header(conn) do
       accept_header =

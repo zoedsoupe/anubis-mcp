@@ -221,6 +221,27 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert response["result"] == %{}
     end
 
+    test "POST with Accept: application/json, text/event-stream and no SSE channel returns 200 JSON",
+         %{opts: opts, test_session_id: session_id} do
+      # Regression test: spec-compliant clients (e.g. OpenAI, Anthropic) send both
+      # content types in Accept. Without an established SSE channel the server must
+      # respond inline with 200 JSON, not 202.
+      request = build_request("ping", %{})
+      {:ok, body} = Message.encode_request(request, 1)
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json, text/event-stream")
+        |> put_req_header("mcp-session-id", session_id)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 200
+      {:ok, response} = Jason.decode(conn.resp_body)
+      assert response["result"] == %{}
+    end
+
     test "POST request with invalid JSON returns error", %{opts: opts} do
       conn =
         :post
