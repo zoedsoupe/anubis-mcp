@@ -238,6 +238,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["application/json; charset=utf-8"]
+
       {:ok, response} = Jason.decode(conn.resp_body)
       assert response["result"] == %{}
     end
