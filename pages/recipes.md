@@ -17,7 +17,7 @@ defmodule MyApp.AuthenticatedServer do
 
   def init(arg, frame) do
     # Check API key from transport metadata
-    api_key = get_in(frame.transport, [:headers, "x-api-key"])
+    api_key = frame.context.headers["x-api-key"]
 
     case authenticate_api_key(api_key) do
       {:ok, user} ->
@@ -67,7 +67,7 @@ defmodule MyApp.OAuthResource do
       nil ->
         {:ok, Jason.encode!(%{
           authenticated: false,
-          login_url: generate_oauth_url(frame.private.session_id)
+          login_url: generate_oauth_url(frame.context.session_id)
         })}
 
       token ->
@@ -253,14 +253,8 @@ defmodule MyApp.LiveDataServer do
     {:ok, frame}
   end
 
-  def handle_info({:data_update, data}, frame) do
-    # Send notification to client
-    notification = %{
-      method: "notifications/resources/list_changed",
-      params: %{}
-    }
-
-    send_notification(notification)
+  def handle_info({:data_update, _data}, frame) do
+    Anubis.Server.send_resources_list_changed()
     {:noreply, frame}
   end
 end
@@ -402,16 +396,16 @@ defmodule MyApp.LoggingServer do
   use Anubis.Server,
     name: "logging-demo",
     version: "1.0.0",
-    capabilities: [:logging]  # Advertise logging support
+    capabilities: [:tools, :logging]
 
-  def handle_request(%{"method" => "tools/call"} = request, frame) do
-    # Send log notifications to client
-    send_log_message(self(), "info", "Processing tool request", "request_handler")
+  component MyApp.SomeTool
 
-    # Do the work...
-    result = process_request(request)
+  def handle_tool_call(name, args, frame) do
+    Anubis.Server.send_log_message(:info, "Processing tool: #{name}")
 
-    send_log_message(self(), "debug", "Request completed", "request_handler")
+    result = process_tool(name, args)
+
+    Anubis.Server.send_log_message(:debug, "Tool completed: #{name}")
     {:reply, result, frame}
   end
 end

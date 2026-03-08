@@ -28,7 +28,7 @@ use Anubis.Client, options
 - `{:stdio, command: "cmd", args: ["arg1", "arg2"]}`
 - `{:streamable_http, url: "http://localhost:8000/mcp"}`
 - `{:websocket, url: "ws://localhost:8000/ws"}`
-- `{:sse, base_url: "http://localhost:8000"}`
+- `{:sse, base_url: "http://localhost:8000"}` _(deprecated — use `:streamable_http` instead)_
 
 ### Client Functions
 
@@ -215,7 +215,6 @@ schema do
   field :enum_field, :enum,
     required: true,
     description: "An enum field",
-    type: :string,
     values: ~w(option1 option2 option3)
 
   field :list_field, {:list, :string},

@@ -59,7 +59,7 @@ children = [
 How do you test this? Complete one file for reference:
 
 ```elixir
-Mix.install([{:anubis_mcp, "~> 0.11"}])
+Mix.install([{:anubis_mcp, "~> 0.17"}]) # x-release-please-version
 
 defmodule MyApp.Greeter do
   @moduledoc "Greet someone warmly"
@@ -219,7 +219,7 @@ defmodule MyApp.BugReportPrompt do
     {:reply, response, frame}
   end
 
-  defp bug_report_content(params) do
+  defp build_report_content(params) do
     """
     Please help me file a bug report for: #{params.title}
 
@@ -495,7 +495,7 @@ defmodule MyApp.Conversation do
 
   @impl true
   def execute(%{message: message}, frame) do
-    session_id = frame.private.session_id
+    session_id = frame.context.session_id
     history = ConversationStore.get_history(session_id)
 
     new_history = history ++ [message]
@@ -553,7 +553,7 @@ mix anubis.stdio.interactive --command elixir --args=--no-halt,my_app.exs
 mix anubis.streamable_http.interactive --base-url=http://localhost:8080 --header 'authorization: Bearer 123'
 
 # With verbose logging
-mix anubis.stdio.sse --base-url=http//:localhost:4000 -vvv
+mix anubis.streamable_http.interactive --base-url=http://localhost:4000 -vvv
 ```
 
 In the interactive session:
@@ -574,7 +574,7 @@ Result: Hello Alice! Welcome to the MCP world!
 
 mcp> show_state
 Client State:
-  Protocol: 2024-11-05
+  Protocol: 2025-06-18
   Initialized: true
   ...
 ```

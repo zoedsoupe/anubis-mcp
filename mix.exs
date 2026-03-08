@@ -125,7 +125,7 @@ defmodule Anubis.MixProject do
       groups_for_extras: [
         "Getting Started": [
           "README.md",
-          "pages/home.md"
+          "pages/introduction.md"
         ],
         "Building with Anubis": [
           "pages/building-a-client.md",

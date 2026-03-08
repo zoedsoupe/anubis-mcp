@@ -26,31 +26,42 @@ end
 ### Server
 
 ```elixir
-# Define a server with tools capabilities
+# Define a tool as a Component (compile-time registration)
+defmodule MyApp.Echo do
+  @moduledoc "Echoes everything the user says to the LLM"
+
+  use Anubis.Server.Component, type: :tool
+
+  schema do
+    field :text, :string, required: true, max_length: 150, description: "the text to be echoed"
+  end
+
+  @impl true
+  def execute(%{text: text}, _frame) do
+    {:ok, text}
+  end
+end
+
 defmodule MyApp.MCPServer do
   use Anubis.Server,
     name: "My Server",
     version: "1.0.0",
     capabilities: [:tools]
 
+  # Static component registration
+  component MyApp.Echo
+
   @impl true
-  # this callback will be called when the
-  # MCP initialize lifecycle completes
   def init(_client_info, frame) do
-    {:ok,frame
-      |> assign(counter: 0)
-      |> register_tool("echo",
-        input_schema: %{
-          text: {:required, :string, max: 150, description: "the text to be echoed"}
-        },
-        annotations: %{read_only: true},
-        description: "echoes everything the user says to the LLM") }
+    # You can also register tools dynamically at runtime via the Frame:
+    # frame = register_tool(frame, "dynamic_tool", description: "...", input_schema: %{...})
+    {:ok, frame}
   end
 
   @impl true
-  def handle_tool("echo", %{text: text}, frame) do
-    Logger.info("This tool was called #{frame.assigns.counter + 1}")
-    {:reply, text, assign(frame, counter: frame.assigns.counter + 1)}
+  def handle_tool_call("echo", %{text: text}, frame) do
+    Logger.info("Echo tool called")
+    {:reply, text, frame}
   end
 end
 
@@ -77,7 +88,7 @@ defmodule MyApp.MCPClient do
   use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
-    protocol_version: "2025-03-26"
+    protocol_version: "2025-06-18"
 end
 
 # Add to your application supervisor

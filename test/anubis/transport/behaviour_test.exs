@@ -3,14 +3,11 @@ defmodule Anubis.Transport.BehaviourTest do
   Tests for the functional `Anubis.Transport` behaviour implementations.
 
   Verifies transport_init/1, parse/2, encode/2, and extract_metadata/2
-  callbacks across all transport modules (client and server side).
+  callbacks across all client transport modules.
   """
 
   use ExUnit.Case, async: true
 
-  alias Anubis.Server.Transport.SSE, as: ServerSSE
-  alias Anubis.Server.Transport.STDIO, as: ServerSTDIO
-  alias Anubis.Server.Transport.StreamableHTTP, as: ServerHTTP
   alias Anubis.Transport.SSE, as: ClientSSE
   alias Anubis.Transport.STDIO, as: ClientSTDIO
   alias Anubis.Transport.StreamableHTTP, as: ClientHTTP
@@ -232,156 +229,11 @@ defmodule Anubis.Transport.BehaviourTest do
     end
   end
 
-  describe "Server STDIO transport" do
-    test "transport_init/1 returns ok with buffer state" do
-      assert {:ok, %{buffer: ""}} = ServerSTDIO.transport_init()
-    end
-
-    test "parse/encode round-trip" do
-      {:ok, state} = ServerSTDIO.transport_init()
-
-      {:ok, encoded, state} = ServerSTDIO.encode(@sample_response, state)
-      {:ok, [decoded], _state} = ServerSTDIO.parse(encoded, state)
-
-      assert decoded == @sample_response
-    end
-
-    test "parse/2 handles buffered partial data" do
-      {:ok, state} = ServerSTDIO.transport_init()
-      part1 = ~s({"jsonrpc":)
-      part2 = ~s( "2.0", "result": {}, "id": 1}\n)
-
-      assert {:ok, [], state} = ServerSTDIO.parse(part1, state)
-      assert {:ok, [msg], _state} = ServerSTDIO.parse(part2, state)
-      assert msg["id"] == 1
-    end
-
-    test "extract_metadata/2 includes server type" do
-      {:ok, state} = ServerSTDIO.transport_init()
-      metadata = ServerSTDIO.extract_metadata(nil, state)
-
-      assert metadata.transport == :stdio
-      assert metadata.type == :server
-      assert is_binary(metadata.pid)
-      assert is_map(metadata.env)
-    end
-  end
-
-  describe "Server StreamableHTTP transport" do
-    test "transport_init/1 returns ok with default state" do
-      assert {:ok, %{session_id: nil, session_header: "mcp-session-id"}} =
-               ServerHTTP.transport_init()
-    end
-
-    test "transport_init/1 accepts custom session header" do
-      assert {:ok, %{session_header: "x-session"}} =
-               ServerHTTP.transport_init(session_header: "x-session")
-    end
-
-    test "parse/2 decodes JSON string" do
-      {:ok, state} = ServerHTTP.transport_init()
-      json = JSON.encode!(@sample_request)
-
-      assert {:ok, [@sample_request], ^state} = ServerHTTP.parse(json, state)
-    end
-
-    test "parse/2 accepts map input" do
-      {:ok, state} = ServerHTTP.transport_init()
-      assert {:ok, [@sample_request], ^state} = ServerHTTP.parse(@sample_request, state)
-    end
-
-    test "parse/2 handles JSON arrays" do
-      {:ok, state} = ServerHTTP.transport_init()
-      batch = JSON.encode!([@sample_request, @sample_notification])
-
-      assert {:ok, [@sample_request, @sample_notification], ^state} =
-               ServerHTTP.parse(batch, state)
-    end
-
-    test "encode/2 produces JSON without newline" do
-      {:ok, state} = ServerHTTP.transport_init()
-
-      assert {:ok, encoded, ^state} = ServerHTTP.encode(@sample_response, state)
-      refute String.ends_with?(encoded, "\n")
-    end
-
-    test "parse/encode round-trip" do
-      {:ok, state} = ServerHTTP.transport_init()
-
-      {:ok, encoded, state} = ServerHTTP.encode(@sample_response, state)
-      {:ok, [decoded], _state} = ServerHTTP.parse(encoded, state)
-
-      assert decoded == @sample_response
-    end
-
-    test "extract_metadata/2 with headers" do
-      {:ok, state} = ServerHTTP.transport_init()
-      headers = [{"mcp-session-id", "sess_xyz"}]
-
-      metadata = ServerHTTP.extract_metadata(headers, state)
-      assert metadata.transport == :streamable_http
-      assert metadata.type == :server
-      assert metadata.session_id == "sess_xyz"
-    end
-
-    test "extract_metadata/2 falls back to state" do
-      {:ok, state} = ServerHTTP.transport_init(session_id: "fallback")
-
-      metadata = ServerHTTP.extract_metadata(:unknown, state)
-      assert metadata.session_id == "fallback"
-    end
-  end
-
-  describe "Server SSE transport" do
-    test "transport_init/1 returns ok with default state" do
-      assert {:ok, %{session_id: nil, post_path: "/messages"}} =
-               ServerSSE.transport_init()
-    end
-
-    test "parse/2 decodes JSON string" do
-      {:ok, state} = ServerSSE.transport_init()
-      json = JSON.encode!(@sample_request)
-
-      assert {:ok, [@sample_request], ^state} = ServerSSE.parse(json, state)
-    end
-
-    test "parse/2 accepts map input" do
-      {:ok, state} = ServerSSE.transport_init()
-      assert {:ok, [@sample_request], ^state} = ServerSSE.parse(@sample_request, state)
-    end
-
-    test "encode/2 produces SSE event format" do
-      {:ok, state} = ServerSSE.transport_init()
-
-      assert {:ok, encoded, ^state} = ServerSSE.encode(@sample_response, state)
-      assert String.starts_with?(encoded, "event: message\ndata: ")
-      assert String.ends_with?(encoded, "\n\n")
-
-      # Extract JSON from SSE event
-      [_, json_line | _] = String.split(encoded, "\n")
-      json = String.replace_prefix(json_line, "data: ", "")
-      assert {:ok, decoded} = JSON.decode(json)
-      assert decoded == @sample_response
-    end
-
-    test "extract_metadata/2 without Plug.Conn" do
-      {:ok, state} = ServerSSE.transport_init(session_id: "sse_sess")
-
-      metadata = ServerSSE.extract_metadata(nil, state)
-      assert metadata.transport == :sse
-      assert metadata.type == :server
-      assert metadata.session_id == "sse_sess"
-    end
-  end
-
   describe "cross-transport consistency" do
     @transports [
       {ClientSTDIO, :client_stdio},
       {ClientHTTP, :client_http},
-      {ClientSSE, :client_sse},
-      {ServerSTDIO, :server_stdio},
-      {ServerHTTP, :server_http},
-      {ServerSSE, :server_sse}
+      {ClientSSE, :client_sse}
     ]
 
     for {mod, label} <- @transports do
@@ -393,7 +245,7 @@ defmodule Anubis.Transport.BehaviourTest do
         {:ok, state} = unquote(mod).transport_init()
 
         json =
-          if unquote(mod) in [ClientSTDIO, ServerSTDIO] do
+          if unquote(mod) in [ClientSTDIO] do
             JSON.encode!(@sample_request) <> "\n"
           else
             JSON.encode!(@sample_request)
@@ -409,7 +261,7 @@ defmodule Anubis.Transport.BehaviourTest do
 
         # STDIO transports need newline to process
         input =
-          if unquote(mod) in [ClientSTDIO, ServerSTDIO] do
+          if unquote(mod) in [ClientSTDIO] do
             "not valid json\n"
           else
             "not valid json"

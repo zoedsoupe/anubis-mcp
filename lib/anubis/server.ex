@@ -22,27 +22,23 @@ defmodule Anubis.Server do
       end
 
       defmodule MyServer.Calculator do
+        @moduledoc "Add two numbers"
+
         use Anubis.Server.Component, type: :tool
 
-        def definition do
-          %{
-            name: "add",
-            description: "Add two numbers",
-            input_schema: %{
-              type: "object",
-              properties: %{
-                a: %{type: "number"},
-                b: %{type: "number"}
-              }
-            }
-          }
+        schema do
+          field :a, :number, required: true
+          field :b, :number, required: true
         end
 
-        def call(%{"a" => a, "b" => b}), do: {:ok, a + b}
+        def execute(%{a: a, b: b}, _frame) do
+          {:ok, a + b}
+        end
       end
 
-      # Start your server
-      {:ok, _pid} = Anubis.Server.start_link(MyServer, [], transport: :stdio)
+      # In your supervision tree
+      children = [Anubis.Server.Registry, {MyServer, transport: :stdio}]
+      Supervisor.start_link(children, strategy: :one_for_one)
 
   Your server is now a living process that AI assistants can connect to, discover available
   tools, and execute calculations through a secure protocol boundary.
