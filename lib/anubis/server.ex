@@ -334,6 +334,7 @@ defmodule Anubis.Server do
 
   def parse_components({:tool, name, mod}) do
     annotations = if Anubis.exported?(mod, :annotations, 0), do: mod.annotations()
+    meta = if Anubis.exported?(mod, :meta, 0), do: mod.meta()
     output_schema = if Anubis.exported?(mod, :output_schema, 0), do: mod.output_schema()
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
     title = determine_tool_title(annotations, title)
@@ -362,6 +363,7 @@ defmodule Anubis.Server do
           input_schema: mod.input_schema(),
           output_schema: output_schema,
           annotations: annotations,
+          meta: meta,
           handler: mod,
           validate_input: validate_input,
           validate_output: validate_output
