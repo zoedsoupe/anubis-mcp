@@ -151,6 +151,7 @@ defmodule Anubis.Server.Frame do
       input_schema: Schema.to_json_schema(input_schema),
       output_schema: if(output_schema, do: Schema.to_json_schema(output_schema)),
       annotations: annotations,
+      meta: opts[:meta],
       title: title,
       validate_input: validate_input,
       validate_output: validate_output
