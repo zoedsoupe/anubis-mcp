@@ -47,6 +47,46 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       refute StreamableHTTP.get_sse_handler(transport, session_id)
     end
 
+    test "stale unregister cannot remove a newer handler", %{transport: transport} do
+      session_id = "test-session-race"
+      test_pid = self()
+
+      old_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, self()})
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive {:registered, ^old_handler}
+
+      new_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, self()})
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive {:registered, ^new_handler}
+      assert ^new_handler = StreamableHTTP.get_sse_handler(transport, session_id)
+
+      # Simulate delayed close from old SSE connection.
+      assert :ok = StreamableHTTP.unregister_sse_handler(transport, session_id, old_handler)
+      assert ^new_handler = StreamableHTTP.get_sse_handler(transport, session_id)
+
+      assert :ok = StreamableHTTP.unregister_sse_handler(transport, session_id, new_handler)
+      refute StreamableHTTP.get_sse_handler(transport, session_id)
+
+      send(old_handler, :stop)
+      send(new_handler, :stop)
+    end
+
     test "routes messages to sessions", %{transport: transport} do
       session_id = "test-session-789"
 
