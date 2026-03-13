@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.1...v1.0.0) (2026-03-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96))
+
+### Features
+
+* add _meta support to Tool struct and JSON encoder ([#108](https://github.com/zoedsoupe/anubis-mcp/issues/108)) ([6ac49d1](https://github.com/zoedsoupe/anubis-mcp/commit/6ac49d181baed767defe9fc5138c6d41caa26f20))
+
+
+### Code Refactoring
+
+* **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96)) ([badb0f0](https://github.com/zoedsoupe/anubis-mcp/commit/badb0f0111521f8bd5a5dba32574c25e1b589c91))
+* **phase-4:** client extraction of handlers ([#100](https://github.com/zoedsoupe/anubis-mcp/issues/100)) ([08b98c0](https://github.com/zoedsoupe/anubis-mcp/commit/08b98c03e50d698a781507ee63a4a6c5f8cdcb5e))
+
 ## [0.17.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.0...v0.17.1) (2026-02-28)
 
 
