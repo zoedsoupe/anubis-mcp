@@ -71,6 +71,7 @@ defmodule Anubis.Server.Component.Tool do
           input_schema: map | nil,
           output_schema: map | nil,
           annotations: map | nil,
+          meta: map | nil,
           handler: module | nil,
           validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
           validate_output: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
@@ -83,6 +84,7 @@ defmodule Anubis.Server.Component.Tool do
     input_schema: nil,
     output_schema: nil,
     annotations: nil,
+    meta: nil,
     handler: nil,
     validate_input: nil,
     validate_output: nil
@@ -155,6 +157,14 @@ defmodule Anubis.Server.Component.Tool do
   @callback annotations() :: annotations()
 
   @doc """
+  Returns optional metadata for the tool.
+
+  The _meta field allows tools to carry arbitrary metadata that is not
+  part of the core MCP protocol. This is an optional callback.
+  """
+  @callback meta() :: map()
+
+  @doc """
   Executes the tool with the given parameters.
 
   ## Parameters
@@ -190,7 +200,7 @@ defmodule Anubis.Server.Component.Tool do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0
+  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0, meta: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Tool
@@ -204,6 +214,7 @@ defmodule Anubis.Server.Component.Tool do
       |> then(&if t = tool.title, do: Map.put(&1, "title", t), else: &1)
       |> then(&if os = tool.output_schema, do: Map.put(&1, "outputSchema", os), else: &1)
       |> then(&if a = tool.annotations, do: Map.put(&1, "annotations", a), else: &1)
+      |> then(&if m = tool.meta, do: Map.put(&1, "_meta", m), else: &1)
       |> JSON.encode!()
     end
   end
