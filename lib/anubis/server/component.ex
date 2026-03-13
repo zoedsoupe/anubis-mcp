@@ -25,6 +25,7 @@ defmodule Anubis.Server.Component do
     name = Keyword.get(opts, :name, basename)
     mime_type = Keyword.get(opts, :mime_type, "text/plain")
     annotations = Keyword.get(opts, :annotations)
+    meta = Keyword.get(opts, :meta)
 
     quote do
       @behaviour unquote(behaviour_module)
@@ -65,6 +66,11 @@ defmodule Anubis.Server.Component do
         if unquote(annotations) != nil do
           @impl true
           def annotations, do: unquote(annotations)
+        end
+
+        if unquote(meta) != nil do
+          @impl true
+          def meta, do: unquote(meta)
         end
       end
 

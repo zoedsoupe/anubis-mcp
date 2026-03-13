@@ -179,6 +179,25 @@ defmodule TestPrompts.LegacyPrompt do
   end
 end
 
+defmodule ToolWithMeta do
+  @moduledoc "A tool with _meta support"
+
+  use Anubis.Server.Component,
+    type: :tool,
+    meta: %{"source" => "test", "custom_key" => 42}
+
+  alias Anubis.Server.Response
+
+  schema do
+    field(:input, {:required, :string}, description: "Input value")
+  end
+
+  @impl true
+  def execute(%{input: input}, frame) do
+    {:reply, Response.text(Response.tool(), "Meta: #{input}"), frame}
+  end
+end
+
 defmodule ToolWithAnnotations do
   @moduledoc "A tool with annotations"
 
