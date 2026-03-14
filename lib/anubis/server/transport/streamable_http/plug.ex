@@ -275,7 +275,7 @@ if Code.ensure_loaded?(Plug) do
           |> send_resp(202, "{}")
 
         handler_pid ->
-          StreamableHTTP.unregister_sse_handler(transport, session_id)
+          StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
           establish_sse_for_request(conn, response, session_id, opts)
 
         true ->
@@ -288,6 +288,7 @@ if Code.ensure_loaded?(Plug) do
 
       case StreamableHTTP.register_sse_handler(transport, session_id) do
         :ok ->
+          handler_pid = self()
           self_pid = self()
           Task.start(fn -> send(self_pid, {:sse_message, response}) end)
 
@@ -296,7 +297,7 @@ if Code.ensure_loaded?(Plug) do
           |> Streaming.prepare_connection()
           |> Streaming.start(transport, session_id,
             on_close: fn ->
-              StreamableHTTP.unregister_sse_handler(transport, session_id)
+              StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
             end
           )
 
@@ -525,13 +526,14 @@ if Code.ensure_loaded?(Plug) do
 
     defp start_sse_streaming(conn, params) do
       %{transport: transport, session_id: session_id, session_header: session_header} = params
+      handler_pid = self()
 
       conn
       |> put_resp_header(session_header, session_id)
       |> Streaming.prepare_connection()
       |> Streaming.start(transport, session_id,
         on_close: fn ->
-          StreamableHTTP.unregister_sse_handler(transport, session_id)
+          StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
         end
       )
     end

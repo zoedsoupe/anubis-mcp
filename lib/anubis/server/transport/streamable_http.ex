@@ -97,9 +97,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   @doc """
   Unregisters the SSE handler for a session. Called when the SSE connection closes.
   """
-  @spec unregister_sse_handler(GenServer.server(), String.t()) :: :ok
-  def unregister_sse_handler(transport, session_id) do
-    GenServer.cast(transport, {:unregister_sse_handler, session_id})
+  @spec unregister_sse_handler(GenServer.server(), String.t(), pid() | nil) :: :ok
+  def unregister_sse_handler(transport, session_id, expected_pid \\ nil) do
+    GenServer.cast(transport, {:unregister_sse_handler, session_id, expected_pid})
   end
 
   @doc """
@@ -156,9 +156,23 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_call({:register_sse_handler, session_id, pid}, _from, state) do
-    ref = Process.monitor(pid)
+    sse_handlers =
+      case Map.get(state.sse_handlers, session_id) do
+        {^pid, old_ref} ->
+          Process.demonitor(old_ref, [:flush])
+          state.sse_handlers
 
-    sse_handlers = Map.put(state.sse_handlers, session_id, {pid, ref})
+        {old_pid, old_ref} ->
+          Process.demonitor(old_ref, [:flush])
+          send(old_pid, :close_sse)
+          state.sse_handlers
+
+        nil ->
+          state.sse_handlers
+      end
+
+    ref = Process.monitor(pid)
+    sse_handlers = Map.put(sse_handlers, session_id, {pid, ref})
 
     Logging.transport_event("sse_handler_registered", %{
       session_id: session_id,
@@ -204,8 +218,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_cast({:unregister_sse_handler, session_id}, state) do
+    handle_cast({:unregister_sse_handler, session_id, nil}, state)
+  end
+
+  @impl GenServer
+  def handle_cast({:unregister_sse_handler, session_id, expected_pid}, state) do
     sse_handlers =
       case Map.get(state.sse_handlers, session_id) do
+        {pid, _ref} when is_pid(expected_pid) and pid != expected_pid ->
+          state.sse_handlers
+
         {_pid, ref} ->
           Process.demonitor(ref, [:flush])
           Map.delete(state.sse_handlers, session_id)
