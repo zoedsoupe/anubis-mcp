@@ -26,9 +26,9 @@ use Anubis.Client, options
 **Transport Options:**
 
 - `{:stdio, command: "cmd", args: ["arg1", "arg2"]}`
-- `{:streamable_http, url: "http://localhost:8000/mcp"}`
-- `{:websocket, url: "ws://localhost:8000/ws"}`
-- `{:sse, base_url: "http://localhost:8000"}`
+- `{:streamable_http, base_url: "http://localhost:8000"}`
+- `{:websocket, base_url: "ws://localhost:8000"}`
+- `{:sse, base_url: "http://localhost:8000"}` _(deprecated — use `:streamable_http` instead)_
 
 ### Client Functions
 
@@ -131,6 +131,8 @@ end
 ```elixir
 use Anubis.Server.Component, type: :tool
 
+alias Anubis.Server.Response
+
 # Schema definition
 schema do
   field :name, :string, required: true
@@ -139,7 +141,7 @@ end
 
 # Execution callback
 def execute(params, frame) do
-  {:ok, result}  # or {:error, reason}
+  {:reply, Response.text(Response.tool(), result), frame}
 end
 ```
 
@@ -150,9 +152,11 @@ use Anubis.Server.Component,
   type: :resource,
   uri: "resource://type/name"
 
+alias Anubis.Server.Response
+
 # Read callback
 def read(params, frame) do
-  {:ok, content}  # or {:error, reason}
+  {:reply, Response.text(Response.resource(), content), frame}
 end
 ```
 
@@ -161,6 +165,8 @@ end
 ```elixir
 use Anubis.Server.Component, type: :prompt
 
+alias Anubis.Server.Response
+
 # Schema for arguments
 schema do
   field :context, :string
@@ -168,7 +174,8 @@ end
 
 # Get messages callback
 def get_messages(params, frame) do
-  {:ok, [%{role: "user", content: "..."}]}
+  response = Response.prompt() |> Response.user_message("...")
+  {:reply, response, frame}
 end
 ```
 
@@ -215,7 +222,6 @@ schema do
   field :enum_field, :enum,
     required: true,
     description: "An enum field",
-    type: :string,
     values: ~w(option1 option2 option3)
 
   field :list_field, {:list, :string},
@@ -247,10 +253,11 @@ Most client functions return:
 
 ### Server Returns
 
-Component callbacks should return:
+Component callbacks return:
 
-- `{:ok, result}` - Success with result
-- `{:error, message}` - Error with message
+- `{:reply, %Response{}, frame}` - Success with response
+- `{:noreply, frame}` - No reply needed
+- `{:error, %Error{}, frame}` - Error with structured error
 
 Server callbacks return:
 

@@ -12,12 +12,14 @@ defmodule MyApp.Greeter do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :name, :string, required: true
   end
 
-  def execute(%{name: name}, _frame) do
-    {:ok, "Hello #{name}! Welcome to the MCP world!"}
+  def execute(%{name: name}, frame) do
+    {:reply, Response.text(Response.tool(), "Hello #{name}! Welcome to the MCP world!"), frame}
   end
 end
 ```
@@ -59,19 +61,21 @@ children = [
 How do you test this? Complete one file for reference:
 
 ```elixir
-Mix.install([{:anubis_mcp, "~> 0.11"}])
+Mix.install([{:anubis_mcp, "~> 0.17"}]) # x-release-please-version
 
 defmodule MyApp.Greeter do
   @moduledoc "Greet someone warmly"
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :name, :string, required: true
   end
 
-  def execute(%{name: name}, _frame) do
-    {:ok, "Hello #{name}! Welcome to the MCP world!"}
+  def execute(%{name: name}, frame) do
+    {:reply, Response.text(Response.tool(), "Hello #{name}! Welcome to the MCP world!"), frame}
   end
 end
 
@@ -201,7 +205,7 @@ defmodule MyApp.BugReportPrompt do
 
   schema do
     field :title, :string, required: true
-    field :severity, :string, values: ["low", "medium", "high", "critical"]
+    field :severity, :enum, values: ["low", "medium", "high", "critical"]
     field :steps_to_reproduce, :string
     field :expected_behavior, :string
     field :actual_behavior, :string
@@ -219,7 +223,7 @@ defmodule MyApp.BugReportPrompt do
     {:reply, response, frame}
   end
 
-  defp bug_report_content(params) do
+  defp build_report_content(params) do
     """
     Please help me file a bug report for: #{params.title}
 
@@ -255,7 +259,7 @@ defmodule MyApp.Calculator do
   use Anubis.Server.Component, type: :tool
 
   schema do
-    field :operation, :string, required: true, values: ["add", "subtract", "multiply", "divide"]
+    field :operation, :enum, required: true, values: ["add", "subtract", "multiply", "divide"]
     field :a, :float, required: true
     field :b, :float, required: true
   end
@@ -460,6 +464,8 @@ defmodule MyApp.DatabaseQuery do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :query, :string, required: true
   end
@@ -471,7 +477,7 @@ defmodule MyApp.DatabaseQuery do
         {:reply, Response.json(Response.tool(), format_result(result)), frame}
 
       {:error, reason} ->
-        {:reply, Response.error(Response.tool(), "Query failed: #{to_string(reason)}")}
+        {:reply, Response.error(Response.tool(), "Query failed: #{to_string(reason)}"), frame}
     end
   end
 end
@@ -489,13 +495,15 @@ defmodule MyApp.Conversation do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :message, :string, required: true
   end
 
   @impl true
   def execute(%{message: message}, frame) do
-    session_id = frame.private.session_id
+    session_id = frame.context.session_id
     history = ConversationStore.get_history(session_id)
 
     new_history = history ++ [message]
@@ -553,7 +561,7 @@ mix anubis.stdio.interactive --command elixir --args=--no-halt,my_app.exs
 mix anubis.streamable_http.interactive --base-url=http://localhost:8080 --header 'authorization: Bearer 123'
 
 # With verbose logging
-mix anubis.stdio.sse --base-url=http//:localhost:4000 -vvv
+mix anubis.streamable_http.interactive --base-url=http://localhost:4000 -vvv
 ```
 
 In the interactive session:
@@ -574,7 +582,7 @@ Result: Hello Alice! Welcome to the MCP world!
 
 mcp> show_state
 Client State:
-  Protocol: 2024-11-05
+  Protocol: 2025-06-18
   Initialized: true
   ...
 ```
@@ -587,14 +595,16 @@ Now let's write some tests:
 defmodule MyApp.ServerTest do
   use ExUnit.Case
 
-  alias Anubis.Server.Frame
+  alias Anubis.Server.{Frame, Response}
 
   test "greeter tool works correctly" do
     frame = %Frame{}
 
-    assert {:reply, resp, ^frame} = Greeter.execute(%{name: "joe"}, frame)
-    assert {:ok, %{"result" => %{"content" => content}}} = JSON.decode(resp)
-    assert [%{"text" => "Hello joe! Welcome to the MCP world!"}] = content
+    assert {:reply, %Response{} = response, ^frame} =
+             MyApp.Greeter.execute(%{name: "joe"}, frame)
+
+    assert response.type == :tool
+    assert [%{text: "Hello joe! Welcome to the MCP world!"}] = response.content
   end
 end
 ```

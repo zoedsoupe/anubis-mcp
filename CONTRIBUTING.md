@@ -113,4 +113,4 @@ Releases are managed by the maintainers. Version numbers follow [Semantic Versio
 
 ## License
 
-By contributing to Anubis MCP, you agree that your contributions will be licensed under the project's [MIT License](./LICENSE).
+By contributing to Anubis MCP, you agree that your contributions will be licensed under the project's [LGPL-v3 License](./LICENSE).
