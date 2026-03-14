@@ -27,7 +27,7 @@
       default = pkgs.mkShell {
         name = "anubis-mcp-dev";
         packages = with pkgs; [
-          (elixir-with-otp erlang_28)."1.18.4"
+          (elixir-with-otp erlang_28).latest
           erlang_28
           redis
           uv

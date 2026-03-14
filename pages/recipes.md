@@ -43,11 +43,13 @@ Now your tools can access the authenticated user:
 defmodule MyApp.SecureTool do
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   def execute(params, frame) do
     user = frame.assigns.user
 
     # User-scoped operations
-    {:ok, "Hello #{user.name}, you have access to this tool!"}
+    {:reply, Response.text(Response.tool(), "Hello #{user.name}, you have access to this tool!"), frame}
   end
 end
 ```
@@ -62,19 +64,21 @@ defmodule MyApp.OAuthResource do
     type: :resource,
     uri: "auth://oauth/status"
 
+  alias Anubis.Server.Response
+
   def read(_params, frame) do
     case frame.assigns[:oauth_token] do
       nil ->
-        {:ok, Jason.encode!(%{
+        {:reply, Response.json(Response.resource(), %{
           authenticated: false,
           login_url: generate_oauth_url(frame.context.session_id)
-        })}
+        }), frame}
 
       token ->
-        {:ok, Jason.encode!(%{
+        {:reply, Response.json(Response.resource(), %{
           authenticated: true,
           user: fetch_user_info(token)
-        })}
+        }), frame}
     end
   end
 end
@@ -90,6 +94,8 @@ defmodule MyApp.FileManager do
 
   @moduledoc "Safely read files from allowed directories"
 
+  alias Anubis.Server.Response
+
   schema do
     field :path, :string, required: true
   end
@@ -100,18 +106,18 @@ defmodule MyApp.FileManager do
 
     with :ok <- validate_path_access(path, allowed_dirs),
          {:ok, content} <- File.read(path) do
-      {:ok, %{
+      {:reply, Response.json(Response.tool(), %{
         path: path,
         size: byte_size(content),
         content: content,
         mime_type: MIME.from_path(path)
-      }}
+      }), frame}
     else
       {:error, :access_denied} ->
-        {:error, "Access denied to path: #{path}"}
+        {:reply, Response.error(Response.tool(), "Access denied to path: #{path}"), frame}
 
       {:error, reason} ->
-        {:error, "Failed to read file: #{inspect(reason)}"}
+        {:reply, Response.error(Response.tool(), "Failed to read file: #{inspect(reason)}"), frame}
     end
   end
 
@@ -137,8 +143,10 @@ defmodule MyApp.QueryBuilder do
 
   @moduledoc "Build and execute safe database queries"
 
+  alias Anubis.Server.Response
+
   schema do
-    field :table, :string, required: true, values: ["users", "products", "orders"]
+    field :table, :enum, required: true, values: ["users", "products", "orders"]
     field :filters, :map
     field :limit, :integer, default: 100, max: 1000
     field :order_by, :string
@@ -154,10 +162,10 @@ defmodule MyApp.QueryBuilder do
 
     case MyApp.Repo.all(query) do
       results when is_list(results) ->
-        {:ok, Enum.map(results, &sanitize_result/1)}
+        {:reply, Response.json(Response.tool(), Enum.map(results, &sanitize_result/1)), frame}
 
       error ->
-        {:error, "Query failed: #{inspect(error)}"}
+        {:reply, Response.error(Response.tool(), "Query failed: #{inspect(error)}"), frame}
     end
   end
 
@@ -191,6 +199,8 @@ defmodule MyApp.ReportGenerator do
 
   @moduledoc "Generate complex reports"
 
+  alias Anubis.Server.Response
+
   schema do
     field :report_type, :string, required: true
     field :date_range, :map
@@ -206,31 +216,33 @@ defmodule MyApp.ReportGenerator do
     end)
 
     # Return immediately with task ID
-    {:ok, %{
+    {:reply, Response.json(Response.tool(), %{
       task_id: task_id,
       status: "processing",
       check_status_with: "report_status"
-    }}
+    }), frame}
   end
 end
 
 defmodule MyApp.ReportStatus do
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :task_id, :string, required: true
   end
 
-  def execute(%{task_id: task_id}, _frame) do
+  def execute(%{task_id: task_id}, frame) do
     case ReportStore.get(task_id) do
       nil ->
-        {:ok, %{status: "processing"}}
+        {:reply, Response.json(Response.tool(), %{status: "processing"}), frame}
 
       {:completed, result} ->
-        {:ok, %{status: "completed", result: result}}
+        {:reply, Response.json(Response.tool(), %{status: "completed", result: result}), frame}
 
       {:error, reason} ->
-        {:ok, %{status: "failed", error: reason}}
+        {:reply, Response.json(Response.tool(), %{status: "failed", error: reason}), frame}
     end
   end
 end
@@ -283,8 +295,10 @@ defmodule MyApp.ComponentTest do
       params = %{required_field: "value", optional_field: 42}
       frame = %Anubis.Server.Frame{assigns: %{user: %{id: 1}}}
 
-      assert {:ok, result} = MyApp.ComplexTool.execute(params, frame)
-      assert result.processed == true
+      assert {:reply, %Anubis.Server.Response{} = response, ^frame} =
+               MyApp.ComplexTool.execute(params, frame)
+
+      assert response.type == :tool
     end
   end
 end
@@ -298,27 +312,29 @@ How do you handle and recover from errors gracefully?
 defmodule MyApp.ResilientTool do
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   def execute(params, frame) do
     with {:ok, data} <- fetch_external_data(params),
          {:ok, processed} <- process_data(data),
          {:ok, stored} <- store_results(processed) do
-      {:ok, format_success(stored)}
+      {:reply, Response.json(Response.tool(), format_success(stored)), frame}
     else
       {:error, :external_service_down} ->
         # Fallback to cache
         case get_cached_data(params) do
           {:ok, cached} ->
-            {:ok, %{data: cached, source: "cache", warning: "Using cached data"}}
+            {:reply, Response.json(Response.tool(), %{data: cached, source: "cache", warning: "Using cached data"}), frame}
           :error ->
-            {:error, "Service unavailable and no cached data found"}
+            {:reply, Response.error(Response.tool(), "Service unavailable and no cached data found"), frame}
         end
 
       {:error, :rate_limited} ->
-        {:error, "Rate limited. Please try again in a few minutes."}
+        {:reply, Response.error(Response.tool(), "Rate limited. Please try again in a few minutes."), frame}
 
       {:error, reason} ->
         Logger.error("Tool execution failed: #{inspect(reason)}")
-        {:error, "An unexpected error occurred"}
+        {:reply, Response.error(Response.tool(), "An unexpected error occurred"), frame}
     end
   end
 end
@@ -332,8 +348,10 @@ Need to handle high-throughput scenarios?
 defmodule MyApp.BatchProcessor do
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
-    field :items, {:array, :map}, required: true, max_items: 1000
+    field :items, {:list, :map}, required: true
   end
 
   def execute(%{items: items}, frame) do
@@ -354,11 +372,11 @@ defmodule MyApp.BatchProcessor do
     successful = Enum.filter(results, &match?({:ok, _}, &1))
     failed = Enum.filter(results, &match?({:error, _}, &1))
 
-    {:ok, %{
+    {:reply, Response.json(Response.tool(), %{
       processed: length(successful),
       failed: length(failed),
       results: successful
-    }}
+    }), frame}
   end
 end
 ```

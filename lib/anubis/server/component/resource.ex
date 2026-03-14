@@ -11,7 +11,8 @@ defmodule Anubis.Server.Component.Resource do
       defmodule MyServer.Resources.Documentation do
         @behaviour Anubis.Server.Behaviour.Resource
 
-        alias Anubis.Server.Frame
+        alias Anubis.Server.{Frame, Response}
+        alias Anubis.MCP.Error
 
         @impl true
         def uri, do: "file:///docs/readme.md"
@@ -31,10 +32,10 @@ defmodule Anubis.Server.Component.Resource do
             {:ok, content} ->
               # Can track access in frame
               new_frame = Frame.assign(frame, :last_resource_access, DateTime.utc_now())
-              {:ok, content, new_frame}
+              {:reply, Response.text(Response.resource(), content), new_frame}
 
             {:error, reason} ->
-              {:error, "Failed to read README: \#{inspect(reason)}"}
+              {:error, Error.domain_error("Failed to read README: \#{inspect(reason)}"), frame}
           end
         end
       end
@@ -65,7 +66,7 @@ defmodule Anubis.Server.Component.Resource do
             timestamp: DateTime.utc_now()
           }
 
-          {:ok, Jason.encode!(status), frame}
+          {:reply, Response.json(Response.resource(), status), frame}
         end
       end
   """
@@ -180,9 +181,9 @@ defmodule Anubis.Server.Component.Resource do
 
   ## Return Values
 
-  - `{:ok, content}` - Resource read successfully, frame unchanged
-  - `{:ok, content, new_frame}` - Resource read successfully with frame updates
-  - `{:error, reason}` - Failed to read resource
+  - `{:reply, %Response{}, frame}` - Resource read successfully
+  - `{:noreply, frame}` - No reply needed
+  - `{:error, %Error{}, frame}` - Failed to read resource
 
   ## Content Types
 

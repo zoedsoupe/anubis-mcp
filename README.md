@@ -32,13 +32,15 @@ defmodule MyApp.Echo do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :text, :string, required: true, max_length: 150, description: "the text to be echoed"
   end
 
   @impl true
-  def execute(%{text: text}, _frame) do
-    {:ok, text}
+  def execute(%{text: text}, frame) do
+    {:reply, Response.text(Response.tool(), text), frame}
   end
 end
 
@@ -47,6 +49,8 @@ defmodule MyApp.MCPServer do
     name: "My Server",
     version: "1.0.0",
     capabilities: [:tools]
+
+  alias Anubis.Server.Response
 
   # Static component registration
   component MyApp.Echo
@@ -61,7 +65,7 @@ defmodule MyApp.MCPServer do
   @impl true
   def handle_tool_call("echo", %{text: text}, frame) do
     Logger.info("Echo tool called")
-    {:reply, text, frame}
+    {:reply, Response.text(Response.tool(), text), frame}
   end
 end
 

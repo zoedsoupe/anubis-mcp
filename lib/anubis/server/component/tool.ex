@@ -10,15 +10,16 @@ defmodule Anubis.Server.Component.Tool do
 
       defmodule MyServer.Tools.Calculator do
         @behaviour Anubis.Server.Behaviour.Tool
-        
-        alias Anubis.Server.Frame
-        
+
+        alias Anubis.Server.{Frame, Response}
+        alias Anubis.MCP.Error
+
         @impl true
         def name, do: "calculator"
-        
+
         @impl true
         def description, do: "Performs basic arithmetic operations"
-        
+
         @impl true
         def input_schema do
           %{
@@ -34,23 +35,20 @@ defmodule Anubis.Server.Component.Tool do
             "required" => ["operation", "a", "b"]
           }
         end
-        
+
         @impl true
         def execute(%{"operation" => "add", "a" => a, "b" => b}, frame) do
           result = a + b
-          
-          # Can access frame assigns
-          user_id = frame.assigns[:user_id]
-          
+
           # Can return updated frame if needed
           new_frame = Frame.assign(frame, :last_calculation, result)
-          
-          {:ok, result, new_frame}
+
+          {:reply, Response.text(Response.tool(), to_string(result)), new_frame}
         end
-        
+
         @impl true
-        def execute(%{"operation" => "divide", "a" => a, "b" => 0}, _frame) do
-          {:error, "Cannot divide by zero"}
+        def execute(%{"operation" => "divide", "a" => _a, "b" => 0}, frame) do
+          {:error, Error.invalid_request("Cannot divide by zero"), frame}
         end
       end
   """
@@ -166,9 +164,9 @@ defmodule Anubis.Server.Component.Tool do
 
   ## Return Values
 
-  - `{:ok, result}` - Tool executed successfully, frame unchanged
-  - `{:ok, result, new_frame}` - Tool executed successfully with frame updates
-  - `{:error, reason}` - Tool failed with the given reason
+  - `{:reply, %Response{}, frame}` - Tool executed successfully
+  - `{:noreply, frame}` - No reply needed
+  - `{:error, %Error{}, frame}` - Tool failed with the given error
 
   ## Frame Usage
 
@@ -178,11 +176,11 @@ defmodule Anubis.Server.Component.Tool do
         # Access assigns
         user_id = frame.assigns[:user_id]
         permissions = frame.assigns[:permissions]
-        
+
         # Update frame if needed
         new_frame = Frame.assign(frame, :last_tool_call, DateTime.utc_now())
-        
-        {:ok, "Result", new_frame}
+
+        {:reply, Response.text(Response.tool(), "Result"), new_frame}
       end
   """
   @callback execute(params :: params(), frame :: Frame.t()) ::

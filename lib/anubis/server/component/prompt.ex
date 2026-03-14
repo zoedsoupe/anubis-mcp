@@ -10,7 +10,7 @@ defmodule Anubis.Server.Component.Prompt do
       defmodule MyServer.Prompts.CodeReview do
         @behaviour Anubis.Server.Behaviour.Prompt
         
-        alias Anubis.Server.Frame
+        alias Anubis.Server.{Frame, Response}
         
         @impl true
         def name, do: "code_review"
@@ -70,7 +70,11 @@ defmodule Anubis.Server.Component.Prompt do
           # Can track prompt usage
           new_frame = Frame.assign(frame, :last_prompt_used, "code_review")
           
-          {:ok, messages, new_frame}
+          response =
+            Response.prompt()
+            |> Response.user_message(Enum.map_join(messages, "\n", & &1["content"]["text"]))
+
+          {:reply, response, new_frame}
         end
       end
   """
@@ -169,9 +173,9 @@ defmodule Anubis.Server.Component.Prompt do
 
   ## Return Values
 
-  - `{:ok, messages}` - Messages generated successfully, frame unchanged
-  - `{:ok, messages, new_frame}` - Messages generated with frame updates
-  - `{:error, reason}` - Failed to generate messages
+  - `{:reply, %Response{}, frame}` - Messages generated successfully
+  - `{:noreply, frame}` - No reply needed
+  - `{:error, %Error{}, frame}` - Failed to generate messages
 
   ## Message Format
 

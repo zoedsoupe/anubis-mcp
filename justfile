@@ -19,3 +19,13 @@ ascii-server:
 [working-directory: 'priv/dev/echo-elixir']
 echo-ex-server transport="sse":
     MCP_TRANSPORT={{transport}} {{ if transport == "sse" { "iex -S mix phx.server" } else { "mix run --no-halt" } }}
+
+update-deps-examples:
+    for p in priv/dev/upcase priv/dev/ascii priv/dev/echo-elixir; do \
+        (cd $p && mix deps.update --all && mix compile --force); \
+    done
+
+compile-examples:
+    for p in priv/dev/upcase priv/dev/ascii priv/dev/echo-elixir; do \
+        (cd $p && mix compile --force --warnings-as-errors); \
+    done

@@ -26,8 +26,8 @@ use Anubis.Client, options
 **Transport Options:**
 
 - `{:stdio, command: "cmd", args: ["arg1", "arg2"]}`
-- `{:streamable_http, url: "http://localhost:8000/mcp"}`
-- `{:websocket, url: "ws://localhost:8000/ws"}`
+- `{:streamable_http, base_url: "http://localhost:8000/mcp"}`
+- `{:websocket, base_url: "ws://localhost:8000/ws"}`
 - `{:sse, base_url: "http://localhost:8000"}` _(deprecated — use `:streamable_http` instead)_
 
 ### Client Functions
@@ -139,7 +139,7 @@ end
 
 # Execution callback
 def execute(params, frame) do
-  {:ok, result}  # or {:error, reason}
+  {:reply, Response.text(Response.tool(), result), frame}
 end
 ```
 
@@ -152,7 +152,7 @@ use Anubis.Server.Component,
 
 # Read callback
 def read(params, frame) do
-  {:ok, content}  # or {:error, reason}
+  {:reply, Response.text(Response.resource(), content), frame}
 end
 ```
 
@@ -168,7 +168,8 @@ end
 
 # Get messages callback
 def get_messages(params, frame) do
-  {:ok, [%{role: "user", content: "..."}]}
+  response = Response.prompt() |> Response.user_message("...")
+  {:reply, response, frame}
 end
 ```
 
@@ -246,10 +247,11 @@ Most client functions return:
 
 ### Server Returns
 
-Component callbacks should return:
+Component callbacks return:
 
-- `{:ok, result}` - Success with result
-- `{:error, message}` - Error with message
+- `{:reply, %Response{}, frame}` - Success with response
+- `{:noreply, frame}` - No reply needed
+- `{:error, %Error{}, frame}` - Error with structured error
 
 Server callbacks return:
 

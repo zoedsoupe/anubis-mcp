@@ -12,12 +12,14 @@ defmodule MyApp.Greeter do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :name, :string, required: true
   end
 
-  def execute(%{name: name}, _frame) do
-    {:ok, "Hello #{name}! Welcome to the MCP world!"}
+  def execute(%{name: name}, frame) do
+    {:reply, Response.text(Response.tool(), "Hello #{name}! Welcome to the MCP world!"), frame}
   end
 end
 ```
@@ -66,12 +68,14 @@ defmodule MyApp.Greeter do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :name, :string, required: true
   end
 
-  def execute(%{name: name}, _frame) do
-    {:ok, "Hello #{name}! Welcome to the MCP world!"}
+  def execute(%{name: name}, frame) do
+    {:reply, Response.text(Response.tool(), "Hello #{name}! Welcome to the MCP world!"), frame}
   end
 end
 
@@ -201,7 +205,7 @@ defmodule MyApp.BugReportPrompt do
 
   schema do
     field :title, :string, required: true
-    field :severity, :string, values: ["low", "medium", "high", "critical"]
+    field :severity, :enum, values: ["low", "medium", "high", "critical"]
     field :steps_to_reproduce, :string
     field :expected_behavior, :string
     field :actual_behavior, :string
@@ -255,7 +259,7 @@ defmodule MyApp.Calculator do
   use Anubis.Server.Component, type: :tool
 
   schema do
-    field :operation, :string, required: true, values: ["add", "subtract", "multiply", "divide"]
+    field :operation, :enum, required: true, values: ["add", "subtract", "multiply", "divide"]
     field :a, :float, required: true
     field :b, :float, required: true
   end
@@ -460,6 +464,8 @@ defmodule MyApp.DatabaseQuery do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :query, :string, required: true
   end
@@ -471,7 +477,7 @@ defmodule MyApp.DatabaseQuery do
         {:reply, Response.json(Response.tool(), format_result(result)), frame}
 
       {:error, reason} ->
-        {:reply, Response.error(Response.tool(), "Query failed: #{to_string(reason)}")}
+        {:reply, Response.error(Response.tool(), "Query failed: #{to_string(reason)}"), frame}
     end
   end
 end
@@ -587,14 +593,16 @@ Now let's write some tests:
 defmodule MyApp.ServerTest do
   use ExUnit.Case
 
-  alias Anubis.Server.Frame
+  alias Anubis.Server.{Frame, Response}
 
   test "greeter tool works correctly" do
     frame = %Frame{}
 
-    assert {:reply, resp, ^frame} = Greeter.execute(%{name: "joe"}, frame)
-    assert {:ok, %{"result" => %{"content" => content}}} = JSON.decode(resp)
-    assert [%{"text" => "Hello joe! Welcome to the MCP world!"}] = content
+    assert {:reply, %Response{} = response, ^frame} =
+             MyApp.Greeter.execute(%{name: "joe"}, frame)
+
+    assert response.type == :tool
+    assert [%{text: "Hello joe! Welcome to the MCP world!"}] = response.content
   end
 end
 ```
