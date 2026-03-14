@@ -185,12 +185,13 @@ defmodule Anubis.Server.Component.Resource do
   - `{:noreply, frame}` - No reply needed
   - `{:error, %Error{}, frame}` - Failed to read resource
 
-  ## Content Types
+  ## Building Responses
 
-  The content should match the declared MIME type:
-  - For text types, return a String
-  - For binary types, return binary data
-  - For JSON, return the JSON-encoded string
+  Use `Response.resource/0` to create a resource response, then set content
+  with the appropriate builder:
+  - `Response.text/2` for text content (plain text, markdown, etc.)
+  - `Response.json/2` for JSON data (automatically encoded)
+  - `Response.blob/2` for binary data
   """
   @callback read(params :: params(), frame :: Frame.t()) ::
               {:reply, response :: Response.t(), new_state :: Frame.t()}

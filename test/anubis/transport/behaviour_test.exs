@@ -156,6 +156,12 @@ defmodule Anubis.Transport.BehaviourTest do
       assert decoded == @sample_request
     end
 
+    test "encode/2 wraps encoder failures" do
+      {:ok, state} = ClientHTTP.transport_init()
+
+      assert {:error, {:encode_error, _}} = ClientHTTP.encode(%{bad: self()}, state)
+    end
+
     test "extract_metadata/2 extracts session_id from headers" do
       {:ok, state} = ClientHTTP.transport_init()
 

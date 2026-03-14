@@ -495,6 +495,8 @@ defmodule MyApp.Conversation do
 
   use Anubis.Server.Component, type: :tool
 
+  alias Anubis.Server.Response
+
   schema do
     field :message, :string, required: true
   end

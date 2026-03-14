@@ -50,9 +50,7 @@ defmodule MyApp.MCPServer do
     version: "1.0.0",
     capabilities: [:tools]
 
-  alias Anubis.Server.Response
-
-  # Static component registration
+  # Static component registration — dispatches to MyApp.Echo.execute/2
   component MyApp.Echo
 
   @impl true
@@ -60,12 +58,6 @@ defmodule MyApp.MCPServer do
     # You can also register tools dynamically at runtime via the Frame:
     # frame = register_tool(frame, "dynamic_tool", description: "...", input_schema: %{...})
     {:ok, frame}
-  end
-
-  @impl true
-  def handle_tool_call("echo", %{text: text}, frame) do
-    Logger.info("Echo tool called")
-    {:reply, Response.text(Response.tool(), text), frame}
   end
 end
 

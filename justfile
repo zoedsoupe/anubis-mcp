@@ -22,10 +22,10 @@ echo-ex-server transport="sse":
 
 update-deps-examples:
     for p in priv/dev/upcase priv/dev/ascii priv/dev/echo-elixir; do \
-        (cd $p && mix deps.update --all && mix compile --force); \
+        (cd "$p" && mix deps.update --all && mix compile --force) || exit 1; \
     done
 
 compile-examples:
     for p in priv/dev/upcase priv/dev/ascii priv/dev/echo-elixir; do \
-        (cd $p && mix compile --force --warnings-as-errors); \
+        (cd "$p" && mix compile --force --warnings-as-errors) || exit 1; \
     done

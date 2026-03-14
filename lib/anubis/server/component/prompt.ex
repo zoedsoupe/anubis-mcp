@@ -177,19 +177,17 @@ defmodule Anubis.Server.Component.Prompt do
   - `{:noreply, frame}` - No reply needed
   - `{:error, %Error{}, frame}` - Failed to generate messages
 
-  ## Message Format
+  ## Building Responses
 
-  Messages should follow the MCP message format:
+  Use `Response.prompt/0` to create a prompt response, then add messages with
+  `Response.user_message/2` or `Response.system_message/2`:
 
-      %{
-        "role" => "user" | "assistant",
-        "content" => %{
-          "type" => "text",
-          "text" => "The message content"
-        }
-      }
+      response =
+        Response.prompt()
+        |> Response.user_message("Please review this code")
+        |> Response.system_message("You are a code reviewer")
 
-  Multiple messages can be returned to create a conversation context.
+      {:reply, response, frame}
   """
   @callback get_messages(args :: arguments(), frame :: Frame.t()) ::
               {:reply, response :: Response.t(), new_state :: Frame.t()}

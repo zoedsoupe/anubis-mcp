@@ -16,7 +16,7 @@ defmodule MyApp.AuthenticatedServer do
     capabilities: [:tools]
 
   def init(arg, frame) do
-    # Check API key from transport metadata
+    # Check API key from request headers
     api_key = frame.context.headers["x-api-key"]
 
     case authenticate_api_key(api_key) do
@@ -257,7 +257,7 @@ defmodule MyApp.LiveDataServer do
   use Anubis.Server,
     name: "live-data",
     version: "1.0.0",
-    capabilities: [:tools]
+    capabilities: [:tools, {:resources, list_changed?: true}]
 
   def init(arg, frame) do
     # Subscribe to Phoenix PubSub
@@ -416,15 +416,25 @@ defmodule MyApp.LoggingServer do
     version: "1.0.0",
     capabilities: [:tools, :logging]
 
-  component MyApp.SomeTool
+  alias Anubis.Server.Response
 
-  def handle_tool_call(name, args, frame) do
-    Anubis.Server.send_log_message(:info, "Processing tool: #{name}")
+  # Dynamic tool registered at runtime (dispatches to handle_tool_call/3)
+  @impl true
+  def init(_client_info, frame) do
+    {:ok, register_tool(frame, "logged_tool",
+      description: "A tool with server-level logging",
+      input_schema: %{input: {:required, :string}}
+    )}
+  end
 
-    result = process_tool(name, args)
+  @impl true
+  def handle_tool_call("logged_tool", %{input: input}, frame) do
+    Anubis.Server.send_log_message(:info, "Processing tool: logged_tool")
 
-    Anubis.Server.send_log_message(:debug, "Tool completed: #{name}")
-    {:reply, result, frame}
+    result = process_input(input)
+
+    Anubis.Server.send_log_message(:debug, "Tool completed: logged_tool")
+    {:reply, Response.text(Response.tool(), result), frame}
   end
 end
 ```
