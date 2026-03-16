@@ -23,14 +23,15 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
 
       # Start transport with keepalive enabled and short interval for testing
       {:ok, transport} =
-        start_supervised({StreamableHTTP,
-          server: StubServer,
-          name: name,
-          registry: registry,
-          task_supervisor: sup,
-          keepalive: true,
-          keepalive_interval: 100
-        })
+        start_supervised(
+          {StreamableHTTP,
+           server: StubServer,
+           name: name,
+           registry: registry,
+           task_supervisor: sup,
+           keepalive: true,
+           keepalive_interval: 100}
+        )
 
       %{transport: transport, server: StubServer}
     end

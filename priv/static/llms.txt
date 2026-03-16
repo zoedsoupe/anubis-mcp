@@ -36,7 +36,7 @@ The Model Context Protocol (MCP) is an open standard that enables language model
    - Session isolation
 
 4. **Client Framework** (`Anubis.Client`)
-   - High-level client DSL
+   - Direct client usage (no macro needed)
    - Request pipeline with timeouts
    - Progress tracking
    - Batch operations
@@ -75,22 +75,18 @@ end
 ### Creating an MCP Client
 
 ```elixir
-defmodule MyApp.AnthropicClient do
-  use Anubis.Client,
-    name: "MyApp", 
-    version: "1.0.0",
-    protocol_version: "2025-06-18"
-end
-
 # Start in supervision tree
 children = [
-  {MyApp.AnthropicClient,
-   transport: {:stdio, command: "uvx", args: ["mcp-server-anthropic"]}}
+  {Anubis.Client,
+   name: MyApp.MCPClient,
+   transport: {:stdio, command: "uvx", args: ["mcp-server-anthropic"]},
+   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+   protocol_version: "2025-06-18"}
 ]
 
 # Use the client
-{:ok, tools} = MyApp.AnthropicClient.list_tools()
-{:ok, result} = MyApp.AnthropicClient.call_tool("search", %{query: "elixir"})
+{:ok, tools} = Anubis.Client.list_tools(MyApp.MCPClient)
+{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "search", %{query: "elixir"})
 ```
 
 ## Component Types

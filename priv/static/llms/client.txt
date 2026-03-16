@@ -4,40 +4,46 @@ This guide shows how to implement Model Context Protocol (MCP) clients using Anu
 
 ## Quick Start
 
-### 1. Define Your Client
-
-```elixir
-defmodule MyApp.MCPClient do
-  use Anubis.Client,
-    name: "MyApp",
-    version: "1.0.0",
-    protocol_version: "2025-06-18"
-end
-```
-
-### 2. Add to Supervision Tree
+### 1. Add to Supervision Tree
 
 ```elixir
 children = [
-  {MyApp.MCPClient,
-   transport: {:stdio, command: "uvx", args: ["mcp-server-name"]}}
+  {Anubis.Client,
+   name: MyApp.MCPClient,
+   transport: {:stdio, command: "uvx", args: ["mcp-server-name"]},
+   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+   protocol_version: "2025-06-18"}
 ]
 
 Supervisor.start_link(children, strategy: :one_for_one)
 ```
 
-### 3. Use the Client
+### 2. Use the Client
 
 ```elixir
 # List available tools
-{:ok, tools} = MyApp.MCPClient.list_tools()
+{:ok, tools} = Anubis.Client.list_tools(MyApp.MCPClient)
 
 # Call a tool
-{:ok, result} = MyApp.MCPClient.call_tool("calculator", %{a: 5, b: 3})
+{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "calculator", %{a: 5, b: 3})
 
 # Read a resource
-{:ok, content} = MyApp.MCPClient.read_resource("file:///config.json")
+{:ok, content} = Anubis.Client.read_resource(MyApp.MCPClient, "file:///config.json")
 ```
+
+## Configuration Options
+
+**Required:**
+
+- `name` - Process name (atom or `{:via, ...}` tuple)
+- `transport` - Transport configuration tuple
+- `client_info` - Map with `"name"` and `"version"` keys
+
+**Optional:**
+
+- `capabilities` - Capabilities map (default: `%{}`)
+- `protocol_version` - MCP protocol version string (default: latest supported)
+- `transport_name` - Custom transport process name (required when using non-atom `name`)
 
 ## Transport Configuration
 
@@ -46,21 +52,22 @@ Supervisor.start_link(children, strategy: :one_for_one)
 Connect to servers running as subprocesses:
 
 ```elixir
-transport: {:stdio, 
+transport: {:stdio,
   command: "python",
   args: ["-m", "my_mcp_server"],
   env: [{"API_KEY", "secret"}]
 }
 ```
 
-### Server-Sent Events (SSE)
+### Streamable HTTP
 
-Connect to HTTP servers with SSE:
+For request/response streaming (most common for remote servers):
 
 ```elixir
-transport: {:sse,
-  url: "https://api.example.com/mcp/sse",
-  headers: [{"authorization", "Bearer token"}]
+transport: {:streamable_http,
+  base_url: "https://api.example.com",
+  mcp_path: "/mcp",
+  headers: %{"authorization" => "Bearer token"}
 }
 ```
 
@@ -70,184 +77,163 @@ For bidirectional communication:
 
 ```elixir
 transport: {:websocket,
-  url: "wss://api.example.com/mcp/ws",
-  headers: [{"authorization", "Bearer token"}]
+  base_url: "ws://api.example.com",
+  ws_path: "/mcp/ws"
 }
 ```
 
-### Streamable HTTP
-
-For request/response streaming:
+### Server-Sent Events (SSE) — Deprecated
 
 ```elixir
-transport: {:streamable_http,
-  url: "https://api.example.com/mcp",
-  headers: [{"authorization", "Bearer token"}]
+transport: {:sse,
+  base_url: "https://api.example.com",
+  sse_path: "/sse"
 }
 ```
 
+> SSE transport is deprecated as of MCP specification 2025-03-26. Use `:streamable_http` instead.
+
 ## Client API
+
+All functions take a client process name or PID as the first argument.
 
 ### Basic Operations
 
 ```elixir
-# Initialize connection
-{:ok, _} = MyApp.MCPClient.initialize()
+# Connection
+:pong = Anubis.Client.ping(MyApp.MCPClient)
+Anubis.Client.close(MyApp.MCPClient)
 
-# List capabilities
-{:ok, tools} = MyApp.MCPClient.list_tools()
-{:ok, resources} = MyApp.MCPClient.list_resources()
-{:ok, prompts} = MyApp.MCPClient.list_prompts()
+# Server info
+info = Anubis.Client.get_server_info(MyApp.MCPClient)
+caps = Anubis.Client.get_server_capabilities(MyApp.MCPClient)
 
-# Use tools
-{:ok, result} = MyApp.MCPClient.call_tool("search", %{
-  query: "elixir mcp"
-})
+# Tools
+{:ok, tools} = Anubis.Client.list_tools(MyApp.MCPClient)
+{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "search", %{query: "elixir"})
 
-# Read resources
-{:ok, data} = MyApp.MCPClient.read_resource("db://users/123")
+# Resources
+{:ok, resources} = Anubis.Client.list_resources(MyApp.MCPClient)
+{:ok, data} = Anubis.Client.read_resource(MyApp.MCPClient, "db://users/123")
 
-# Get prompts
-{:ok, messages} = MyApp.MCPClient.get_prompt("code_review", %{
-  language: "elixir",
-  code: "def add(a, b), do: a + b"
-})
+# Prompts
+{:ok, prompts} = Anubis.Client.list_prompts(MyApp.MCPClient)
+{:ok, messages} = Anubis.Client.get_prompt(MyApp.MCPClient, "code_review", %{language: "elixir"})
+
+# Autocompletion
+{:ok, suggestions} = Anubis.Client.complete(MyApp.MCPClient, ref, argument)
 ```
 
 ### Advanced Options
 
 ```elixir
 # With timeout
-{:ok, result} = MyApp.MCPClient.call_tool("slow_operation", %{}, 
-  timeout: 30_000
-)
+{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "slow_op", %{}, timeout: 30_000)
 
 # With progress tracking
-{:ok, result} = MyApp.MCPClient.call_tool("process_file", %{path: "/data.csv"},
-  progress: fn progress, message ->
-    IO.puts("Progress: #{progress * 100}% - #{message}")
-  end
-)
+progress_token = Anubis.MCP.ID.generate_progress_token()
 
-# Batch operations (protocol 2025-03-26+)
-{:ok, results} = MyApp.MCPClient.batch([
-  {:call_tool, "tool1", %{param: 1}},
-  {:call_tool, "tool2", %{param: 2}},
-  {:read_resource, "resource://data"}
-])
+callback = fn ^progress_token, progress, total ->
+  IO.puts("Progress: #{progress}/#{total}")
+end
+
+{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "process_file", %{path: "/data.csv"},
+  progress: [token: progress_token, callback: callback]
+)
 ```
 
 ## Client Capabilities
 
-Enable features your client supports:
+Build capability maps using atom shorthand with `parse_capability/2`:
 
 ```elixir
-defmodule MyApp.MCPClient do
-  use Anubis.Client,
-    name: "MyApp",
-    version: "1.0.0",
-    protocol_version: "2024-11-05",
-    capabilities: [
-      :roots,                          # File system roots
-      {:sampling, list_changed?: true} # LLM sampling
-    ]
-end
+capabilities =
+  %{}
+  |> Anubis.Client.parse_capability(:roots)
+  |> Anubis.Client.parse_capability({:sampling, list_changed?: true})
+
+# => %{"roots" => %{}, "sampling" => %{"listChanged" => true}}
+
+{Anubis.Client,
+ name: MyApp.MCPClient,
+ transport: {:stdio, command: "server"},
+ client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+ capabilities: capabilities,
+ protocol_version: "2025-06-18"}
 ```
 
-### Handling Roots Requests
+## Multiple Client Instances
+
+### Static (known at compile time)
 
 ```elixir
-defmodule MyApp.MCPClient do
-  use Anubis.Client,
-    name: "MyApp",
-    version: "1.0.0",
-    capabilities: [:roots]
+children = [
+  {Anubis.Client,
+   name: MyApp.WeatherUS,
+   transport: {:stdio, command: "weather-server", args: ["--region", "US"]},
+   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+   protocol_version: "2025-06-18"},
 
-  # Provide file system roots
-  def handle_roots_list_request(_params, session) do
-    roots = [
-      %{uri: "file:///home/user/project", name: "Project Root"}
-    ]
-    {:ok, roots, session}
-  end
-end
+  {Anubis.Client,
+   name: MyApp.WeatherEU,
+   transport: {:stdio, command: "weather-server", args: ["--region", "EU"]},
+   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+   protocol_version: "2025-06-18"}
+]
 ```
 
-### Handling Sampling Requests
+### Dynamic (created at runtime)
+
+Use `DynamicSupervisor` for user-configured or on-demand MCP connections:
 
 ```elixir
-defmodule MyApp.MCPClient do
-  use Anubis.Client,
-    name: "MyApp",
-    version: "1.0.0",
-    capabilities: [{:sampling, list_changed?: true}]
+# In your application supervisor
+{DynamicSupervisor, name: MyApp.MCPSupervisor, strategy: :one_for_one}
 
-  # Handle server sampling requests
-  def handle_sampling_request(request_id, params, session) do
-    # Forward to your LLM
-    response = MyLLM.complete(params.messages, 
-      max_tokens: params.maxTokens,
-      temperature: params.temperature
-    )
-    
-    # Send response back
-    send_sampling_response(request_id, response.content, session)
-    {:ok, session}
-  end
+# Start clients on demand
+def connect_to_server(user_id, server_url) do
+  name = :"mcp_client_#{user_id}"
+
+  opts = [
+    name: name,
+    transport: {:streamable_http, base_url: server_url},
+    client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+    protocol_version: "2025-06-18"
+  ]
+
+  DynamicSupervisor.start_child(MyApp.MCPSupervisor, {Anubis.Client, opts})
 end
+
+# Use by name or PID
+Anubis.Client.list_tools(:"mcp_client_42")
 ```
 
-## Session Management
+### Using PIDs Directly
 
-Access and modify session state:
+All client functions accept either a registered name or a PID:
 
 ```elixir
-defmodule MyApp.MCPClient do
-  use Anubis.Client,
-    name: "MyApp",
-    version: "1.0.0"
-
-  # Store custom data in session
-  def authenticate(token) do
-    update_session(fn session ->
-      Session.assign(session, :auth_token, token)
-    end)
-  end
-
-  # Access session data
-  def get_with_auth(resource) do
-    session = get_session()
-    token = session.assigns[:auth_token]
-    
-    # Use token in request
-    read_resource(resource, headers: [{"authorization", "Bearer #{token}"}])
-  end
-end
+{:ok, pid} = DynamicSupervisor.start_child(supervisor, {Anubis.Client, opts})
+Anubis.Client.call_tool(pid, "my_tool", %{arg: "value"})
 ```
 
 ## Error Handling
 
-Handle errors gracefully:
-
 ```elixir
-case MyApp.MCPClient.call_tool("risky_operation", params) do
+case Anubis.Client.call_tool(MyApp.MCPClient, "risky_operation", params) do
   {:ok, result} ->
     process_result(result)
-    
+
   {:error, %Anubis.MCP.Error{code: -32602}} ->
-    # Invalid params
-    Logger.error("Invalid parameters provided")
-    
+    Logger.error("Invalid parameters")
+
   {:error, %Anubis.MCP.Error{code: -32603, message: message}} ->
-    # Internal error
     Logger.error("Server error: #{message}")
-    
+
   {:error, :timeout} ->
-    # Request timeout
     Logger.error("Operation timed out")
-    
+
   {:error, reason} ->
-    # Other errors
     Logger.error("Unexpected error: #{inspect(reason)}")
 end
 ```
@@ -267,10 +253,6 @@ Subscribe to client events:
   nil
 )
 
-def handle_event([:anubis, :client, :request, :start], measurements, metadata, _) do
-  Logger.info("MCP request started: #{metadata.method}")
-end
-
 def handle_event([:anubis, :client, :request, :stop], measurements, metadata, _) do
   duration_ms = System.convert_time_unit(measurements.duration, :native, :millisecond)
   Logger.info("MCP request completed: #{metadata.method} in #{duration_ms}ms")
@@ -279,85 +261,21 @@ end
 
 ## Testing
 
-Test your client interactions:
+Test your client interactions using `Anubis.MCP.Case`:
 
 ```elixir
 defmodule MyApp.MCPClientTest do
   use Anubis.MCP.Case
 
   test "client connects and lists tools" do
-    # Mock server
-    {:ok, server} = setup_server(MyMockServer)
-    
-    # Connect client
-    {:ok, client} = setup_client(MyApp.MCPClient,
-      transport: {:mock, server: server}
-    )
-    
-    {:ok, client} = initialize_client(client)
-    
-    # Test tool listing
+    {:ok, client} = initialized_client()
+
     request = tools_list_request()
     assert_mcp_response(client, request) do
       assert length(response.result.tools) > 0
     end
   end
 end
-```
-
-## Complete Example
-
-```elixir
-defmodule GitHubClient do
-  use Anubis.Client,
-    name: "github-client",
-    version: "1.0.0",
-    protocol_version: "2024-11-05"
-
-  # High-level API methods
-  def search_repos(query, opts \\ []) do
-    params = %{
-      query: query,
-      language: Keyword.get(opts, :language),
-      sort: Keyword.get(opts, :sort, "stars")
-    }
-    
-    call_tool("github/search_repos", params)
-  end
-  
-  def get_repo_info(owner, repo) do
-    read_resource("github://repos/#{owner}/#{repo}")
-  end
-  
-  def create_issue(owner, repo, title, body) do
-    call_tool("github/create_issue", %{
-      owner: owner,
-      repo: repo,
-      title: title,
-      body: body
-    })
-  end
-end
-
-# Usage
-children = [
-  {GitHubClient, 
-   transport: {:stdio, command: "uvx", args: ["mcp-server-github"]}}
-]
-
-Supervisor.start_link(children, strategy: :one_for_one)
-
-# Search for Elixir repos
-{:ok, repos} = GitHubClient.search_repos("web framework", language: "elixir")
-
-# Get repo details
-{:ok, info} = GitHubClient.get_repo_info("phoenixframework", "phoenix")
-
-# Create an issue
-{:ok, issue} = GitHubClient.create_issue("myorg", "myrepo",
-  "Bug: Something is broken",
-  "Details about the bug..."
-)
 ```
 
 ## Best Practices
@@ -368,6 +286,3 @@ Supervisor.start_link(children, strategy: :one_for_one)
 4. **Error Boundaries**: Handle all error cases gracefully
 5. **Logging**: Log important events without exposing secrets
 6. **Testing**: Test both success and failure scenarios
-7. **Documentation**: Document your client's API and usage
-
-This client architecture provides a robust foundation for integrating with MCP servers while maintaining clean separation of concerns and proper error handling.

@@ -77,7 +77,7 @@ defmodule Mix.Interactive.CLI do
     transport = SSETest.Transport
 
     opts = [name: name, transport: {:sse, server_options}, client_info: client_info]
-    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(opts)
 
     sse = Process.whereis(transport)
 
@@ -113,7 +113,7 @@ defmodule Mix.Interactive.CLI do
       client_info: client_info
     ]
 
-    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(opts)
 
     ws = Process.whereis(transport)
 
@@ -156,7 +156,7 @@ defmodule Mix.Interactive.CLI do
       client_info: client_info
     ]
 
-    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(opts)
 
     if Process.whereis(transport) do
       IO.puts("#{UI.colors().success}✓ STDIO transport started#{UI.colors().reset}")
@@ -194,7 +194,7 @@ defmodule Mix.Interactive.CLI do
       client_info: client_info
     ]
 
-    {:ok, _} = Anubis.Client.Supervisor.start_link(name, opts)
+    {:ok, _} = Anubis.Client.Supervisor.start_link(opts)
 
     http = Process.whereis(transport)
 
@@ -243,7 +243,7 @@ defmodule Mix.Interactive.CLI do
   def check_client_connection(client, attempt) do
     :timer.sleep(200 * attempt)
 
-    if cap = Anubis.Client.Base.get_server_capabilities(client) do
+    if cap = Anubis.Client.get_server_capabilities(client) do
       IO.puts("#{UI.colors().info}Server capabilities: #{inspect(cap, pretty: true)}#{UI.colors().reset}")
 
       IO.puts("#{UI.colors().success}✓ Successfully connected to server#{UI.colors().reset}")

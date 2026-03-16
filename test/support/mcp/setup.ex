@@ -159,13 +159,19 @@ defmodule Anubis.MCP.Setup do
     client_capabilities = context[:client_capabilities] || %{}
 
     client =
-      start_supervised!(
-        {Anubis.Client.Base,
-         transport: [layer: Anubis.MockTransport, name: MockTransport],
-         client_info: client_info,
-         capabilities: client_capabilities},
+      start_supervised!(%{
+        id: Anubis.Client,
+        start:
+          {Anubis.Client, :start_link_server,
+           [
+             [
+               transport: [layer: Anubis.MockTransport, name: MockTransport],
+               client_info: client_info,
+               capabilities: client_capabilities
+             ]
+           ]},
         restart: :temporary
-      )
+      })
 
     allow(Anubis.MockTransport, self(), fn -> client end)
     initialize_client(client, server_capabilities: server_capabilities)
