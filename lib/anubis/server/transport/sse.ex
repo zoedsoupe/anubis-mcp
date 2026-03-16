@@ -72,6 +72,8 @@ defmodule Anubis.Server.Transport.SSE do
   import Peri
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Registry
+  alias Anubis.Server.Supervisor, as: ServerSupervisor
   alias Anubis.Telemetry
   alias Anubis.Transport.Behaviour, as: Transport
 
@@ -101,7 +103,7 @@ defmodule Anubis.Server.Transport.SSE do
     {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:base_url, {:string, {:default, ""}}},
     {:post_path, {:string, {:default, "/messages"}}},
-    {:registry, {:atom, {:default, Anubis.Server.Registry}}},
+    {:registry, {:atom, {:default, Registry}}},
     {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}}
   ])
 
@@ -230,6 +232,8 @@ defmodule Anubis.Server.Transport.SSE do
       base_url: Map.get(opts, :base_url, ""),
       post_path: Map.get(opts, :post_path, "/messages"),
       registry: opts.registry,
+      registry_mod: Registry.Local,
+      registry_name: Registry.registry_name(server),
       request_timeout: opts.request_timeout,
       # Map of session_id => {pid, monitor_ref}
       sse_handlers: %{}
@@ -322,18 +326,57 @@ defmodule Anubis.Server.Transport.SSE do
   end
 
   defp dispatch_session_message(session_id, message, context, state) do
-    session_pid = state.registry.session_name(state.server, session_id)
+    case find_or_create_session(session_id, message, state) do
+      {:ok, session_pid} ->
+        if Message.is_notification(message) do
+          GenServer.cast(session_pid, {:mcp_notification, message, context})
+          {:ok_cast}
+        else
+          forward_request_to_session(session_pid, message, context, state.request_timeout)
+        end
 
-    cond do
-      is_nil(session_pid) ->
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp find_or_create_session(session_id, message, state) do
+    case state.registry_mod.lookup_session(state.registry_name, session_id) do
+      {:ok, pid} ->
+        {:ok, pid}
+
+      {:error, :not_found} when Message.is_initialize(message) ->
+        start_new_session(session_id, state)
+
+      {:error, :not_found} ->
         {:error, :no_session}
+    end
+  end
 
-      Message.is_notification(message) ->
-        GenServer.cast(session_pid, {:mcp_notification, message, context})
-        {:ok_cast}
+  defp start_new_session(session_id, state) do
+    session_config = ServerSupervisor.get_session_config(state.server)
+    session_name = Registry.session_name(state.server, session_id)
 
-      true ->
-        forward_request_to_session(session_pid, message, context, state.request_timeout)
+    session_opts = [
+      session_id: session_id,
+      server_module: state.server,
+      name: session_name,
+      transport: session_config.transport,
+      session_idle_timeout: session_config.session_idle_timeout || 1_800_000,
+      timeout: state.request_timeout,
+      task_supervisor: session_config.task_supervisor
+    ]
+
+    case ServerSupervisor.start_session(state.server, session_opts) do
+      {:ok, pid} ->
+        state.registry_mod.register_session(state.registry_name, session_id, pid)
+        {:ok, pid}
+
+      {:error, {:already_started, pid}} ->
+        {:ok, pid}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

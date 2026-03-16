@@ -67,6 +67,9 @@ defmodule Anubis.Server.Transport.SSETest do
     test "handle_message processes notifications", %{transport: transport} do
       session_id = "test-session-456"
 
+      registry_name = Registry.registry_name(StubServer)
+      start_supervised!({Registry.Local, name: registry_name}, id: :sse_registry)
+
       task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
 
@@ -75,15 +78,18 @@ defmodule Anubis.Server.Transport.SSETest do
 
       session_name = Registry.session_name(StubServer, session_id)
 
-      start_supervised!(
-        {Session,
-         session_id: session_id,
-         server_module: StubServer,
-         name: session_name,
-         transport: [layer: StubTransport, name: transport_name],
-         task_supervisor: task_sup},
-        id: :sse_session
-      )
+      {:ok, session_pid} =
+        start_supervised(
+          {Session,
+           session_id: session_id,
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :sse_session
+        )
+
+      Registry.Local.register_session(registry_name, session_id, session_pid)
 
       notification =
         build_notification("notifications/message", %{

@@ -102,6 +102,9 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
 
   describe "POST endpoint" do
     setup do
+      registry_name = Registry.registry_name(StubServer)
+      start_supervised!({Registry.Local, name: registry_name}, id: :sse_plug_registry)
+
       task_sup = Registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: task_sup})
 
@@ -111,15 +114,18 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       session_id = "test-session"
       session_name = Registry.session_name(StubServer, session_id)
 
-      start_supervised!(
-        {Session,
-         session_id: session_id,
-         server_module: StubServer,
-         name: session_name,
-         transport: [layer: StubTransport, name: transport_name],
-         task_supervisor: task_sup},
-        id: :sse_post_session
-      )
+      {:ok, session_pid} =
+        start_supervised(
+          {Session,
+           session_id: session_id,
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :sse_post_session
+        )
+
+      Registry.Local.register_session(registry_name, session_id, session_pid)
 
       init_request =
         Builders.init_request(nil, %{"name" => "Test", "version" => "1.0"}, %{})
@@ -221,7 +227,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       %{post_opts: post_opts, transport: transport}
     end
 
-    test "notification to unknown session is accepted", %{post_opts: post_opts} do
+    test "notification to unknown session returns error", %{post_opts: post_opts} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -236,11 +242,10 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
         |> put_req_header("x-session-id", "nonexistent-session")
         |> SSEPlug.call(post_opts)
 
-      # SSE transport accepts notifications (fire-and-forget)
-      assert conn.status == 202
+      assert conn.status == 400
     end
 
-    test "notification without session ID is accepted", %{post_opts: post_opts} do
+    test "notification without session ID returns error", %{post_opts: post_opts} do
       notification =
         build_notification("notifications/message", %{
           "level" => "info",
@@ -254,7 +259,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
         |> conn("/messages", body)
         |> SSEPlug.call(post_opts)
 
-      assert conn.status == 202
+      assert conn.status == 400
     end
   end
 end

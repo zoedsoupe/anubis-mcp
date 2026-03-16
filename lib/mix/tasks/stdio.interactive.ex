@@ -6,8 +6,25 @@ defmodule Mix.Tasks.Anubis.Stdio.Interactive do
 
   ## Options
 
-  * `--command` - Command to execute for the STDIO transport (default: "mcp")
-  * `--args` - Comma-separated arguments for the command (default: "run,priv/dev/echo/index.py")
+  * `--command` / `-c` - Command to execute for the STDIO transport (default: "mcp")
+  * `--args` / `-a` - Comma-separated arguments for the command (default: "run,priv/dev/echo/index.py")
+  * `--env` / `-e` - Environment variable to pass (repeatable: `--env KEY=VALUE --env OTHER=VAL`)
+  * `--cwd` - Working directory for the spawned process
+  * `--verbose` / `-v` - Verbosity level (repeatable for more verbosity)
+
+  ## Examples
+
+      # Basic usage
+      mix stdio.interactive -c npx -a "@modelcontextprotocol/server-everything"
+
+      # With environment variables
+      mix stdio.interactive -c my-server --env DEBUG=1 --env LOG_LEVEL=debug
+
+      # With working directory
+      mix stdio.interactive -c ./my-server --cwd /path/to/project
+
+      # Combined
+      mix stdio.interactive -c node --args "server.js" --cwd /tmp/myapp --env NODE_ENV=production
   """
 
   use Mix.Task
@@ -19,6 +36,8 @@ defmodule Mix.Tasks.Anubis.Stdio.Interactive do
   @switches [
     command: :string,
     args: :string,
+    env: :keep,
+    cwd: :string,
     verbose: :count
   ]
 
@@ -30,7 +49,7 @@ defmodule Mix.Tasks.Anubis.Stdio.Interactive do
     {parsed, _} =
       OptionParser.parse!(args,
         strict: @switches,
-        aliases: [c: :command, v: :verbose]
+        aliases: [c: :command, e: :env, v: :verbose]
       )
 
     verbose_count = parsed[:verbose] || 0
@@ -41,6 +60,22 @@ defmodule Mix.Tasks.Anubis.Stdio.Interactive do
 
     args =
       String.split(parsed[:args] || "run,priv/dev/echo/index.py", ",", trim: true)
+
+    env =
+      parsed
+      |> Keyword.get_values(:env)
+      |> case do
+        [] ->
+          nil
+
+        pairs ->
+          Map.new(pairs, fn pair ->
+            [k, v] = String.split(pair, "=", parts: 2)
+            {k, v}
+          end)
+      end
+
+    cwd = parsed[:cwd]
 
     header = UI.header("ANUBIS MCP STDIO INTERACTIVE")
     IO.puts(header)
@@ -61,6 +96,8 @@ defmodule Mix.Tasks.Anubis.Stdio.Interactive do
         name: STDIO,
         command: cmd,
         args: args,
+        env: env,
+        cwd: cwd,
         client: :stdio_test
       ],
       client_opts: [

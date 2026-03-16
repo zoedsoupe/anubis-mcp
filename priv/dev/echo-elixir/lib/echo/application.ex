@@ -14,7 +14,6 @@ defmodule Echo.Application do
   defp build_children do
     base_children = [
       {Phoenix.PubSub, name: Echo.PubSub},
-      Anubis.Server.Registry
     ]
 
     transport_type = Application.get_env(:echo, :mcp_transport, :sse)
