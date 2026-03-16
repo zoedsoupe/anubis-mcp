@@ -78,6 +78,7 @@ defmodule Anubis.Server.Transport.STDIO do
       request_timeout: opts.request_timeout
     }
 
+    :logger.update_handler_config(:default, :config, %{type: :standard_error})
     Logger.metadata(mcp_transport: :stdio, mcp_server: state.server)
     Logging.transport_event("starting", %{transport: :stdio, server: state.server})
 
@@ -106,6 +107,10 @@ defmodule Anubis.Server.Transport.STDIO do
 
         task = Task.async(fn -> read_from_stdin() end)
         {:noreply, %{state | reading_task: task}}
+
+      {:error, :eof} ->
+        Logging.transport_event("eof", "Client disconnected", level: :info)
+        {:stop, :normal, %{state | reading_task: nil}}
 
       {:error, reason} ->
         Logging.transport_event("read_error", %{reason: reason}, level: :error)
@@ -209,7 +214,9 @@ defmodule Anubis.Server.Transport.STDIO do
 
     case Message.decode(data) do
       {:ok, messages} ->
-        process_message(messages, state)
+        Enum.each(messages, fn message ->
+          process_message(message, state)
+        end)
 
       {:error, reason} ->
         Logging.transport_event("parse_error", %{reason: reason}, level: :error)

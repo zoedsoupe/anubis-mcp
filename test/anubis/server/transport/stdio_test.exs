@@ -5,7 +5,7 @@ defmodule Anubis.Server.Transport.STDIOTest do
 
   alias Anubis.Server.Transport.STDIO
 
-  @moduletag capture_log: true, capture_io: true, skip: true
+  @moduletag capture_log: true, capture_io: true
 
   setup :server_with_stdio_transport
 
