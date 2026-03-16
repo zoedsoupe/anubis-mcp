@@ -4,41 +4,35 @@ All notable changes to this project are documented in this file.
 
 ## [0.17.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.0...v0.17.1) (2026-02-28)
 
-
 ### Bug Fixes
 
-* Check Process.alive? before sending to SSE handler ([#82](https://github.com/zoedsoupe/anubis-mcp/issues/82)) ([e1dc705](https://github.com/zoedsoupe/anubis-mcp/commit/e1dc705f1ae8ee7e8670d26c7fdfc30583d19efd))
-
+- Check Process.alive? before sending to SSE handler ([#82](https://github.com/zoedsoupe/anubis-mcp/issues/82)) ([e1dc705](https://github.com/zoedsoupe/anubis-mcp/commit/e1dc705f1ae8ee7e8670d26c7fdfc30583d19efd))
 
 ### Code Refactoring
 
-* **phase-1:** abstract protocol version negotiation ([#93](https://github.com/zoedsoupe/anubis-mcp/issues/93)) ([05a2362](https://github.com/zoedsoupe/anubis-mcp/commit/05a2362a672ef462e73bc9a3f637c3f203c0978e))
-* **phase-2:** transport layer as functions, backward compatible ([#95](https://github.com/zoedsoupe/anubis-mcp/issues/95)) ([105d6a9](https://github.com/zoedsoupe/anubis-mcp/commit/105d6a91e31d8dbf606ec7916317f9add94acf4e))
+- **phase-1:** abstract protocol version negotiation ([#93](https://github.com/zoedsoupe/anubis-mcp/issues/93)) ([05a2362](https://github.com/zoedsoupe/anubis-mcp/commit/05a2362a672ef462e73bc9a3f637c3f203c0978e))
+- **phase-2:** transport layer as functions, backward compatible ([#95](https://github.com/zoedsoupe/anubis-mcp/issues/95)) ([105d6a9](https://github.com/zoedsoupe/anubis-mcp/commit/105d6a91e31d8dbf606ec7916317f9add94acf4e))
 
 ## [0.17.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.16.0...v0.17.0) (2025-12-09)
 
-
 ### Features
 
-* **redis:** add redix_opts for SSL/TLS support ([#59](https://github.com/zoedsoupe/anubis-mcp/issues/59)) ([33658ab](https://github.com/zoedsoupe/anubis-mcp/commit/33658abab69e1f0c361a4dbf4e9665bb900d2f7e))
-
+- **redis:** add redix_opts for SSL/TLS support ([#59](https://github.com/zoedsoupe/anubis-mcp/issues/59)) ([33658ab](https://github.com/zoedsoupe/anubis-mcp/commit/33658abab69e1f0c361a4dbf4e9665bb900d2f7e))
 
 ### Bug Fixes
 
-* added server component description/0 callback ([#58](https://github.com/zoedsoupe/anubis-mcp/issues/58)) ([a094473](https://github.com/zoedsoupe/anubis-mcp/commit/a094473916f7ac414369bb2faab1593fd141a7f1))
-* redix should be loaded ([#71](https://github.com/zoedsoupe/anubis-mcp/issues/71)) ([09b872f](https://github.com/zoedsoupe/anubis-mcp/commit/09b872fe5dc48665beee3be8a7b7ae9943ce48ae))
+- added server component description/0 callback ([#58](https://github.com/zoedsoupe/anubis-mcp/issues/58)) ([a094473](https://github.com/zoedsoupe/anubis-mcp/commit/a094473916f7ac414369bb2faab1593fd141a7f1))
+- redix should be loaded ([#71](https://github.com/zoedsoupe/anubis-mcp/issues/71)) ([09b872f](https://github.com/zoedsoupe/anubis-mcp/commit/09b872fe5dc48665beee3be8a7b7ae9943ce48ae))
 
 ## [0.16.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.15.0...v0.16.0) (2025-11-18)
 
-
 ### Features
 
-* redis based session store (continue from [#48](https://github.com/zoedsoupe/anubis-mcp/issues/48)) ([#55](https://github.com/zoedsoupe/anubis-mcp/issues/55)) ([fddea32](https://github.com/zoedsoupe/anubis-mcp/commit/fddea327ef8d91c57c4dc65f527aadc3e8d105a2))
-
+- redis based session store (continue from [#48](https://github.com/zoedsoupe/anubis-mcp/issues/48)) ([#55](https://github.com/zoedsoupe/anubis-mcp/issues/55)) ([fddea32](https://github.com/zoedsoupe/anubis-mcp/commit/fddea327ef8d91c57c4dc65f527aadc3e8d105a2))
 
 ### Bug Fixes
 
-* correct arguments in Logging.should_log? ([#47](https://github.com/zoedsoupe/anubis-mcp/issues/47)) ([6f550e6](https://github.com/zoedsoupe/anubis-mcp/commit/6f550e647fd5e6e7c6cdfb233e1cc8a4ac530fc7))
+- correct arguments in Logging.should_log? ([#47](https://github.com/zoedsoupe/anubis-mcp/issues/47)) ([6f550e6](https://github.com/zoedsoupe/anubis-mcp/commit/6f550e647fd5e6e7c6cdfb233e1cc8a4ac530fc7))
 
 ## [0.15.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.14.1...v0.15.0) (2025-11-03)
 

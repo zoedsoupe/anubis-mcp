@@ -64,7 +64,6 @@ defmodule Anubis.Server.Transport.SSE do
   - `:name` - Process registration name
   """
 
-  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   use GenServer
@@ -81,77 +80,6 @@ defmodule Anubis.Server.Transport.SSE do
   @deprecated "Use Anubis.Server.Transport.StreamableHTTP instead"
 
   @type t :: GenServer.server()
-
-  @type sse_state :: %{
-          session_id: String.t() | nil,
-          post_path: String.t()
-        }
-
-  @impl Anubis.Transport
-  @spec transport_init(keyword()) :: {:ok, sse_state()} | {:error, term()}
-  def transport_init(opts \\ []) do
-    {:ok,
-     %{
-       session_id: Keyword.get(opts, :session_id),
-       post_path: Keyword.get(opts, :post_path, "/messages")
-     }}
-  end
-
-  @impl Anubis.Transport
-  @spec parse(binary() | map(), sse_state()) ::
-          {:ok, [map()], sse_state()} | {:error, term()}
-  def parse(raw, state) when is_binary(raw) do
-    case JSON.decode(raw) do
-      {:ok, %{} = message} ->
-        {:ok, [message], state}
-
-      {:ok, _} ->
-        {:error, :invalid_message}
-
-      {:error, _} ->
-        {:error, :invalid_json}
-    end
-  end
-
-  def parse(raw, state) when is_map(raw) do
-    {:ok, [raw], state}
-  end
-
-  @impl Anubis.Transport
-  @spec encode(map(), sse_state()) :: {:ok, binary(), sse_state()} | {:error, term()}
-  def encode(message, state) when is_map(message) do
-    json = JSON.encode!(message)
-    sse_event = "event: message\ndata: #{json}\n\n"
-    {:ok, sse_event, state}
-  rescue
-    e in [Protocol.UndefinedError, Jason.EncodeError] ->
-      {:error, {:encode_error, Exception.message(e)}}
-  end
-
-  @impl Anubis.Transport
-  @spec extract_metadata(term(), sse_state()) :: map()
-  def extract_metadata(%Plug.Conn{} = conn, state) do
-    session_id =
-      conn
-      |> Plug.Conn.get_req_header("mcp-session-id")
-      |> List.first()
-      |> Kernel.||(conn.query_params["session_id"] || state.session_id)
-
-    %{
-      transport: :sse,
-      type: :server,
-      session_id: session_id,
-      remote_ip: conn.remote_ip
-    }
-  end
-
-  def extract_metadata(_raw_input, state) do
-    %{
-      transport: :sse,
-      type: :server,
-      session_id: state.session_id
-    }
-  end
 
   @typedoc """
   SSE transport options

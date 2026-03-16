@@ -51,7 +51,7 @@ defmodule Anubis.Transport.STDIO do
   def encode(message, state) when is_map(message) do
     {:ok, JSON.encode!(message) <> "\n", state}
   rescue
-    e in [Protocol.UndefinedError, Jason.EncodeError] ->
+    e ->
       {:error, {:encode_error, Exception.message(e)}}
   end
 

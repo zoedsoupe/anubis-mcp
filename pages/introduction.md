@@ -28,7 +28,7 @@ defmodule MyApp.ClaudeClient do
   use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
-    protocol_version: "2024-11-05",
+    protocol_version: "2025-06-18",
     capabilities: [:roots, :sampling]
 end
 ```
