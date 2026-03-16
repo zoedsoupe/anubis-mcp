@@ -604,7 +604,7 @@ defmodule MyApp.ServerTest do
              MyApp.Greeter.execute(%{name: "joe"}, frame)
 
     assert response.type == :tool
-    assert [%{text: "Hello joe! Welcome to the MCP world!"}] = response.content
+    assert [%{"type" => "Hello joe! Welcome to the MCP world!"}] = response.content
   end
 end
 ```
