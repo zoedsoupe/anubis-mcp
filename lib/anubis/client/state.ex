@@ -1,7 +1,7 @@
 defmodule Anubis.Client.State do
   @moduledoc false
 
-  alias Anubis.Client.Base
+  alias Anubis.Client
   alias Anubis.Client.Operation
   alias Anubis.Client.Request
   alias Anubis.MCP.Error
@@ -17,10 +17,10 @@ defmodule Anubis.Client.State do
           timeout: pos_integer(),
           transport: map(),
           pending_requests: %{String.t() => Request.t()},
-          progress_callbacks: %{String.t() => Base.progress_callback()},
-          log_callback: Base.log_callback() | nil,
+          progress_callbacks: %{String.t() => Client.progress_callback()},
+          log_callback: Client.log_callback() | nil,
           sampling_callback: (map() -> {:ok, map()} | {:error, String.t()}) | nil,
-          roots: %{String.t() => Base.root()}
+          roots: %{String.t() => Client.root()}
         }
 
   defstruct [
@@ -192,7 +192,7 @@ defmodule Anubis.Client.State do
       iex> Map.has_key?(updated_state.progress_callbacks, "token123")
       true
   """
-  @spec register_progress_callback(t(), String.t(), Base.progress_callback()) :: t()
+  @spec register_progress_callback(t(), String.t(), Client.progress_callback()) :: t()
   def register_progress_callback(state, token, callback) when is_function(callback, 3) do
     progress_callbacks = Map.put(state.progress_callbacks, token, callback)
     %{state | progress_callbacks: progress_callbacks}
@@ -212,7 +212,7 @@ defmodule Anubis.Client.State do
       iex> is_function(callback, 3)
       true
   """
-  @spec get_progress_callback(t(), String.t()) :: Base.progress_callback() | nil
+  @spec get_progress_callback(t(), String.t()) :: Client.progress_callback() | nil
   def get_progress_callback(state, token) do
     Map.get(state.progress_callbacks, token)
   end
@@ -251,7 +251,7 @@ defmodule Anubis.Client.State do
       iex> is_function(updated_state.log_callback, 3)
       true
   """
-  @spec set_log_callback(t(), Base.log_callback()) :: t()
+  @spec set_log_callback(t(), Client.log_callback()) :: t()
   def set_log_callback(state, callback) when is_function(callback, 3) do
     %{state | log_callback: callback}
   end
@@ -287,7 +287,7 @@ defmodule Anubis.Client.State do
       iex> is_function(callback, 3) or is_nil(callback)
       true
   """
-  @spec get_log_callback(t()) :: Base.log_callback() | nil
+  @spec get_log_callback(t()) :: Client.log_callback() | nil
   def get_log_callback(state) do
     state.log_callback
   end
@@ -502,7 +502,7 @@ defmodule Anubis.Client.State do
       iex> Anubis.Client.State.get_root_by_uri(state, "file:///home/user/project")
       %{uri: "file:///home/user/project", name: "My Project"}
   """
-  @spec get_root_by_uri(t(), String.t()) :: Base.root() | nil
+  @spec get_root_by_uri(t(), String.t()) :: Client.root() | nil
   def get_root_by_uri(state, uri) when is_binary(uri) do
     Map.get(state.roots, uri)
   end
@@ -519,7 +519,7 @@ defmodule Anubis.Client.State do
       iex> Anubis.Client.State.list_roots(state)
       [%{uri: "file:///home/user/project", name: "My Project"}]
   """
-  @spec list_roots(t()) :: [Base.root()]
+  @spec list_roots(t()) :: [Client.root()]
   def list_roots(state) do
     Map.values(state.roots)
   end

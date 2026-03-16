@@ -4,7 +4,7 @@ defmodule Anubis.Client.Supervisor do
   use Supervisor
   use Anubis.Logging
 
-  alias Anubis.Client.Base
+  alias Anubis.Client
   alias Anubis.Transport.SSE
   alias Anubis.Transport.STDIO
   alias Anubis.Transport.StreamableHTTP
@@ -21,9 +21,8 @@ defmodule Anubis.Client.Supervisor do
 
   ## Arguments
 
-    * `client_module` - The client module using `Anubis.Client`
     * `opts` - Supervisor options including:
-      * `:name` - Optional custom name for the client process
+      * `:name` - Optional custom name for the client process (defaults to `Anubis.Client`)
       * `:transport` - Transport configuration (required)
       * `:transport_name` - Optional custom name for the transport process
       * `:client_info` - Client identification info
@@ -32,8 +31,9 @@ defmodule Anubis.Client.Supervisor do
 
   ## Examples
 
-      # Simple usage with module names
-      Anubis.Client.Supervisor.start_link(MyApp.MCPClient,
+      # Simple usage with atom names
+      Anubis.Client.Supervisor.start_link(
+        name: MyApp.MCPClient,
         transport: {:stdio, command: "mcp", args: ["server"]},
         client_info: %{"name" => "MyApp", "version" => "1.0.0"},
         capabilities: %{"roots" => %{}},
@@ -41,7 +41,7 @@ defmodule Anubis.Client.Supervisor do
       )
 
       # With custom names (e.g., for distributed systems)
-      Anubis.Client.Supervisor.start_link(MyApp.MCPClient,
+      Anubis.Client.Supervisor.start_link(
         name: {:via, Horde.Registry, {MyCluster, "client_1"}},
         transport_name: {:via, Horde.Registry, {MyCluster, "transport_1"}},
         transport: {:stdio, command: "mcp", args: ["server"]},
@@ -50,12 +50,12 @@ defmodule Anubis.Client.Supervisor do
         protocol_version: "2024-11-05"
       )
   """
-  @spec start_link(module(), keyword()) :: Supervisor.on_start()
-  def start_link(client_module, opts) do
-    opts = Keyword.put(opts, :client_module, client_module)
+  @spec start_link(keyword()) :: Supervisor.on_start()
+  def start_link(opts) do
+    client_name = opts[:name] || Client
 
-    if name = Keyword.get(opts, :name) do
-      Supervisor.start_link(__MODULE__, opts, name: name)
+    if sup_name = derive_supervisor_name(client_name) do
+      Supervisor.start_link(__MODULE__, opts, name: sup_name)
     else
       Supervisor.start_link(__MODULE__, opts)
     end
@@ -63,14 +63,13 @@ defmodule Anubis.Client.Supervisor do
 
   @impl true
   def init(opts) do
-    client_module = Keyword.fetch!(opts, :client_module)
     transport = Keyword.fetch!(opts, :transport)
 
     client_info = Keyword.fetch!(opts, :client_info)
-    capabilities = Keyword.fetch!(opts, :capabilities)
-    protocol_version = Keyword.fetch!(opts, :protocol_version)
+    capabilities = Keyword.get(opts, :capabilities, %{})
+    protocol_version = Keyword.get(opts, :protocol_version, Anubis.Protocol.latest_version())
 
-    client_name = opts[:client_name] || client_module
+    client_name = opts[:name] || Client
     transport_name = derive_transport_name(opts[:transport_name], client_name)
 
     {layer, transport_opts} = parse_transport_config(transport)
@@ -86,12 +85,15 @@ defmodule Anubis.Client.Supervisor do
     ]
 
     children = [
-      {Base, client_opts},
+      %{id: Client, start: {Client, :start_link_server, [client_opts]}},
       {layer, transport_opts ++ [name: transport_name, client: client_name]}
     ]
 
     Supervisor.init(children, strategy: :one_for_all)
   end
+
+  defp derive_supervisor_name(name) when is_atom(name), do: Module.concat(name, "Supervisor")
+  defp derive_supervisor_name(_name), do: nil
 
   defp derive_transport_name(transport, _client) when not is_nil(transport), do: transport
 

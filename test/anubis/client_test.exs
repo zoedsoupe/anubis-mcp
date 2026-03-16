@@ -1,4 +1,4 @@
-defmodule Anubis.Client.BaseTest do
+defmodule Anubis.ClientTest do
   use Anubis.MCP.Case, async: false
 
   import Mox
@@ -27,13 +27,19 @@ defmodule Anubis.Client.BaseTest do
       end)
 
       client =
-        start_supervised!(
-          {Anubis.Client.Base,
-           transport: [layer: Anubis.MockTransport, name: MockTransport],
-           client_info: %{"name" => "TestClient", "version" => "1.0.0"},
-           capabilities: %{}},
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
           restart: :temporary
-        )
+        })
 
       allow(Anubis.MockTransport, self(), client)
       initialize_client(client)
@@ -55,7 +61,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.ping(client) end)
+      task = Task.async(fn -> Anubis.Client.ping(client) end)
 
       Process.sleep(50)
 
@@ -76,7 +82,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
+      task = Task.async(fn -> Anubis.Client.list_resources(client) end)
 
       Process.sleep(50)
 
@@ -106,7 +112,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.list_resource_templates(client) end)
+      task = Task.async(fn -> Anubis.Client.list_resource_templates(client) end)
 
       Process.sleep(50)
 
@@ -138,7 +144,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.list_resources(client, cursor: "next-page")
+          Anubis.Client.list_resources(client, cursor: "next-page")
         end)
 
       Process.sleep(50)
@@ -170,7 +176,7 @@ defmodule Anubis.Client.BaseTest do
       end)
 
       task =
-        Task.async(fn -> Anubis.Client.Base.read_resource(client, "test://uri") end)
+        Task.async(fn -> Anubis.Client.read_resource(client, "test://uri") end)
 
       Process.sleep(50)
 
@@ -199,7 +205,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.list_prompts(client) end)
+      task = Task.async(fn -> Anubis.Client.list_prompts(client) end)
 
       Process.sleep(50)
 
@@ -236,7 +242,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.get_prompt(client, "test_prompt", %{"arg1" => "value1"})
+          Anubis.Client.get_prompt(client, "test_prompt", %{"arg1" => "value1"})
         end)
 
       Process.sleep(50)
@@ -269,7 +275,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
 
       Process.sleep(50)
 
@@ -306,7 +312,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.call_tool(client, "test_tool", %{"arg1" => "value1"})
+          Anubis.Client.call_tool(client, "test_tool", %{"arg1" => "value1"})
         end)
 
       Process.sleep(50)
@@ -344,7 +350,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.call_tool(client, "test_tool", %{"arg1" => "value1"})
+          Anubis.Client.call_tool(client, "test_tool", %{"arg1" => "value1"})
         end)
 
       Process.sleep(50)
@@ -385,7 +391,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.ping(client) end)
+      task = Task.async(fn -> Anubis.Client.ping(client) end)
 
       Process.sleep(50)
 
@@ -400,7 +406,7 @@ defmodule Anubis.Client.BaseTest do
 
     @tag server_capabilities: %{"prompts" => %{}}
     test "tools/list fails since this capability isn't supported", %{client: client} do
-      task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
 
       assert {:error, %Error{reason: :method_not_found, data: %{method: "tools/list"}}} =
                Task.await(task)
@@ -417,7 +423,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.ping(client) end)
+      task = Task.async(fn -> Anubis.Client.ping(client) end)
 
       Process.sleep(50)
 
@@ -438,7 +444,7 @@ defmodule Anubis.Client.BaseTest do
         {:error, :connection_closed}
       end)
 
-      assert {:error, error} = Anubis.Client.Base.ping(client)
+      assert {:error, error} = Anubis.Client.ping(client)
       assert error.reason == :send_failure
       assert error.data.original_reason == :connection_closed
     end
@@ -449,13 +455,19 @@ defmodule Anubis.Client.BaseTest do
       expect(Anubis.MockTransport, :send_message, fn _, _message, _ -> :ok end)
 
       client =
-        start_supervised!(
-          {Anubis.Client.Base,
-           transport: [layer: Anubis.MockTransport, name: MockTransport],
-           client_info: %{"name" => "TestClient", "version" => "1.0.0"},
-           capabilities: %{"roots" => %{}}},
+        start_supervised!(%{
+          id: :test_cap_client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{"roots" => %{}}
+               ]
+             ]},
           restart: :temporary
-        )
+        })
 
       allow(Anubis.MockTransport, self(), client)
 
@@ -463,13 +475,13 @@ defmodule Anubis.Client.BaseTest do
 
       new_capabilities = %{"sampling" => %{}}
 
-      updated = Anubis.Client.Base.merge_capabilities(client, new_capabilities)
+      updated = Anubis.Client.merge_capabilities(client, new_capabilities)
 
       assert updated == %{"roots" => %{}, "sampling" => %{}}
 
       nested_capabilities = %{"roots" => %{"listChanged" => true}}
 
-      final = Anubis.Client.Base.merge_capabilities(client, nested_capabilities)
+      final = Anubis.Client.merge_capabilities(client, nested_capabilities)
 
       assert final == %{"sampling" => %{}, "roots" => %{"listChanged" => true}}
     end
@@ -479,7 +491,7 @@ defmodule Anubis.Client.BaseTest do
     setup :initialized_client
 
     test "get_server_capabilities returns server capabilities", %{client: client} do
-      capabilities = Anubis.Client.Base.get_server_capabilities(client)
+      capabilities = Anubis.Client.get_server_capabilities(client)
 
       assert Map.has_key?(capabilities, "resources")
       assert Map.has_key?(capabilities, "tools")
@@ -487,7 +499,7 @@ defmodule Anubis.Client.BaseTest do
     end
 
     test "get_server_info returns server info", %{client: client} do
-      server_info = Anubis.Client.Base.get_server_info(client)
+      server_info = Anubis.Client.get_server_info(client)
 
       assert server_info == %{"name" => "TestServer", "version" => "1.0.0"}
     end
@@ -505,7 +517,7 @@ defmodule Anubis.Client.BaseTest do
       total_value = 100
 
       :ok =
-        Anubis.Client.Base.register_progress_callback(
+        Anubis.Client.register_progress_callback(
           client,
           progress_token,
           fn token, progress, total ->
@@ -527,11 +539,11 @@ defmodule Anubis.Client.BaseTest do
       progress_token = "unregister_test_token"
 
       :ok =
-        Anubis.Client.Base.register_progress_callback(client, progress_token, fn _, _, _ ->
+        Anubis.Client.register_progress_callback(client, progress_token, fn _, _, _ ->
           send(test_pid, :should_not_be_called)
         end)
 
-      :ok = Anubis.Client.Base.unregister_progress_callback(client, progress_token)
+      :ok = Anubis.Client.unregister_progress_callback(client, progress_token)
 
       progress_notification = progress_notification(progress_token)
       send_notification(client, progress_notification)
@@ -555,7 +567,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.list_resources(client,
+          Anubis.Client.list_resources(client,
             progress: [token: progress_token]
           )
         end)
@@ -601,7 +613,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.set_log_level(client, "info") end)
+      task = Task.async(fn -> Anubis.Client.set_log_level(client, "info") end)
 
       Process.sleep(50)
 
@@ -636,7 +648,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.complete(client, ref, argument) end)
+      task = Task.async(fn -> Anubis.Client.complete(client, ref, argument) end)
 
       Process.sleep(50)
 
@@ -679,7 +691,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.complete(client, ref, argument) end)
+      task = Task.async(fn -> Anubis.Client.complete(client, ref, argument) end)
 
       Process.sleep(50)
 
@@ -700,7 +712,7 @@ defmodule Anubis.Client.BaseTest do
 
     test "register_log_callback sets the callback", %{client: client} do
       callback = fn _, _, _ -> nil end
-      :ok = Anubis.Client.Base.register_log_callback(client, callback)
+      :ok = Anubis.Client.register_log_callback(client, callback)
 
       state = :sys.get_state(client)
       assert state.log_callback == callback
@@ -709,8 +721,8 @@ defmodule Anubis.Client.BaseTest do
     test "unregister_log_callback removes the callback", %{client: client} do
       callback = fn _, _, _ -> nil end
 
-      assert :ok = Anubis.Client.Base.register_log_callback(client, callback)
-      assert :ok = Anubis.Client.Base.unregister_log_callback(client)
+      assert :ok = Anubis.Client.register_log_callback(client, callback)
+      assert :ok = Anubis.Client.unregister_log_callback(client)
 
       state = :sys.get_state(client)
       assert is_nil(state.log_callback)
@@ -720,7 +732,7 @@ defmodule Anubis.Client.BaseTest do
       test_pid = self()
 
       :ok =
-        Anubis.Client.Base.register_log_callback(client, fn level, data, logger ->
+        Anubis.Client.register_log_callback(client, fn level, data, logger ->
           send(test_pid, {:log_callback, level, data, logger})
         end)
 
@@ -752,13 +764,19 @@ defmodule Anubis.Client.BaseTest do
       end)
 
       client =
-        start_supervised!(
-          {Anubis.Client.Base,
-           transport: [layer: Anubis.MockTransport, name: MockTransport],
-           client_info: %{"name" => "TestClient", "version" => "1.0.0"},
-           capabilities: %{}},
+        start_supervised!(%{
+          id: :test_notif_client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
           restart: :temporary
-        )
+        })
 
       allow(Anubis.MockTransport, self(), client)
 
@@ -783,7 +801,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.call_tool(client, "long_running_tool")
+          Anubis.Client.call_tool(client, "long_running_tool")
         end)
 
       Process.sleep(50)
@@ -809,7 +827,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
+      task = Task.async(fn -> Anubis.Client.list_resources(client) end)
 
       Process.sleep(50)
 
@@ -825,7 +843,7 @@ defmodule Anubis.Client.BaseTest do
       end)
 
       assert :ok =
-               Anubis.Client.Base.cancel_request(
+               Anubis.Client.cancel_request(
                  client,
                  request_id,
                  "test cancellation"
@@ -842,7 +860,7 @@ defmodule Anubis.Client.BaseTest do
     test "client returns not_found when cancelling non-existent request", %{
       client: client
     } do
-      result = Anubis.Client.Base.cancel_request(client, "non_existent_id")
+      result = Anubis.Client.cancel_request(client, "non_existent_id")
       assert %Error{reason: :request_not_found} = result
     end
 
@@ -853,8 +871,8 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      task1 = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
-      task2 = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
+      task1 = Task.async(fn -> Anubis.Client.list_resources(client) end)
+      task2 = Task.async(fn -> Anubis.Client.list_tools(client) end)
 
       Process.sleep(50)
 
@@ -870,7 +888,7 @@ defmodule Anubis.Client.BaseTest do
       end)
 
       {:ok, cancelled_requests} =
-        Anubis.Client.Base.cancel_all_requests(client, "batch cancellation")
+        Anubis.Client.cancel_all_requests(client, "batch cancellation")
 
       assert length(cancelled_requests) == 2
 
@@ -902,7 +920,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.list_resources(client, timeout: test_timeout)
+          Anubis.Client.list_resources(client, timeout: test_timeout)
         end)
 
       Process.sleep(test_timeout * 2)
@@ -931,7 +949,7 @@ defmodule Anubis.Client.BaseTest do
 
       task =
         Task.async(fn ->
-          Anubis.Client.Base.list_resources(client, timeout: test_timeout)
+          Anubis.Client.list_resources(client, timeout: test_timeout)
         end)
 
       result = Task.await(task)
@@ -958,12 +976,12 @@ defmodule Anubis.Client.BaseTest do
       expect(Anubis.MockTransport, :shutdown, fn _ -> :ok end)
 
       Process.flag(:trap_exit, true)
-      %{pid: pid} = Task.async(fn -> Anubis.Client.Base.list_resources(client) end)
+      %{pid: pid} = Task.async(fn -> Anubis.Client.list_resources(client) end)
       Process.sleep(50)
 
       assert get_request_id(client, "resources/list")
 
-      Anubis.Client.Base.close(client)
+      Anubis.Client.close(client)
 
       Process.sleep(50)
       refute Process.alive?(client)
@@ -978,13 +996,13 @@ defmodule Anubis.Client.BaseTest do
 
     test "add_root adds a root directory", %{client: client} do
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project",
           "My Project"
         )
 
-      roots = Anubis.Client.Base.list_roots(client)
+      roots = Anubis.Client.list_roots(client)
       assert length(roots) == 1
 
       [root] = roots
@@ -994,20 +1012,20 @@ defmodule Anubis.Client.BaseTest do
 
     test "list_roots returns all roots", %{client: client} do
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
         )
 
-      roots = Anubis.Client.Base.list_roots(client)
+      roots = Anubis.Client.list_roots(client)
       assert length(roots) == 2
 
       uris = Enum.map(roots, & &1.uri)
@@ -1017,63 +1035,63 @@ defmodule Anubis.Client.BaseTest do
 
     test "remove_root removes a specific root", %{client: client} do
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
         )
 
-      :ok = Anubis.Client.Base.remove_root(client, "file:///home/user/project1")
+      :ok = Anubis.Client.remove_root(client, "file:///home/user/project1")
 
-      roots = Anubis.Client.Base.list_roots(client)
+      roots = Anubis.Client.list_roots(client)
       assert length(roots) == 1
       assert hd(roots).uri == "file:///home/user/project2"
     end
 
     test "clear_roots removes all roots", %{client: client} do
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
         )
 
-      :ok = Anubis.Client.Base.clear_roots(client)
+      :ok = Anubis.Client.clear_roots(client)
 
-      roots = Anubis.Client.Base.list_roots(client)
+      roots = Anubis.Client.list_roots(client)
       assert Enum.empty?(roots)
     end
 
     test "add_root doesn't add duplicates", %{client: client} do
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project",
           "My Project"
         )
 
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project",
           "Duplicate Project"
         )
 
-      roots = Anubis.Client.Base.list_roots(client)
+      roots = Anubis.Client.list_roots(client)
       assert length(roots) == 1
       assert hd(roots).name == "My Project"
     end
@@ -1084,14 +1102,14 @@ defmodule Anubis.Client.BaseTest do
 
     test "server can request roots list", %{client: client} do
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project1",
           "Project 1"
         )
 
       :ok =
-        Anubis.Client.Base.add_root(
+        Anubis.Client.add_root(
           client,
           "file:///home/user/project2",
           "Project 2"
@@ -1134,7 +1152,7 @@ defmodule Anubis.Client.BaseTest do
         {:ok, %{role: "assistant", content: %{type: "text", text: "Hello"}}}
       end
 
-      :ok = Anubis.Client.Base.register_sampling_callback(client, callback)
+      :ok = Anubis.Client.register_sampling_callback(client, callback)
 
       state = :sys.get_state(client)
       assert is_function(state.sampling_callback, 1)
@@ -1146,8 +1164,8 @@ defmodule Anubis.Client.BaseTest do
         {:ok, %{role: "assistant", content: %{type: "text", text: "Hello"}}}
       end
 
-      assert :ok = Anubis.Client.Base.register_sampling_callback(client, callback)
-      assert :ok = Anubis.Client.Base.unregister_sampling_callback(client)
+      assert :ok = Anubis.Client.register_sampling_callback(client, callback)
+      assert :ok = Anubis.Client.unregister_sampling_callback(client)
 
       state = :sys.get_state(client)
       assert is_nil(state.sampling_callback)
@@ -1159,7 +1177,7 @@ defmodule Anubis.Client.BaseTest do
 
       # Register a sampling callback
       :ok =
-        Anubis.Client.Base.register_sampling_callback(client, fn params ->
+        Anubis.Client.register_sampling_callback(client, fn params ->
           send(test_pid, {:sampling_called, params})
 
           {:ok,
@@ -1248,7 +1266,7 @@ defmodule Anubis.Client.BaseTest do
 
       # Register a callback that returns an error
       :ok =
-        Anubis.Client.Base.register_sampling_callback(client, fn params ->
+        Anubis.Client.register_sampling_callback(client, fn params ->
           send(test_pid, {:sampling_called, params})
           {:error, "Model unavailable"}
         end)
@@ -1286,7 +1304,7 @@ defmodule Anubis.Client.BaseTest do
 
       # Register a callback that raises an exception
       :ok =
-        Anubis.Client.Base.register_sampling_callback(client, fn params ->
+        Anubis.Client.register_sampling_callback(client, fn params ->
           send(test_pid, {:sampling_called, params})
           raise "Something went wrong!"
         end)
@@ -1334,7 +1352,7 @@ defmodule Anubis.Client.BaseTest do
       end)
 
       assert :ok =
-               Anubis.Client.Base.add_root(client, "file:///test/root", "Test Root")
+               Anubis.Client.add_root(client, "file:///test/root", "Test Root")
 
       _ = :sys.get_state(client)
 
@@ -1344,7 +1362,7 @@ defmodule Anubis.Client.BaseTest do
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
     test "sends notification when removing a root", %{client: client} do
       assert :ok =
-               Anubis.Client.Base.add_root(client, "file:///test/root", "Test Root")
+               Anubis.Client.add_root(client, "file:///test/root", "Test Root")
 
       Process.sleep(50)
 
@@ -1356,7 +1374,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      assert :ok = Anubis.Client.Base.remove_root(client, "file:///test/root")
+      assert :ok = Anubis.Client.remove_root(client, "file:///test/root")
       _ = :sys.get_state(client)
 
       Process.sleep(50)
@@ -1365,14 +1383,14 @@ defmodule Anubis.Client.BaseTest do
     @tag client_capabilities: %{"roots" => %{"listChanged" => true}}
     test "sends notification when clearing roots", %{client: client} do
       assert :ok =
-               Anubis.Client.Base.add_root(
+               Anubis.Client.add_root(
                  client,
                  "file:///test/root1",
                  "Test Root 1"
                )
 
       assert :ok =
-               Anubis.Client.Base.add_root(
+               Anubis.Client.add_root(
                  client,
                  "file:///test/root2",
                  "Test Root 2"
@@ -1388,7 +1406,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      assert :ok = Anubis.Client.Base.clear_roots(client)
+      assert :ok = Anubis.Client.clear_roots(client)
 
       _ = :sys.get_state(client)
       Process.sleep(50)
@@ -1399,7 +1417,7 @@ defmodule Anubis.Client.BaseTest do
       client: client
     } do
       assert :ok =
-               Anubis.Client.Base.add_root(client, "file:///test/root", "Test Root")
+               Anubis.Client.add_root(client, "file:///test/root", "Test Root")
 
       _ = :sys.get_state(client)
     end
@@ -1415,7 +1433,7 @@ defmodule Anubis.Client.BaseTest do
         :ok
       end)
 
-      list_task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
+      list_task = Task.async(fn -> Anubis.Client.list_tools(client) end)
       Process.sleep(50)
 
       request_id = get_request_id(client, "tools/list")
@@ -1447,7 +1465,7 @@ defmodule Anubis.Client.BaseTest do
 
       call_task =
         Task.async(fn ->
-          Anubis.Client.Base.call_tool(client, "get_weather", %{"location" => "NYC"})
+          Anubis.Client.call_tool(client, "get_weather", %{"location" => "NYC"})
         end)
 
       Process.sleep(50)
@@ -1484,7 +1502,7 @@ defmodule Anubis.Client.BaseTest do
 
       invalid_task =
         Task.async(fn ->
-          Anubis.Client.Base.call_tool(client, "get_weather", %{"location" => "LA"})
+          Anubis.Client.call_tool(client, "get_weather", %{"location" => "LA"})
         end)
 
       Process.sleep(50)
@@ -1517,7 +1535,7 @@ defmodule Anubis.Client.BaseTest do
     test "handles tools with complex outputSchema", %{client: client} do
       expect(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
 
-      task = Task.async(fn -> Anubis.Client.Base.list_tools(client) end)
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
       Process.sleep(50)
 
       request_id = get_request_id(client, "tools/list")

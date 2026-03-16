@@ -4,24 +4,28 @@ A quick reference for the most commonly used functions. Looking for more detaile
 
 ## Client API
 
-### Module Definition
+### Starting a Client
+
+Add `Anubis.Client` directly to your supervision tree:
 
 ```elixir
-use Anubis.Client, options
+{Anubis.Client,
+ name: MyApp.MCPClient,
+ transport: {:stdio, command: "cmd", args: ["arg1"]},
+ client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+ protocol_version: "2025-06-18"}
 ```
 
 **Required Options:**
 
-- `name` - Your client name (string)
-- `version` - Your client version (string)
-- `protocol_version` - MCP protocol version (string)
-- `capabilities` - List of capabilities (atoms or tuples)
+- `name` - Process name (atom or `{:via, ...}` tuple)
+- `transport` - Transport configuration tuple
+- `client_info` - Map with `"name"` and `"version"` keys
 
-### Starting a Client
+**Optional Options:**
 
-```elixir
-{MyApp.Client, transport: transport_config}
-```
+- `capabilities` - Capabilities map (default: `%{}`)
+- `protocol_version` - MCP protocol version (default: latest)
 
 **Transport Options:**
 
@@ -32,14 +36,11 @@ use Anubis.Client, options
 
 ### Client Functions
 
-All functions accept an optional process name as the first argument:
+All functions take a client process name or PID as the first argument:
 
 ```elixir
-# Default process
-MyApp.Client.ping()
-
-# Named process
-MyApp.Client.ping(:my_client)
+Anubis.Client.ping(MyApp.MCPClient)
+Anubis.Client.list_tools(MyApp.MCPClient)
 ```
 
 **Connection Management:**

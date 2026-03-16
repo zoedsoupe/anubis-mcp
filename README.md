@@ -79,22 +79,17 @@ Now you can achieve your MCP server on `http://localhost:<port>/mcp`
 ### Client
 
 ```elixir
-# Define a client module
-defmodule MyApp.MCPClient do
-  use Anubis.Client,
-    name: "MyApp",
-    version: "1.0.0",
-    protocol_version: "2025-06-18"
-end
-
 # Add to your application supervisor
 children = [
-  {MyApp.MCPClient,
-   transport: {:streamable_http, base_url: "http://localhost:4000"}}
+  {Anubis.Client,
+   name: MyApp.MCPClient,
+   transport: {:streamable_http, base_url: "http://localhost:4000"},
+   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+   protocol_version: "2025-06-18"}
 ]
 
 # Use the client
-{:ok, result} = MyApp.MCPClient.call_tool("echo", %{text: "this will be echoed!"})
+{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "echo", %{text: "this will be echoed!"})
 ```
 
 ## Why Anubis?

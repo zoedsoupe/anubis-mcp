@@ -1,5 +1,17 @@
 # Welcome to Anubis MCP
 
+## What is MCP?
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard that defines how AI assistants (like Claude, ChatGPT, or custom LLM applications) communicate with external tools, data sources, and services. Think of it as a universal plug for AI — instead of building custom integrations for every AI model and every tool, MCP provides a single, standardized protocol.
+
+MCP defines three core primitives that servers can expose:
+
+- **Tools** — Functions the AI can call (e.g., search, compute, send email)
+- **Resources** — Data the AI can read (e.g., files, database records, API responses)
+- **Prompts** — Reusable message templates for common interaction patterns
+
+Clients connect to servers, negotiate capabilities, and then invoke these primitives on behalf of AI models. The protocol runs over multiple transports (STDIO, HTTP, WebSocket) and handles concerns like capability discovery, progress tracking, and error reporting.
+
 ## The LiveView Moment for AI Development
 
 What Phoenix LiveView did for real-time web experiences, Anubis MCP does for AI assistant integration. Turn your Elixir applications into AI superpowers with the same simplicity and reliability you love about the BEAM.
@@ -21,25 +33,17 @@ Let's connect to an existing MCP server in under three minutes:
 {:anubis_mcp, "~> 0.17.1"} # x-release-please-version
 ```
 
-Define a client that speaks MCP:
-
-```elixir
-defmodule MyApp.ClaudeClient do
-  use Anubis.Client,
-    name: "MyApp",
-    version: "1.0.0",
-    protocol_version: "2025-06-18",
-    capabilities: [:roots, :sampling]
-end
-```
-
-Add it to your supervision tree:
+Add a client to your supervision tree:
 
 ```elixir
 # In your Application.start/2
 children = [
-  {MyApp.ClaudeClient,
-   transport: {:stdio, command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"]}}
+  {Anubis.Client,
+   name: MyApp.MCPClient,
+   transport: {:stdio, command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"]},
+   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+   capabilities: %{},
+   protocol_version: "2025-06-18"}
 ]
 
 Supervisor.start_link(children, strategy: :one_for_one)
@@ -49,14 +53,14 @@ Now watch the magic:
 
 ```elixir
 # Discover what's available
-{:ok, tools} = MyApp.ClaudeClient.list_tools()
+{:ok, tools} = Anubis.Client.list_tools(MyApp.MCPClient)
 # => Find web search, file operations, and more
 
 # Use AI capabilities from your Elixir code
-{:ok, result} = MyApp.ClaudeClient.call_tool("web_search", %{query: "elixir otp patterns"})
+{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "web_search", %{query: "elixir otp patterns"})
 
 # Even read resources
-{:ok, content} = MyApp.ClaudeClient.read_resource("file:///project/README.md")
+{:ok, content} = Anubis.Client.read_resource(MyApp.MCPClient, "file:///project/README.md")
 ```
 
 Your Elixir application now has AI-powered web search, file operations, and more. All fault-tolerant, all supervised, all feeling like native Elixir.

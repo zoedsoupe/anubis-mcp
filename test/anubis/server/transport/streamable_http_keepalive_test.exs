@@ -12,25 +12,24 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
 
   alias Anubis.Server.Transport.StreamableHTTP
 
-  setup :with_default_registry
-
   describe "SSE keepalive" do
     setup do
       registry = Anubis.Server.Registry
-      name = registry.transport(StubServer, :streamable_http)
-      sup = registry.task_supervisor(StubServer)
+      name = registry.transport_name(StubServer, :streamable_http)
+      sup = registry.task_supervisor_name(StubServer)
       start_supervised!({Task.Supervisor, name: sup})
 
       # Start transport with keepalive enabled and short interval for testing
       {:ok, transport} =
-        start_supervised({StreamableHTTP,
-          server: StubServer,
-          name: name,
-          registry: registry,
-          task_supervisor: sup,
-          keepalive: true,
-          keepalive_interval: 100
-        })
+        start_supervised(
+          {StreamableHTTP,
+           server: StubServer,
+           name: name,
+           registry: registry,
+           task_supervisor: sup,
+           keepalive: true,
+           keepalive_interval: 100}
+        )
 
       %{transport: transport, server: StubServer}
     end

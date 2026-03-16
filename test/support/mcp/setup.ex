@@ -3,7 +3,7 @@ defmodule Anubis.MCP.Setup do
 
   import Anubis.MCP.Assertions
   import ExUnit.Assertions, only: [assert: 1]
-  import ExUnit.Callbacks, only: [start_supervised!: 1, start_supervised!: 2]
+  import ExUnit.Callbacks, only: [start_supervised!: 1]
 
   alias Anubis.MCP.Builders
   alias Anubis.MCP.Message
@@ -159,13 +159,19 @@ defmodule Anubis.MCP.Setup do
     client_capabilities = context[:client_capabilities] || %{}
 
     client =
-      start_supervised!(
-        {Anubis.Client.Base,
-         transport: [layer: Anubis.MockTransport, name: MockTransport],
-         client_info: client_info,
-         capabilities: client_capabilities},
+      start_supervised!(%{
+        id: Anubis.Client,
+        start:
+          {Anubis.Client, :start_link_server,
+           [
+             [
+               transport: [layer: Anubis.MockTransport, name: MockTransport],
+               client_info: client_info,
+               capabilities: client_capabilities
+             ]
+           ]},
         restart: :temporary
-      )
+      })
 
     allow(Anubis.MockTransport, self(), fn -> client end)
     initialize_client(client, server_capabilities: server_capabilities)

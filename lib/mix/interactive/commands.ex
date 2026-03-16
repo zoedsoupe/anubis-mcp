@@ -85,7 +85,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Fetching tools...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Anubis.Client.Base.list_tools(client, timeout_opts) do
+    case Anubis.Client.list_tools(client, timeout_opts) do
       {:ok, %Response{result: %{"tools" => tools}}} ->
         UI.print_items("tools", tools, "name")
 
@@ -121,7 +121,7 @@ defmodule Mix.Interactive.Commands do
   defp perform_tool_call(client, tool_name, tool_args, timeout_opts) do
     IO.puts("\n#{UI.colors().info}Calling tool #{tool_name}...#{UI.colors().reset}")
 
-    case Anubis.Client.Base.call_tool(client, tool_name, tool_args, timeout_opts) do
+    case Anubis.Client.call_tool(client, tool_name, tool_args, timeout_opts) do
       {:ok, %Response{result: result}} ->
         IO.puts("#{UI.colors().success}Tool call successful#{UI.colors().reset}")
         IO.puts("\n#{UI.colors().info}Result:#{UI.colors().reset}")
@@ -138,7 +138,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Fetching prompts...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Anubis.Client.Base.list_prompts(client, timeout_opts) do
+    case Anubis.Client.list_prompts(client, timeout_opts) do
       {:ok, %Response{result: %{"prompts" => prompts}}} ->
         UI.print_items("prompts", prompts, "name")
 
@@ -174,7 +174,7 @@ defmodule Mix.Interactive.Commands do
   defp perform_get_prompt(client, prompt_name, prompt_args, timeout_opts) do
     IO.puts("\n#{UI.colors().info}Getting prompt #{prompt_name}...#{UI.colors().reset}")
 
-    case Anubis.Client.Base.get_prompt(
+    case Anubis.Client.get_prompt(
            client,
            prompt_name,
            prompt_args,
@@ -196,7 +196,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Fetching resources...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Anubis.Client.Base.list_resources(client, timeout_opts) do
+    case Anubis.Client.list_resources(client, timeout_opts) do
       {:ok, %Response{result: %{"resources" => resources}}} ->
         UI.print_items("resources", resources, "uri")
 
@@ -211,7 +211,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Fetching resource templates...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Anubis.Client.Base.list_resource_templates(client, timeout_opts) do
+    case Anubis.Client.list_resource_templates(client, timeout_opts) do
       {:ok, %Response{result: %{"resourceTemplates" => templates}}} ->
         UI.print_items("resource templates", templates, "name")
 
@@ -230,7 +230,7 @@ defmodule Mix.Interactive.Commands do
 
     IO.puts("\n#{UI.colors().info}Reading resource #{resource_uri}...#{UI.colors().reset}")
 
-    case Anubis.Client.Base.read_resource(client, resource_uri, timeout_opts) do
+    case Anubis.Client.read_resource(client, resource_uri, timeout_opts) do
       {:ok, %Response{result: result}} ->
         IO.puts("#{UI.colors().success}Read resource successfully#{UI.colors().reset}")
 
@@ -253,7 +253,7 @@ defmodule Mix.Interactive.Commands do
   defp exit_client(client) do
     IO.puts("\n#{UI.colors().info}Closing connection and exiting...#{UI.colors().reset}")
 
-    Anubis.Client.Base.close(client)
+    Anubis.Client.close(client)
     :ok
   end
 
@@ -409,7 +409,7 @@ defmodule Mix.Interactive.Commands do
     IO.puts("\n#{UI.colors().info}Pinging server...#{UI.colors().reset}")
     timeout_opts = prompt_for_timeout()
 
-    case Anubis.Client.Base.ping(client, timeout_opts) do
+    case Anubis.Client.ping(client, timeout_opts) do
       :pong ->
         IO.puts("#{UI.colors().success}✓ Pong! Server is responding#{UI.colors().reset}")
 
