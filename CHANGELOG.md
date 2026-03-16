@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.1...v1.0.0) (2026-03-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove client base module and client macro ([#110](https://github.com/zoedsoupe/anubis-mcp/issues/110))
+* **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96))
+
+### Features
+
+* add _meta support to Tool struct and JSON encoder ([#108](https://github.com/zoedsoupe/anubis-mcp/issues/108)) ([6ac49d1](https://github.com/zoedsoupe/anubis-mcp/commit/6ac49d181baed767defe9fc5138c6d41caa26f20))
+
+
+### Bug Fixes
+
+* **phase-5:** remove dead code and update docs ([#104](https://github.com/zoedsoupe/anubis-mcp/issues/104)) ([eea86af](https://github.com/zoedsoupe/anubis-mcp/commit/eea86af23dcb805a7770894c6a6a897700c38dfe))
+* regression for input/output server schema ([85f8ebb](https://github.com/zoedsoupe/anubis-mcp/commit/85f8ebb7439c51ab5cb0df974e08720833f534e9))
+* remove client base module and client macro ([#110](https://github.com/zoedsoupe/anubis-mcp/issues/110)) ([1f9f13c](https://github.com/zoedsoupe/anubis-mcp/commit/1f9f13cf2c44294391dd580030a1210dcd349fd5))
+* server examples and sse server transport ([944bafb](https://github.com/zoedsoupe/anubis-mcp/commit/944bafb01c29afa36a82eddc81c6e1c6d0278a9c))
+* session serializion errors ([#112](https://github.com/zoedsoupe/anubis-mcp/issues/112)) ([cb8c0e3](https://github.com/zoedsoupe/anubis-mcp/commit/cb8c0e31ad831484425e378951a85591c8cbf29f)), closes [#60](https://github.com/zoedsoupe/anubis-mcp/issues/60)
+* Start SSE keepalive when first handler is registered ([#83](https://github.com/zoedsoupe/anubis-mcp/issues/83)) ([c3c01e9](https://github.com/zoedsoupe/anubis-mcp/commit/c3c01e975f57ef421783f963adf717b522b5c724))
+* stdio server transport working ([#111](https://github.com/zoedsoupe/anubis-mcp/issues/111)) ([b331281](https://github.com/zoedsoupe/anubis-mcp/commit/b33128172db3f4ec3766cb4c7125f83bc3a85dd7))
+
+
+### Code Refactoring
+
+* **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96)) ([badb0f0](https://github.com/zoedsoupe/anubis-mcp/commit/badb0f0111521f8bd5a5dba32574c25e1b589c91))
+* **phase-4:** client extraction of handlers ([#100](https://github.com/zoedsoupe/anubis-mcp/issues/100)) ([08b98c0](https://github.com/zoedsoupe/anubis-mcp/commit/08b98c03e50d698a781507ee63a4a6c5f8cdcb5e))
+
 ## [0.17.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.0...v0.17.1) (2026-02-28)
 
 ### Bug Fixes
