@@ -222,6 +222,14 @@ defmodule Anubis.Server.Component.Schema do
     Map.put(schema, "pattern", pattern)
   end
 
+  defp parse_type_opt(type, {:min, min}, schema) when type in [:string, {:required, :string}] do
+    Map.put(schema, "minLength", min)
+  end
+
+  defp parse_type_opt(type, {:max, max}, schema) when type in [:string, {:required, :string}] do
+    Map.put(schema, "maxLength", max)
+  end
+
   defp parse_type_opt(_type, {:min, min}, schema) do
     Map.put(schema, "minimum", min)
   end

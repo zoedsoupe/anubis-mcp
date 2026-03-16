@@ -405,39 +405,48 @@ defmodule Anubis.Server.Component do
 
   defp __convert_mcp_field_to_peri__(type, opts) do
     {constraints, metadata} = __extract_peri_constraints__(opts)
-
-    # Extract base type and required flag
-    {base_type, is_required} =
-      case type do
-        {:required, inner_type} -> {inner_type, true}
-        inner_type -> {inner_type, false}
-      end
-
-    # Handle :enum type specially
-    constrained_type =
-      case base_type do
-        :enum ->
-          values = Keyword.get(metadata, :values, [])
-          {:enum, values}
-
-        _ ->
-          # Normal constraint handling
-          case constraints do
-            [] -> base_type
-            [single] -> {base_type, single}
-            multiple -> {base_type, multiple}
-          end
-      end
-
-    # Wrap with required if needed
-    final_type =
-      if is_required do
-        {:required, constrained_type}
-      else
-        constrained_type
-      end
-
+    {base_type, is_required} = __extract_type_info__(type)
+    constrained_type = __build_constrained_type__(base_type, constraints, metadata)
+    final_type = if is_required, do: {:required, constrained_type}, else: constrained_type
     __inject_transforms__(final_type)
+  end
+
+  defp __extract_type_info__({:required, inner_type}), do: {inner_type, true}
+  defp __extract_type_info__(inner_type), do: {inner_type, false}
+
+  defp __build_constrained_type__(:enum, _constraints, metadata) do
+    values = Keyword.get(metadata, :values, [])
+    {:enum, values}
+  end
+
+  defp __build_constrained_type__(:string, constraints, _metadata) do
+    string_constraints =
+      Enum.map(constraints, fn
+        {:gte, n} -> {:min, n}
+        {:lte, n} -> {:max, n}
+        other -> other
+      end)
+
+    __wrap_constraints__(:string, string_constraints)
+  end
+
+  defp __build_constrained_type__(base_type, constraints, _metadata) do
+    numeric_constraints =
+      Enum.map(constraints, fn
+        {:min, n} -> {:gte, n}
+        {:max, n} -> {:lte, n}
+        other -> other
+      end)
+
+    __wrap_constraints__(base_type, numeric_constraints)
+  end
+
+  defp __wrap_constraints__(base_type, constraints) do
+    case constraints do
+      [] -> base_type
+      [single] -> {base_type, single}
+      multiple -> {base_type, multiple}
+    end
   end
 
   defp __extract_peri_constraints__(opts) do
@@ -446,8 +455,8 @@ defmodule Anubis.Server.Component do
       |> maybe_add_constraint(opts, :min_length, :min)
       |> maybe_add_constraint(opts, :max_length, :max)
       |> maybe_add_constraint(opts, :regex, :regex)
-      |> maybe_add_constraint(opts, :min, :gte)
-      |> maybe_add_constraint(opts, :max, :lte)
+      |> maybe_add_constraint(opts, :min, :min)
+      |> maybe_add_constraint(opts, :max, :max)
       |> maybe_add_constraint(opts, :enum, :enum)
       |> Enum.reverse()
 

@@ -969,5 +969,136 @@ defmodule Anubis.Server.Component.SchemaTest do
       assert result["properties"]["category"]["enum"] == [1, 2, 3]
       assert result["properties"]["category"]["type"] == "integer"
     end
+
+    test "string constraints: min: and max: on strings emit minLength/maxLength not minimum/maximum" do
+      schema = %{
+        text: {:mcp_field, :string, [max: 150, description: "Text field"]},
+        short_code: {:mcp_field, :string, [min: 3, max: 10]},
+        long_text: {:mcp_field, :string, [min: 5]}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Check that string constraints use minLength/maxLength
+      assert result["properties"]["text"]["maxLength"] == 150
+      assert result["properties"]["text"]["description"] == "Text field"
+      refute Map.has_key?(result["properties"]["text"], "maximum")
+
+      assert result["properties"]["short_code"]["minLength"] == 3
+      assert result["properties"]["short_code"]["maxLength"] == 10
+      refute Map.has_key?(result["properties"]["short_code"], "minimum")
+      refute Map.has_key?(result["properties"]["short_code"], "maximum")
+
+      assert result["properties"]["long_text"]["minLength"] == 5
+      refute Map.has_key?(result["properties"]["long_text"], "minimum")
+    end
+
+    test "numeric constraints: min: and max: on integers/floats still emit minimum/maximum" do
+      schema = %{
+        age: {:mcp_field, :integer, [min: 18, max: 120]},
+        price: {:mcp_field, :float, [min: 0.01, max: 999.99]}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Check that numeric constraints use minimum/maximum
+      assert result["properties"]["age"]["minimum"] == 18
+      assert result["properties"]["age"]["maximum"] == 120
+      refute Map.has_key?(result["properties"]["age"], "minLength")
+      refute Map.has_key?(result["properties"]["age"], "maxLength")
+
+      assert result["properties"]["price"]["minimum"] == 0.01
+      assert result["properties"]["price"]["maximum"] == 999.99
+      refute Map.has_key?(result["properties"]["price"], "minLength")
+      refute Map.has_key?(result["properties"]["price"], "maxLength")
+    end
+
+    test "string validation: validator accepts strings within min:/max: constraints" do
+      schema = %{
+        text: {:mcp_field, :string, [max: 150, description: "Text field"]}
+      }
+
+      validator = Schema.validator(schema)
+
+      # Valid: short string
+      assert {:ok, %{text: "hello"}} = validator.(%{"text" => "hello"})
+
+      # Valid: at max length
+      long_text = String.duplicate("x", 150)
+      assert {:ok, %{text: ^long_text}} = validator.(%{"text" => long_text})
+
+      # Invalid: exceeds max length
+      too_long = String.duplicate("x", 151)
+      assert {:error, errors} = validator.(%{"text" => too_long})
+      refute Enum.empty?(errors)
+    end
+
+    test "string validation: validator accepts strings within min: constraints" do
+      schema = %{
+        code: {:mcp_field, :string, [min: 3]}
+      }
+
+      validator = Schema.validator(schema)
+
+      # Valid: at min length
+      assert {:ok, %{code: "abc"}} = validator.(%{"code" => "abc"})
+
+      # Valid: above min length
+      assert {:ok, %{code: "abcd"}} = validator.(%{"code" => "abcd"})
+
+      # Invalid: below min length
+      assert {:error, errors} = validator.(%{"code" => "ab"})
+      refute Enum.empty?(errors)
+    end
+
+    test "string validation: validator respects both min: and max: constraints" do
+      schema = %{
+        username: {:mcp_field, :string, [min: 3, max: 20]}
+      }
+
+      validator = Schema.validator(schema)
+
+      # Valid: within range
+      assert {:ok, %{username: "alice"}} = validator.(%{"username" => "alice"})
+
+      # Invalid: too short
+      assert {:error, _} = validator.(%{"username" => "ab"})
+
+      # Invalid: too long
+      assert {:error, _} = validator.(%{"username" => String.duplicate("x", 21)})
+    end
+
+    test "required string constraints: min:/max: work on required strings" do
+      schema = %{
+        text: {:mcp_field, {:required, :string}, [max: 100]}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      # Check required flag and string constraints
+      assert "text" in result["required"]
+      assert result["properties"]["text"]["maxLength"] == 100
+      refute Map.has_key?(result["properties"]["text"], "maximum")
+    end
+
+    test "field macro with min:/max: works and validates correctly" do
+      # Simulate what field() macro generates
+      schema = %{
+        content: {:mcp_field, {:required, :string}, [max: 500, description: "Post content"]}
+      }
+
+      normalized = Schema.normalize(schema)
+      json_schema = Schema.to_json_schema(normalized)
+      validator = Schema.validator(normalized)
+
+      # JSON Schema should have correct constraint
+      assert json_schema["properties"]["content"]["maxLength"] == 500
+      refute Map.has_key?(json_schema["properties"]["content"], "maximum")
+      assert "content" in json_schema["required"]
+
+      # Validation should work
+      assert {:ok, _} = validator.(%{"content" => "Short text"})
+      assert {:error, _} = validator.(%{"content" => String.duplicate("x", 501)})
+    end
   end
 end
