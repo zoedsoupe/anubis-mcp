@@ -84,6 +84,50 @@ defmodule Anubis.Server.Session.StoreTest do
       assert stored_state.client_info["name"] == "test_client"
     end
 
+    test "persisted session state is JSON-encodable", %{
+      transport_name: transport_name,
+      task_sup: task_sup
+    } do
+      session_id = "json_encode_session"
+      session_name = Registry.session_name(StubServer, session_id)
+
+      start_supervised!(
+        {Session,
+         session_id: session_id,
+         server_module: StubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         task_supervisor: task_sup},
+        id: :json_encode_session
+      )
+
+      init_request = %{
+        "jsonrpc" => "2.0",
+        "id" => "init_json",
+        "method" => "initialize",
+        "params" => %{
+          "protocolVersion" => "2025-03-26",
+          "clientInfo" => %{"name" => "json_client", "version" => "1.0.0"},
+          "capabilities" => %{"tools" => %{}}
+        }
+      }
+
+      {:ok, _} = GenServer.call(session_name, {:mcp_request, init_request, %{}})
+
+      init_notif = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/initialized"
+      }
+
+      GenServer.cast(session_name, {:mcp_notification, init_notif, %{}})
+      Process.sleep(50)
+
+      {:ok, stored_state} = MockSessionStore.load(session_id, [])
+
+      json = JSON.encode!(stored_state)
+      assert is_binary(json)
+    end
+
     test "handles session updates atomically" do
       session_id = "update_session_111"
 

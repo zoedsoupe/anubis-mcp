@@ -24,11 +24,6 @@ defmodule Anubis.Transport.BehaviourTest do
     "id" => 1
   }
 
-  @sample_notification %{
-    "jsonrpc" => "2.0",
-    "method" => "notifications/initialized"
-  }
-
   describe "Client STDIO transport" do
     test "transport_init/1 returns ok with buffer state" do
       assert {:ok, %{buffer: ""}} = ClientSTDIO.transport_init()
