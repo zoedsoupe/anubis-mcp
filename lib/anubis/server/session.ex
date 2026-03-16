@@ -909,23 +909,58 @@ defmodule Anubis.Server.Session do
     end
   end
 
+  # Session serialization
+
+  @doc false
+  @spec to_serializable(t()) :: map()
+  def to_serializable(%{session_id: session_id} = state) do
+    %{
+      id: session_id,
+      protocol_version: state.protocol_version,
+      protocol_module: serialize_module(state.protocol_module),
+      initialized: state.initialized,
+      client_info: state.client_info,
+      client_capabilities: state.client_capabilities,
+      log_level: state.log_level,
+      pending_requests: state.pending_requests,
+      frame: Frame.to_saved(state.frame)
+    }
+  end
+
+  @doc false
+  @spec from_serializable(map()) :: map()
+  def from_serializable(map) when is_map(map) do
+    %{
+      session_id: map["id"],
+      protocol_version: map["protocol_version"],
+      protocol_module: deserialize_module(map["protocol_module"]),
+      initialized: map["initialized"],
+      client_info: map["client_info"],
+      client_capabilities: map["client_capabilities"],
+      log_level: map["log_level"],
+      pending_requests: map["pending_requests"] || %{},
+      frame: Frame.from_saved(map["frame"] || %{})
+    }
+  end
+
+  defp serialize_module(nil), do: nil
+  defp serialize_module(mod) when is_atom(mod), do: Atom.to_string(mod)
+
+  defp deserialize_module(nil), do: nil
+
+  defp deserialize_module(mod) when is_binary(mod) do
+    String.to_existing_atom(mod)
+  rescue
+    ArgumentError -> nil
+  end
+
   # Session persistence
 
   defp maybe_persist_session(%{session_id: session_id} = state) do
     if store = Anubis.get_session_store_adapter() do
       Logging.log(:debug, "Persisting session #{inspect(session_id)} to store", [])
 
-      state_map = %{
-        protocol_version: state.protocol_version,
-        protocol_module: state.protocol_module,
-        initialized: state.initialized,
-        client_info: state.client_info,
-        client_capabilities: state.client_capabilities,
-        log_level: state.log_level,
-        id: session_id,
-        pending_requests: state.pending_requests,
-        frame: Frame.to_saved(state.frame)
-      }
+      state_map = to_serializable(state)
 
       case store.save(session_id, state_map, []) do
         :ok ->
