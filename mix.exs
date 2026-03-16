@@ -1,7 +1,7 @@
 defmodule Anubis.MixProject do
   use Mix.Project
 
-  @version "0.17.0"
+  @version "0.17.1"
   @source_url "https://github.com/zoedsoupe/anubis-mcp"
 
   def project do
@@ -114,6 +114,7 @@ defmodule Anubis.MixProject do
       before_closing_head_tag: &before_closing_head_tag/1,
       extras: [
         "README.md",
+        "pages/introduction.md",
         "pages/building-a-client.md",
         "pages/building-a-server.md",
         "pages/recipes.md",
@@ -125,7 +126,7 @@ defmodule Anubis.MixProject do
       groups_for_extras: [
         "Getting Started": [
           "README.md",
-          "pages/home.md"
+          "pages/introduction.md"
         ],
         "Building with Anubis": [
           "pages/building-a-client.md",

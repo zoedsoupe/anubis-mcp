@@ -18,7 +18,7 @@ Let's connect to an existing MCP server in under three minutes:
 
 ```elixir
 # In your mix.exs
-{:anubis_mcp, "~> 0.17.0"} # x-release-please-version
+{:anubis_mcp, "~> 0.17.1"} # x-release-please-version
 ```
 
 Define a client that speaks MCP:
@@ -28,7 +28,7 @@ defmodule MyApp.ClaudeClient do
   use Anubis.Client,
     name: "MyApp",
     version: "1.0.0",
-    protocol_version: "2024-11-05",
+    protocol_version: "2025-06-18",
     capabilities: [:roots, :sampling]
 end
 ```

@@ -7,9 +7,9 @@ defmodule Anubis.MCP.Setup do
 
   alias Anubis.MCP.Builders
   alias Anubis.MCP.Message
-  alias Anubis.Server.Base
+  alias Anubis.Server.Registry
   alias Anubis.Server.Session
-  alias Anubis.Server.Transport
+  alias Anubis.Server.Transport.STDIO
 
   require Message
 
@@ -72,168 +72,78 @@ defmodule Anubis.MCP.Setup do
     Process.sleep(50)
   end
 
-  def initialized_client_with_server(ctx) do
-    protocol_version = ctx[:protocol_version]
-    capabilities = ctx[:client_capabilities]
-    info = ctx[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"}
-
-    start_supervised!(Anubis.Server.Registry)
-    transport = start_supervised!(StubTransport)
-
-    client_opts = [
-      transport: [layer: StubTransport, name: transport],
-      client_info: info,
-      capabilities: capabilities,
-      protocol_version: protocol_version
-    ]
-
-    client = start_supervised!({Anubis.Client.Base, client_opts})
-    unique_id = System.unique_integer([:positive])
-    start_supervised!({StubServer, transport: StubTransport}, id: unique_id)
-    assert server = Anubis.Server.Registry.whereis_server(StubServer)
-
-    Process.sleep(30)
-
-    StubTransport.set_client(transport, client)
-
-    Process.sleep(80)
-
-    assert_client_initialized(client)
-    assert_server_initialized(server)
-
-    :ok = StubTransport.clear(transport)
-
-    Map.merge(ctx, %{transport: transport, client: client, server: server})
-  end
-
   def initialized_server(ctx) do
     session_id = ctx[:session_id] || "test-session-123"
     protocol_version = ctx[:protocol_version]
     capabilities = ctx[:client_capabilities]
     info = ctx[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"}
 
-    start_supervised!(Anubis.Server.Registry)
-    transport = start_supervised!(StubTransport)
+    transport_name = Registry.transport_name(StubServer, StubTransport)
+    transport = start_supervised!({StubTransport, name: transport_name})
 
-    # Start session supervisor
-    start_supervised!({Anubis.Server.Session.Supervisor, server: StubServer, registry: Anubis.Server.Registry})
+    task_sup = Registry.task_supervisor_name(StubServer)
+    start_supervised!({Task.Supervisor, name: task_sup})
 
-    server_opts = [
-      module: StubServer,
-      name: Anubis.Server.Registry.server(StubServer),
-      registry: Anubis.Server.Registry,
-      transport: [layer: StubTransport, name: transport]
-    ]
+    session_name = Registry.session_name(StubServer, session_id)
 
-    server = start_supervised!({Base, server_opts})
-    assert server == Anubis.Server.Registry.whereis_server(StubServer)
+    session =
+      start_supervised!(
+        {Session,
+         session_id: session_id,
+         server_module: StubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         task_supervisor: task_sup}
+      )
 
     request = Builders.init_request(protocol_version, info, capabilities)
-    assert {:ok, _} = GenServer.call(server, {:request, request, session_id, %{}})
+    assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
     notification = Builders.build_notification("notifications/initialized", %{})
-
-    assert :ok =
-             GenServer.cast(server, {:notification, notification, session_id, %{}})
+    assert :ok = GenServer.cast(session, {:mcp_notification, notification, %{}})
 
     Process.sleep(50)
 
-    assert_server_initialized(server)
+    assert_server_initialized(session)
 
     :ok = StubTransport.clear(transport)
 
     Map.merge(ctx, %{
       transport: transport,
-      server: server,
+      server: session,
       session_id: session_id,
-      server_registry: Anubis.Server.Registry,
       server_module: StubServer
     })
   end
 
-  def initialized_base_server(ctx) do
-    server_module = StubServer
-    session_id = ctx[:session_id] || "test-session-123"
-    protocol_version = ctx[:protocol_version]
-    capabilities = ctx[:client_capabilities]
-    transport = ctx[:transport] || StubTransport
-    info = ctx[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"}
-
-    # session supervisor
-    %{registry: registry} = ctx = with_default_registry(ctx)
-
-    start_supervised!({Session.Supervisor, server: server_module, registry: ctx.registry})
-
-    assert registry.supervisor(server_module, :session_supervisor)
-
-    # base server
-    server_name = registry.server(server_module)
-    transport_name = registry.transport(server_module, transport)
-
-    server_opts = [
-      module: server_module,
-      name: server_name,
-      registry: registry,
-      transport: [
-        layer: transport,
-        name: transport_name
-      ]
-    ]
-
-    start_supervised!({Base, server_opts})
-    assert server = registry.whereis_server(server_module)
-
-    # transport
-    start_supervised!({transport, name: transport_name, server: server_name, registry: registry})
-
-    assert registry.whereis_transport(server_module, transport)
-
-    request = Builders.init_request(protocol_version, info, capabilities)
-    assert {:ok, _} = GenServer.call(server, {:request, request, session_id})
-    notification = Builders.build_notification("notifications/initialized", %{})
-    assert :ok = GenServer.cast(server, {:notification, notification, session_id})
-
-    Process.sleep(50)
-
-    assert_server_initialized(server)
-
-    :ok = StubTransport.clear(transport)
-
-    Map.merge(ctx, %{transport: transport, server: server, session_id: session_id})
-  end
-
   def server_with_stdio_transport(ctx) do
-    name = ctx[:name] || :test_stdio_server
-    name = Anubis.Server.Registry.server(name)
     server_module = ctx[:server_module] || StubServer
+    transport_name = Registry.transport_name(server_module, :stdio)
+    task_sup = Registry.task_supervisor_name(server_module)
+    start_supervised!({Task.Supervisor, name: task_sup})
 
-    transport_name = Anubis.Server.Registry.transport(server_module, :stdio)
-    start_supervised!({Transport.STDIO, name: transport_name, server: server_module})
+    session_name = Registry.stdio_session_name(server_module)
 
-    assert transport =
-             Anubis.Server.Registry.whereis_transport(server_module, :stdio)
+    session =
+      start_supervised!(
+        {Session,
+         session_id: "stdio",
+         server_module: server_module,
+         name: session_name,
+         transport: [
+           layer: STDIO,
+           name: transport_name
+         ],
+         task_supervisor: task_sup}
+      )
 
-    opts = [
-      module: server_module,
-      name: name,
-      transport: [layer: Transport.STDIO, name: transport_name]
-    ]
+    transport =
+      start_supervised!({STDIO, name: transport_name, server: server_module})
 
-    start_supervised!({Base, opts})
-    assert server = Anubis.Server.Registry.whereis_server(server_module)
-
-    Map.merge(ctx, %{server: server, transport: transport})
-  end
-
-  def with_default_registry(ctx) do
-    start_supervised!(Anubis.Server.Registry)
-    assert Process.whereis(Anubis.Server.Registry)
-    Map.put(ctx, :registry, Anubis.Server.Registry)
+    Map.merge(ctx, %{server: session, transport: transport})
   end
 
   def initialized_client(context) do
     import Mox
-
-    start_supervised!(Anubis.Server.Registry)
 
     server_capabilities =
       context[:server_capabilities] ||

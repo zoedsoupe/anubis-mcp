@@ -20,7 +20,6 @@ defmodule Anubis.Client.State do
           progress_callbacks: %{String.t() => Base.progress_callback()},
           log_callback: Base.log_callback() | nil,
           sampling_callback: (map() -> {:ok, map()} | {:error, String.t()}) | nil,
-          # Use a map with URI as key for faster access
           roots: %{String.t() => Base.root()}
         }
 

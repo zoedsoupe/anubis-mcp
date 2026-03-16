@@ -10,15 +10,16 @@ defmodule Anubis.Server.Component.Tool do
 
       defmodule MyServer.Tools.Calculator do
         @behaviour Anubis.Server.Behaviour.Tool
-        
-        alias Anubis.Server.Frame
-        
+
+        alias Anubis.Server.{Frame, Response}
+        alias Anubis.MCP.Error
+
         @impl true
         def name, do: "calculator"
-        
+
         @impl true
         def description, do: "Performs basic arithmetic operations"
-        
+
         @impl true
         def input_schema do
           %{
@@ -34,23 +35,20 @@ defmodule Anubis.Server.Component.Tool do
             "required" => ["operation", "a", "b"]
           }
         end
-        
+
         @impl true
         def execute(%{"operation" => "add", "a" => a, "b" => b}, frame) do
           result = a + b
-          
-          # Can access frame assigns
-          user_id = frame.assigns[:user_id]
-          
+
           # Can return updated frame if needed
           new_frame = Frame.assign(frame, :last_calculation, result)
-          
-          {:ok, result, new_frame}
+
+          {:reply, Response.text(Response.tool(), to_string(result)), new_frame}
         end
-        
+
         @impl true
-        def execute(%{"operation" => "divide", "a" => a, "b" => 0}, _frame) do
-          {:error, "Cannot divide by zero"}
+        def execute(%{"operation" => "divide", "a" => _a, "b" => 0}, frame) do
+          {:error, Error.invalid_request("Cannot divide by zero"), frame}
         end
       end
   """
@@ -71,6 +69,7 @@ defmodule Anubis.Server.Component.Tool do
           input_schema: map | nil,
           output_schema: map | nil,
           annotations: map | nil,
+          meta: map | nil,
           handler: module | nil,
           validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
           validate_output: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
@@ -83,6 +82,7 @@ defmodule Anubis.Server.Component.Tool do
     input_schema: nil,
     output_schema: nil,
     annotations: nil,
+    meta: nil,
     handler: nil,
     validate_input: nil,
     validate_output: nil
@@ -155,6 +155,14 @@ defmodule Anubis.Server.Component.Tool do
   @callback annotations() :: annotations()
 
   @doc """
+  Returns optional metadata for the tool.
+
+  The _meta field allows tools to carry arbitrary metadata that is not
+  part of the core MCP protocol. This is an optional callback.
+  """
+  @callback meta() :: map()
+
+  @doc """
   Executes the tool with the given parameters.
 
   ## Parameters
@@ -166,9 +174,9 @@ defmodule Anubis.Server.Component.Tool do
 
   ## Return Values
 
-  - `{:ok, result}` - Tool executed successfully, frame unchanged
-  - `{:ok, result, new_frame}` - Tool executed successfully with frame updates
-  - `{:error, reason}` - Tool failed with the given reason
+  - `{:reply, %Response{}, frame}` - Tool executed successfully
+  - `{:noreply, frame}` - No reply needed
+  - `{:error, %Error{}, frame}` - Tool failed with the given error
 
   ## Frame Usage
 
@@ -178,11 +186,11 @@ defmodule Anubis.Server.Component.Tool do
         # Access assigns
         user_id = frame.assigns[:user_id]
         permissions = frame.assigns[:permissions]
-        
+
         # Update frame if needed
         new_frame = Frame.assign(frame, :last_tool_call, DateTime.utc_now())
-        
-        {:ok, "Result", new_frame}
+
+        {:reply, Response.text(Response.tool(), "Result"), new_frame}
       end
   """
   @callback execute(params :: params(), frame :: Frame.t()) ::
@@ -190,7 +198,7 @@ defmodule Anubis.Server.Component.Tool do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0
+  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0, meta: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Tool
@@ -204,6 +212,7 @@ defmodule Anubis.Server.Component.Tool do
       |> then(&if t = tool.title, do: Map.put(&1, "title", t), else: &1)
       |> then(&if os = tool.output_schema, do: Map.put(&1, "outputSchema", os), else: &1)
       |> then(&if a = tool.annotations, do: Map.put(&1, "annotations", a), else: &1)
+      |> then(&if m = tool.meta, do: Map.put(&1, "_meta", m), else: &1)
       |> JSON.encode!()
     end
   end

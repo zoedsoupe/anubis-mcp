@@ -10,7 +10,7 @@ defmodule Anubis.Server.Component.Prompt do
       defmodule MyServer.Prompts.CodeReview do
         @behaviour Anubis.Server.Behaviour.Prompt
         
-        alias Anubis.Server.Frame
+        alias Anubis.Server.{Frame, Response}
         
         @impl true
         def name, do: "code_review"
@@ -70,7 +70,11 @@ defmodule Anubis.Server.Component.Prompt do
           # Can track prompt usage
           new_frame = Frame.assign(frame, :last_prompt_used, "code_review")
           
-          {:ok, messages, new_frame}
+          response =
+            Response.prompt()
+            |> Response.user_message(Enum.map_join(messages, "\n", & &1["content"]["text"]))
+
+          {:reply, response, new_frame}
         end
       end
   """
@@ -169,23 +173,21 @@ defmodule Anubis.Server.Component.Prompt do
 
   ## Return Values
 
-  - `{:ok, messages}` - Messages generated successfully, frame unchanged
-  - `{:ok, messages, new_frame}` - Messages generated with frame updates
-  - `{:error, reason}` - Failed to generate messages
+  - `{:reply, %Response{}, frame}` - Messages generated successfully
+  - `{:noreply, frame}` - No reply needed
+  - `{:error, %Error{}, frame}` - Failed to generate messages
 
-  ## Message Format
+  ## Building Responses
 
-  Messages should follow the MCP message format:
+  Use `Response.prompt/0` to create a prompt response, then add messages with
+  `Response.user_message/2` or `Response.system_message/2`:
 
-      %{
-        "role" => "user" | "assistant",
-        "content" => %{
-          "type" => "text",
-          "text" => "The message content"
-        }
-      }
+      response =
+        Response.prompt()
+        |> Response.user_message("Please review this code")
+        |> Response.system_message("You are a code reviewer")
 
-  Multiple messages can be returned to create a conversation context.
+      {:reply, response, frame}
   """
   @callback get_messages(args :: arguments(), frame :: Frame.t()) ::
               {:reply, response :: Response.t(), new_state :: Frame.t()}

@@ -11,7 +11,7 @@ defmodule MyApp.WeatherClient do
   use Anubis.Client,
     name: "MyApp",                    # How you introduce yourself
     version: "1.0.0",                 # Your client's version
-    protocol_version: "2024-11-05",   # MCP protocol target version
+    protocol_version: "2025-06-18",   # MCP protocol target version
     capabilities: [:roots]            # What features you support
 end
 ```
@@ -154,14 +154,14 @@ Need to connect to multiple servers? No problem:
 children = [
   Supervisor.child_spec(
     {MyApp.WeatherClient,
-     name: :weather_us,
+     client_name: :weather_us,
      transport: {:stdio, command: "weather-server", args: ["--region", "US"]}},
     id: :weather_us
   ),
 
   Supervisor.child_spec(
     {MyApp.WeatherClient,
-     name: :weather_eu,
+     client_name: :weather_eu,
      transport: {:stdio, command: "weather-server", args: ["--region", "EU"]}},
     id: :weather_eu
   )
