@@ -916,14 +916,22 @@ defmodule Anubis.Client do
     protocol_version = opts.protocol_version
     transport = %{layer: layer, name: name}
 
+    transport_parse_state =
+      if function_exported?(layer, :transport_init, 1) do
+        {:ok, ps} = layer.transport_init()
+        ps
+      end
+
     state =
-      State.new(%{
+      %{
         client_info: opts.client_info,
         capabilities: opts.capabilities,
         protocol_version: protocol_version,
         transport: transport,
         timeout: opts.timeout
-      })
+      }
+      |> State.new()
+      |> Map.put(:transport_parse_state, transport_parse_state)
 
     client_name = get_in(opts, [:client_info, "name"])
 
@@ -1139,9 +1147,14 @@ defmodule Anubis.Client do
 
   @impl true
   def handle_cast({:response, response_data}, state) do
-    case Message.decode(response_data) do
-      {:ok, [message]} ->
-        {:noreply, handle_message(message, state)}
+    case parse_response(response_data, state) do
+      {:ok, messages, state} ->
+        state =
+          Enum.reduce(messages, state, fn message, acc ->
+            handle_message(message, acc)
+          end)
+
+        {:noreply, state}
 
       {:error, error} ->
         Logging.client_event("decode_failed", %{error: error}, level: :warning)
@@ -1153,6 +1166,23 @@ defmodule Anubis.Client do
       Logging.client_event("response_handling_failed", %{error: err}, level: :error)
 
       {:noreply, state}
+  end
+
+  defp parse_response(data, %{transport_parse_state: nil} = state) do
+    case Message.decode(data) do
+      {:ok, messages} -> {:ok, messages, state}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp parse_response(data, %{transport: %{layer: layer}} = state) do
+    case layer.parse(data, state.transport_parse_state) do
+      {:ok, messages, new_parse_state} ->
+        {:ok, messages, %{state | transport_parse_state: new_parse_state}}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   # Server request handling

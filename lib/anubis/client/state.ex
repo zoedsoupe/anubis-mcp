@@ -37,7 +37,8 @@ defmodule Anubis.Client.State do
     log_callback: nil,
     sampling_callback: nil,
     roots: %{},
-    ready_waiters: []
+    ready_waiters: [],
+    transport_parse_state: nil
   ]
 
   @spec new(map()) :: t()
