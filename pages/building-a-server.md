@@ -89,7 +89,7 @@ defmodule MyApp.Server do
   component MyApp.Greeter
 end
 
-children = [Anubis.Server.Registry, {MyApp.Server, transport: :stdio}]
+children = [{MyApp.Server, transport: :stdio}]
 {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
 ```
 
@@ -447,7 +447,6 @@ end
 # In your application supervisor
 children = [
   MyAppWeb.Endpoint,
-  Anubis.Server.Registry,
   {MyApp.Server, transport: :streamable_http}
 ]
 ```
