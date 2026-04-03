@@ -63,7 +63,6 @@ end
 
 # Add to your application supervisor
 children = [
-  Anubis.Server.Registry,
   {MyApp.MCPServer, transport: :streamable_http}
 ]
 

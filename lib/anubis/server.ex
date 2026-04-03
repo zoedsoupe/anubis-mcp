@@ -37,7 +37,7 @@ defmodule Anubis.Server do
       end
 
       # In your supervision tree
-      children = [Anubis.Server.Registry, {MyServer, transport: :stdio}]
+      children = [{MyServer, transport: :stdio}]
       Supervisor.start_link(children, strategy: :one_for_one)
 
   Your server is now a living process that AI assistants can connect to, discover available
