@@ -304,9 +304,17 @@ defmodule Anubis.Transport.StreamableHTTP do
   # Private functions
 
   defp send_http_request(state, message, timeout) do
+    # Only advertise SSE support if enabled AND we have a session
+    # This prevents trying to route responses through SSE before it's established
+    accept_header = if state.enable_sse && state.session_id do
+      "application/json, text/event-stream"
+    else
+      "application/json"
+    end
+
     headers =
       state.headers
-      |> Map.put("accept", "application/json, text/event-stream")
+      |> Map.put("accept", accept_header)
       |> Map.put("content-type", "application/json")
       |> put_session_header(state.session_id)
 

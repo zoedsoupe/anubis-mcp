@@ -330,7 +330,8 @@ defmodule Anubis.Transport.StreamableHTTPTest do
         assert "auth-token" ==
                  conn |> Plug.Conn.get_req_header("authorization") |> List.first()
 
-        assert "application/json, text/event-stream" ==
+        # Accept header should be JSON-only when SSE is not enabled (default)
+        assert "application/json" ==
                  conn |> Plug.Conn.get_req_header("accept") |> List.first()
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
@@ -484,6 +485,150 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert {:error, _reason} =
                StreamableHTTP.send_message(transport, "test message", timeout: 5000)
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+  end
+
+  describe "accept header behavior" do
+    test "sends JSON-only accept header when SSE is disabled (default)", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+
+      Bypass.expect(bypass, "POST", "/mcp", fn conn ->
+        # Without enable_sse, should only accept JSON
+        assert "application/json" ==
+                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+
+        conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          enable_sse: false,
+          transport_opts: @test_http_opts
+        )
+
+      Process.sleep(100)
+
+      {:ok, ping_message} =
+        Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+
+    test "sends JSON-only accept header when SSE enabled but no session yet", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+
+      Bypass.expect(bypass, "POST", "/mcp", fn conn ->
+        # Even with enable_sse, first request has no session so only JSON
+        assert "application/json" ==
+                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+
+        conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          enable_sse: true,
+          transport_opts: @test_http_opts
+        )
+
+      Process.sleep(100)
+
+      state = :sys.get_state(transport)
+      assert state.session_id == nil
+
+      {:ok, ping_message} =
+        Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+
+    test "sends SSE accept header when SSE enabled AND session exists", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+      session_id = "test-session-789"
+
+      # First request: no session, JSON-only
+      # Second request: has session, includes SSE
+      Bypass.stub(bypass, "POST", "/mcp", fn conn ->
+        session_headers = Plug.Conn.get_req_header(conn, "mcp-session-id")
+
+        case session_headers do
+          [] ->
+            # First request - no session yet
+            assert "application/json" ==
+                     conn |> Plug.Conn.get_req_header("accept") |> List.first()
+
+            conn =
+              conn
+              |> Plug.Conn.put_resp_header("content-type", "application/json")
+              |> Plug.Conn.put_resp_header("mcp-session-id", session_id)
+
+            Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+
+          [^session_id] ->
+            # Second request - has session, should include SSE
+            assert "application/json, text/event-stream" ==
+                     conn |> Plug.Conn.get_req_header("accept") |> List.first()
+
+            conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+            Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"2","result":{}}|)
+        end
+      end)
+
+      # Handle DELETE request during shutdown
+      Bypass.stub(bypass, "DELETE", "/mcp", fn conn ->
+        Plug.Conn.resp(conn, 200, "")
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          enable_sse: true,
+          transport_opts: @test_http_opts
+        )
+
+      Process.sleep(100)
+
+      # First request - establishes session
+      {:ok, first_message} =
+        Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+
+      assert :ok = StreamableHTTP.send_message(transport, first_message, timeout: 5000)
+
+      Process.sleep(100)
+
+      # Verify session was captured
+      state = :sys.get_state(transport)
+      assert state.session_id == session_id
+
+      # Second request - should include SSE in Accept header
+      {:ok, second_message} =
+        Message.encode_request(%{"method" => "tools/list", "params" => %{}}, "2")
+
+      assert :ok = StreamableHTTP.send_message(transport, second_message, timeout: 5000)
+
+      Process.sleep(100)
 
       StreamableHTTP.shutdown(transport)
       StubClient.clear_messages()
