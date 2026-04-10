@@ -488,6 +488,7 @@ defmodule Anubis.Server do
     end
   end
 
+  @doc false
   defp maybe_define_server_instructions(module, instructions) do
     if not Module.defines?(module, {:server_instructions, 0}) do
       quote do

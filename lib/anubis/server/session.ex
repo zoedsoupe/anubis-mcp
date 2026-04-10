@@ -40,6 +40,7 @@ defmodule Anubis.Server.Session do
           frame: Frame.t(),
           server_info: map(),
           capabilities: map(),
+          instructions: String.t() | nil,
           supported_versions: list(String.t()),
           transport: %{layer: module(), name: GenServer.name()},
           registry: module(),
@@ -1008,5 +1009,7 @@ defmodule Anubis.Server.Session do
   end
 
   defp maybe_put_instructions(result, nil), do: result
-  defp maybe_put_instructions(result, instructions), do: Map.put(result, "instructions", instructions)
+
+  defp maybe_put_instructions(result, instructions) when is_binary(instructions),
+    do: Map.put(result, "instructions", instructions)
 end
