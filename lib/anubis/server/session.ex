@@ -99,6 +99,7 @@ defmodule Anubis.Server.Session do
     server_info = module.server_info()
     capabilities = module.server_capabilities()
     protocol_versions = module.supported_protocol_versions()
+    instructions = module.server_instructions()
 
     state = %{
       session_id: opts.session_id,
@@ -112,6 +113,7 @@ defmodule Anubis.Server.Session do
       frame: Frame.new(),
       server_info: server_info,
       capabilities: capabilities,
+      instructions: instructions,
       supported_versions: protocol_versions,
       transport: Map.new(opts.transport),
       registry: opts.registry,
@@ -409,11 +411,11 @@ defmodule Anubis.Server.Session do
 
     maybe_persist_session(state)
 
-    result = %{
-      "protocolVersion" => protocol_version,
-      "serverInfo" => state.server_info,
-      "capabilities" => state.capabilities
-    }
+    result =
+      maybe_put_instructions(
+        %{"protocolVersion" => protocol_version, "serverInfo" => state.server_info, "capabilities" => state.capabilities},
+        state.instructions
+      )
 
     Logging.server_event("initializing", %{
       client_info: client_info,
@@ -1004,4 +1006,7 @@ defmodule Anubis.Server.Session do
       %{id: id, method: req[:method]}
     end)
   end
+
+  defp maybe_put_instructions(result, nil), do: result
+  defp maybe_put_instructions(result, instructions), do: Map.put(result, "instructions", instructions)
 end
