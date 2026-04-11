@@ -91,6 +91,24 @@ defmodule Anubis.Server.Session do
     GenServer.start_link(__MODULE__, Map.new(opts), name: name)
   end
 
+  @doc """
+  Auto-initializes a session without a client initialize handshake.
+
+  This is used when a client sends a non-initialize request to an expired or
+  unknown session. Instead of returning 404, the server can create a new session
+  and auto-initialize it so the request can be processed transparently.
+
+  Uses the server's latest supported protocol version and synthetic client info
+  (`%{"name" => "auto-recovered", "version" => "unknown"}`). Server implementations
+  should not rely on this identity for client-specific decisions.
+  """
+  @spec auto_initialize(GenServer.server()) :: :ok | {:error, term()}
+  def auto_initialize(session) do
+    GenServer.call(session, :auto_initialize)
+  catch
+    :exit, reason -> {:error, {:session_unavailable, reason}}
+  end
+
   # Lifecycle
 
   @impl GenServer
@@ -153,6 +171,38 @@ defmodule Anubis.Server.Session do
     state = reset_session_expiry(state)
 
     handle_single_request(decoded, transport_context, state)
+  end
+
+  def handle_call(:auto_initialize, _from, %{initialized: true} = state) do
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:auto_initialize, _from, %{server_module: module} = state) do
+    with [latest_version | _] <- state.supported_versions,
+         {:ok, protocol_version, protocol_module} <-
+           Anubis.Protocol.Registry.negotiate(latest_version, state.supported_versions),
+         auto_state = %{
+           state
+           | protocol_version: protocol_version,
+             protocol_module: protocol_module,
+             client_info: %{"name" => "auto-recovered", "version" => "unknown"},
+             client_capabilities: %{},
+             initialized: true
+         },
+         frame = prepare_frame(auto_state),
+         {:ok, frame} <- maybe_call_init(module, auto_state.client_info, frame) do
+      Logging.server_event("session_auto_initialized", %{
+        session_id: auto_state.session_id,
+        protocol_version: protocol_version
+      })
+
+      maybe_persist_session(%{auto_state | frame: frame})
+      {:reply, :ok, %{auto_state | frame: frame}}
+    else
+      [] -> {:reply, {:error, :no_supported_versions}, state}
+      :error -> {:reply, {:error, :negotiate_failed}, state}
+      {:error, reason} -> {:reply, {:error, {:init_failed, reason}}, state}
+    end
   end
 
   def handle_call(request, from, %{server_module: module} = state) do
@@ -955,6 +1005,16 @@ defmodule Anubis.Server.Session do
   end
 
   # Session persistence
+
+  defp maybe_call_init(module, client_info, frame) do
+    if Anubis.exported?(module, :init, 2) do
+      module.init(client_info, frame)
+    else
+      {:ok, frame}
+    end
+  rescue
+    e -> {:error, e}
+  end
 
   defp maybe_persist_session(%{session_id: session_id} = state) do
     if store = Anubis.get_session_store_adapter() do

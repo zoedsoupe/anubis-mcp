@@ -38,6 +38,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.ID
     alias Anubis.MCP.Message
     alias Anubis.Server.Registry
+    alias Anubis.Server.Session
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.StreamableHTTP
     alias Anubis.SSE.Streaming
@@ -169,7 +170,7 @@ if Code.ensure_loaded?(Plug) do
           |> send_resp(202, "{}")
 
         {:error, :not_found} ->
-          send_error(conn, 400, "No active session")
+          send_error(conn, 404, "Session not found")
       end
     end
 
@@ -183,7 +184,7 @@ if Code.ensure_loaded?(Plug) do
           |> send_resp(202, "{}")
 
         {:error, :not_found} ->
-          send_error(conn, 400, "No active session")
+          send_error(conn, 404, "Session not found")
       end
     end
 
@@ -195,9 +196,6 @@ if Code.ensure_loaded?(Plug) do
           else
             handle_json_request(conn, session_pid, message, session_id, context, opts)
           end
-
-        {:error, :no_session} ->
-          send_error(conn, 400, "No active session")
 
         {:error, reason} ->
           send_jsonrpc_error(
@@ -343,7 +341,33 @@ if Code.ensure_loaded?(Plug) do
           start_new_session(opts, session_id)
 
         {:error, :not_found} ->
-          {:error, :no_session}
+          start_and_auto_initialize_session(opts, session_id)
+      end
+    end
+
+    defp start_and_auto_initialize_session(opts, session_id) do
+      case start_new_session(opts, session_id) do
+        {:ok, pid} ->
+          case Session.auto_initialize(pid) do
+            :ok ->
+              Logging.transport_event("session_auto_reinitialized", %{
+                session_id: session_id
+              })
+
+              {:ok, pid}
+
+            {:error, reason} ->
+              Logging.transport_event("session_auto_reinitialize_failed", %{
+                session_id: session_id,
+                reason: inspect(reason)
+              })
+
+              stop_session_process(opts, session_id)
+              {:error, reason}
+          end
+
+        error ->
+          error
       end
     end
 
@@ -465,6 +489,7 @@ if Code.ensure_loaded?(Plug) do
 
       mcp_error =
         case status do
+          404 -> Error.protocol(:invalid_request, data)
           405 -> Error.protocol(:method_not_found, data)
           406 -> Error.protocol(:invalid_request, data)
           _ -> Error.protocol(:internal_error, data)
