@@ -37,7 +37,7 @@ defmodule Anubis.Server do
       end
 
       # In your supervision tree
-      children = [Anubis.Server.Registry, {MyServer, transport: :stdio}]
+      children = [{MyServer, transport: :stdio}]
       Supervisor.start_link(children, strategy: :one_for_one)
 
   Your server is now a living process that AI assistants can connect to, discover available
@@ -174,6 +174,17 @@ defmodule Anubis.Server do
   @callback server_capabilities :: server_capabilities()
   @callback supported_protocol_versions() :: [String.t()]
 
+  @doc """
+  Returns optional instructions describing how to use the server and its features.
+
+  This can be used by clients to improve the LLM's understanding of available tools,
+  resources, etc. It can be thought of like a "hint" to the model. For example, this
+  information MAY be added to the system prompt.
+
+  Return `nil` to omit the instructions field from the initialize response.
+  """
+  @callback server_instructions() :: String.t() | nil
+
   @callback handle_info(event :: term, Frame.t()) ::
               {:noreply, Frame.t()}
               | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
@@ -226,7 +237,8 @@ defmodule Anubis.Server do
                       init: 2,
                       handle_sampling: 3,
                       handle_completion: 3,
-                      handle_roots: 3
+                      handle_roots: 3,
+                      server_instructions: 0
 
   @doc false
   defguard is_server_capability(capability) when capability in @server_capabilities
@@ -316,6 +328,7 @@ defmodule Anubis.Server do
       unquote(maybe_define_server_info(env.module, opts[:name], opts[:version]))
       unquote(maybe_define_server_capabilities(env.module, opts[:capabilities]))
       unquote(maybe_define_protocol_versions(env.module, opts[:protocol_versions]))
+      unquote(maybe_define_server_instructions(env.module, opts[:instructions]))
 
       defoverridable handle_request: 2
     end
@@ -471,6 +484,16 @@ defmodule Anubis.Server do
       quote do
         @impl Anubis.Server
         def supported_protocol_versions, do: unquote(versions)
+      end
+    end
+  end
+
+  @doc false
+  defp maybe_define_server_instructions(module, instructions) do
+    if not Module.defines?(module, {:server_instructions, 0}) do
+      quote do
+        @impl Anubis.Server
+        def server_instructions, do: unquote(instructions)
       end
     end
   end
