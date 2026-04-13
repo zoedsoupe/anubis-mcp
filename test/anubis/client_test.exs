@@ -1579,4 +1579,144 @@ defmodule Anubis.ClientTest do
       assert {:ok, _} = Task.await(task)
     end
   end
+
+  describe "await_ready/2" do
+    test "returns :ok immediately when client is already initialized" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+      initialize_client(client)
+
+      assert :ok = Anubis.Client.await_ready(client, timeout: 1_000)
+    end
+
+    test "blocks until initialization completes" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+
+      # Start waiting before initialization
+      task = Task.async(fn -> Anubis.Client.await_ready(client, timeout: 5_000) end)
+
+      # Give the call time to arrive and park
+      Process.sleep(50)
+
+      # Now trigger initialization
+      GenServer.cast(client, :initialize)
+      Process.sleep(50)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      response =
+        init_response(
+          request_id,
+          "2025-03-26",
+          %{"name" => "TestServer", "version" => "1.0.0"},
+          %{"tools" => %{}}
+        )
+
+      send_response(client, response)
+
+      assert :ok = Task.await(task, 2_000)
+    end
+
+    test "multiple waiters all get notified" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+
+      tasks =
+        for _ <- 1..3 do
+          Task.async(fn -> Anubis.Client.await_ready(client, timeout: 5_000) end)
+        end
+
+      Process.sleep(50)
+
+      GenServer.cast(client, :initialize)
+      Process.sleep(50)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      response =
+        init_response(
+          request_id,
+          "2025-03-26",
+          %{"name" => "TestServer", "version" => "1.0.0"},
+          %{"tools" => %{}}
+        )
+
+      send_response(client, response)
+
+      results = Task.await_many(tasks, 2_000)
+      assert results == [:ok, :ok, :ok]
+    end
+
+    test "times out when initialization never completes" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+
+      assert catch_exit(Anubis.Client.await_ready(client, timeout: 100))
+    end
+  end
 end
