@@ -16,7 +16,8 @@ defmodule Anubis do
                          ClientSSE,
                          ClientStreamableHTTP,
                          StubTransport,
-                         Anubis.MockTransport
+                         Anubis.MockTransport,
+                         BufferedMockTransport
                        ],
                        else: [ClientSTDIO, ClientSSE, ClientStreamableHTTP]
 
