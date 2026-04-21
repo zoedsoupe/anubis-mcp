@@ -562,6 +562,30 @@ defmodule Anubis.Client do
   end
 
   @doc """
+  Blocks until the client has completed the MCP initialization handshake.
+
+  Returns `:ok` once the server capabilities have been received.
+  If the server has already been initialized, returns immediately.
+  Otherwise, the caller is parked until the initialization response arrives
+  or the GenServer call times out.
+
+  ## Options
+
+    * `:timeout` - Maximum time to wait in milliseconds (default: 30s)
+
+  ## Examples
+
+      {:ok, _supervisor} = Anubis.Client.start_link(opts)
+      :ok = Anubis.Client.await_ready(MyApp.MCPClient, timeout: 10_000)
+      {:ok, tools} = Anubis.Client.list_tools(MyApp.MCPClient)
+  """
+  @spec await_ready(t, keyword()) :: :ok
+  def await_ready(client, opts \\ []) do
+    timeout = opts[:timeout] || @default_operation_timeout
+    GenServer.call(client, :await_ready, timeout)
+  end
+
+  @doc """
   Sets the minimum log level for the server to send log messages.
 
   ## Parameters
@@ -892,14 +916,22 @@ defmodule Anubis.Client do
     protocol_version = opts.protocol_version
     transport = %{layer: layer, name: name}
 
+    transport_parse_state =
+      if function_exported?(layer, :transport_init, 1) do
+        {:ok, ps} = layer.transport_init()
+        ps
+      end
+
     state =
-      State.new(%{
+      %{
         client_info: opts.client_info,
         capabilities: opts.capabilities,
         protocol_version: protocol_version,
         transport: transport,
         timeout: opts.timeout
-      })
+      }
+      |> State.new()
+      |> Map.put(:transport_parse_state, transport_parse_state)
 
     client_name = get_in(opts, [:client_info, "name"])
 
@@ -964,6 +996,14 @@ defmodule Anubis.Client do
 
   def handle_call(:get_server_info, _from, state) do
     {:reply, State.get_server_info(state), state}
+  end
+
+  def handle_call(:await_ready, _from, %{server_capabilities: caps} = state) when not is_nil(caps) do
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:await_ready, from, state) do
+    {:noreply, %{state | ready_waiters: [from | state.ready_waiters]}}
   end
 
   def handle_call({:register_log_callback, callback}, _from, state) do
@@ -1107,9 +1147,14 @@ defmodule Anubis.Client do
 
   @impl true
   def handle_cast({:response, response_data}, state) do
-    case Message.decode(response_data) do
-      {:ok, [message]} ->
-        {:noreply, handle_message(message, state)}
+    case parse_response(response_data, state) do
+      {:ok, messages, state} ->
+        state =
+          Enum.reduce(messages, state, fn message, acc ->
+            handle_message(message, acc)
+          end)
+
+        {:noreply, state}
 
       {:error, error} ->
         Logging.client_event("decode_failed", %{error: error}, level: :warning)
@@ -1121,6 +1166,23 @@ defmodule Anubis.Client do
       Logging.client_event("response_handling_failed", %{error: err}, level: :error)
 
       {:noreply, state}
+  end
+
+  defp parse_response(data, %{transport_parse_state: nil} = state) do
+    case Message.decode(data) do
+      {:ok, messages} -> {:ok, messages, state}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp parse_response(data, %{transport: %{layer: layer}} = state) do
+    case layer.parse(data, state.transport_parse_state) do
+      {:ok, messages, new_parse_state} ->
+        {:ok, messages, %{state | transport_parse_state: new_parse_state}}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   # Server request handling
@@ -1241,6 +1303,10 @@ defmodule Anubis.Client do
       })
     end
 
+    for waiter <- state.ready_waiters do
+      GenServer.reply(waiter, {:error, Error.transport(:client_terminated, %{reason: reason})})
+    end
+
     Cache.cleanup(state.client_info["name"])
 
     state.transport.layer.shutdown(state.transport.name)
@@ -1341,7 +1407,8 @@ defmodule Anubis.Client do
 
         :ok = send_notification(state, "notifications/initialized")
 
-        state
+        Enum.each(state.ready_waiters, &GenServer.reply(&1, :ok))
+        %{state | ready_waiters: []}
     end
   end
 

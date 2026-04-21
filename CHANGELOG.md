@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.0.0...v1.1.0) (2026-04-13)
+
+
+### Features
+
+* Add Client.await_ready/2 to block until MCP handshake completes ([#117](https://github.com/zoedsoupe/anubis-mcp/issues/117)) ([4c48647](https://github.com/zoedsoupe/anubis-mcp/commit/4c48647192c3304e012049669729008d7177940e))
+* add instructions field to initialize response ([#122](https://github.com/zoedsoupe/anubis-mcp/issues/122)) ([8103b7c](https://github.com/zoedsoupe/anubis-mcp/commit/8103b7c5cbc12ace1e302edd059e42c0a04618f1))
+
+
+### Documentation
+
+* correct supervision tree setup ([#118](https://github.com/zoedsoupe/anubis-mcp/issues/118)) ([ae2560a](https://github.com/zoedsoupe/anubis-mcp/commit/ae2560a8a7fd85847557ac21fc978e15dc5f7995))
+
 ## [1.0.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.1...v1.0.0) (2026-03-16)
 
 

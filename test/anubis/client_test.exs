@@ -1579,4 +1579,209 @@ defmodule Anubis.ClientTest do
       assert {:ok, _} = Task.await(task)
     end
   end
+
+  describe "await_ready/2" do
+    test "returns :ok immediately when client is already initialized" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+      initialize_client(client)
+
+      assert :ok = Anubis.Client.await_ready(client, timeout: 1_000)
+    end
+
+    test "blocks until initialization completes" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+
+      # Start waiting before initialization
+      task = Task.async(fn -> Anubis.Client.await_ready(client, timeout: 5_000) end)
+
+      # Give the call time to arrive and park
+      Process.sleep(50)
+
+      # Now trigger initialization
+      GenServer.cast(client, :initialize)
+      Process.sleep(50)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      response =
+        init_response(
+          request_id,
+          "2025-03-26",
+          %{"name" => "TestServer", "version" => "1.0.0"},
+          %{"tools" => %{}}
+        )
+
+      send_response(client, response)
+
+      assert :ok = Task.await(task, 2_000)
+    end
+
+    test "multiple waiters all get notified" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+
+      tasks =
+        for _ <- 1..3 do
+          Task.async(fn -> Anubis.Client.await_ready(client, timeout: 5_000) end)
+        end
+
+      Process.sleep(50)
+
+      GenServer.cast(client, :initialize)
+      Process.sleep(50)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      response =
+        init_response(
+          request_id,
+          "2025-03-26",
+          %{"name" => "TestServer", "version" => "1.0.0"},
+          %{"tools" => %{}}
+        )
+
+      send_response(client, response)
+
+      results = Task.await_many(tasks, 2_000)
+      assert results == [:ok, :ok, :ok]
+    end
+
+    test "times out when initialization never completes" do
+      stub(Anubis.MockTransport, :send_message, fn _, _, _ -> :ok end)
+
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: Anubis.MockTransport, name: MockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      allow(Anubis.MockTransport, self(), client)
+
+      assert catch_exit(Anubis.Client.await_ready(client, timeout: 100))
+    end
+  end
+
+  describe "chunked STDIO response buffering" do
+    test "handles response split across multiple port data messages" do
+      client =
+        start_supervised!(%{
+          id: Anubis.Client,
+          start:
+            {Anubis.Client, :start_link_server,
+             [
+               [
+                 transport: [layer: BufferedMockTransport, name: BufferedMockTransport],
+                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
+                 capabilities: %{}
+               ]
+             ]},
+          restart: :temporary
+        })
+
+      initialize_client(client)
+
+      # Start list_tools which registers a pending request
+      task =
+        Task.async(fn ->
+          Anubis.Client.list_tools(client, timeout: 5_000)
+        end)
+
+      Process.sleep(50)
+
+      # Get the actual request ID that the client generated
+      request_id = get_request_id(client, "tools/list")
+      assert request_id
+
+      # Build the response with the correct request ID
+      response_json =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => request_id,
+          "result" => %{
+            "tools" => [
+              %{
+                "name" => "search",
+                "description" => "Search for things",
+                "inputSchema" => %{"type" => "object"}
+              }
+            ]
+          }
+        })
+
+      full_message = response_json <> "\n"
+
+      # Split in the middle to simulate chunked port delivery
+      split_point = div(byte_size(full_message), 2)
+      <<chunk1::binary-size(split_point), chunk2::binary>> = full_message
+
+      # Send chunks separately — first chunk has no newline, so it should buffer
+      GenServer.cast(client, {:response, chunk1})
+      Process.sleep(20)
+
+      # Second chunk completes the line — now it should decode and reply
+      GenServer.cast(client, {:response, chunk2})
+
+      assert {:ok, %Response{result: %{"tools" => [%{"name" => "search"}]}}} =
+               Task.await(task, 2_000)
+    end
+  end
 end

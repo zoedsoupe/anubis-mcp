@@ -20,7 +20,8 @@ defmodule Anubis.Client.State do
           progress_callbacks: %{String.t() => Client.progress_callback()},
           log_callback: Client.log_callback() | nil,
           sampling_callback: (map() -> {:ok, map()} | {:error, String.t()}) | nil,
-          roots: %{String.t() => Client.root()}
+          roots: %{String.t() => Client.root()},
+          ready_waiters: [GenServer.from()]
         }
 
   defstruct [
@@ -35,7 +36,9 @@ defmodule Anubis.Client.State do
     progress_callbacks: %{},
     log_callback: nil,
     sampling_callback: nil,
-    roots: %{}
+    roots: %{},
+    ready_waiters: [],
+    transport_parse_state: nil
   ]
 
   @spec new(map()) :: t()
