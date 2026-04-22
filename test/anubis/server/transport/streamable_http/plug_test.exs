@@ -11,6 +11,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   alias Anubis.Server.Transport.StreamableHTTP
   alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
 
+  @moduletag capture_log: true
+
   defp setup_session_config(opts \\ []) do
     task_sup = Registry.task_supervisor_name(StubServer)
     transport_name = Registry.transport_name(StubServer, StubTransport)

@@ -8,6 +8,8 @@ defmodule Anubis.ClientTest do
   alias Anubis.MCP.Message
   alias Anubis.MCP.Response
 
+  @moduletag capture_log: true
+
   setup :set_mox_from_context
   setup :verify_on_exit!
 

@@ -12,6 +12,8 @@ defmodule Anubis.Server.Transport.StreamableHTTPKeepaliveTest do
 
   alias Anubis.Server.Transport.StreamableHTTP
 
+  @moduletag capture_log: true
+
   describe "SSE keepalive" do
     setup do
       registry = Anubis.Server.Registry

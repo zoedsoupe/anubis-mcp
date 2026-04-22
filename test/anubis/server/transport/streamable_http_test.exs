@@ -6,6 +6,8 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
   alias Anubis.Server.Registry
   alias Anubis.Server.Transport.StreamableHTTP
 
+  @moduletag capture_log: true
+
   describe "start_link/1" do
     test "starts with valid options" do
       server = :"test_server_#{System.unique_integer([:positive])}"
