@@ -373,7 +373,7 @@ if Code.ensure_loaded?(Plug) do
 
     defp start_new_session(%{server: server, registry_mod: registry_mod, registry_name: registry_name} = opts, session_id) do
       session_config = ServerSupervisor.get_session_config(server)
-      session_name = Registry.session_name(server, session_id)
+      session_name = Registry.resolve_session_name(registry_mod, registry_name, session_id)
 
       session_opts = [
         session_id: session_id,
