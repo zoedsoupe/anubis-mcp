@@ -21,7 +21,8 @@ defmodule Anubis.Client.State do
           log_callback: Client.log_callback() | nil,
           sampling_callback: (map() -> {:ok, map()} | {:error, String.t()}) | nil,
           roots: %{String.t() => Client.root()},
-          ready_waiters: [GenServer.from()]
+          ready_waiters: [GenServer.from()],
+          transport_parse_state: map | nil
         }
 
   defstruct [
@@ -48,7 +49,8 @@ defmodule Anubis.Client.State do
       capabilities: opts.capabilities,
       protocol_version: opts.protocol_version,
       transport: opts.transport,
-      timeout: opts.timeout
+      timeout: opts.timeout,
+      transport_parse_state: opts[:transport_parse_state]
     }
   end
 

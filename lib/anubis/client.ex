@@ -923,15 +923,14 @@ defmodule Anubis.Client do
       end
 
     state =
-      %{
+      State.new(%{
         client_info: opts.client_info,
         capabilities: opts.capabilities,
         protocol_version: protocol_version,
         transport: transport,
-        timeout: opts.timeout
-      }
-      |> State.new()
-      |> Map.put(:transport_parse_state, transport_parse_state)
+        timeout: opts.timeout,
+        transport_parse_state: transport_parse_state
+      })
 
     client_name = get_in(opts, [:client_info, "name"])
 
