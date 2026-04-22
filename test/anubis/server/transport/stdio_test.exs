@@ -2,6 +2,7 @@ defmodule Anubis.Server.Transport.STDIOTest do
   use Anubis.MCP.Case, async: false
 
   import ExUnit.CaptureIO
+  import ExUnit.CaptureLog
 
   alias Anubis.Server.Transport.STDIO
 
@@ -14,44 +15,47 @@ defmodule Anubis.Server.Transport.STDIOTest do
       name = :"test_stdio_transport_#{:rand.uniform(1_000_000)}"
       opts = [server: server, name: name]
 
-      assert {:ok, pid} = STDIO.start_link(opts)
-      assert Process.alive?(pid)
-      assert Process.whereis(name) == pid
-
-      assert :ok = STDIO.shutdown(pid)
-      wait_for_process_exit(pid)
+      capture_log(fn ->
+        assert {:ok, pid} = STDIO.start_link(opts)
+        assert Process.alive?(pid)
+        assert Process.whereis(name) == pid
+        shutdown(pid)
+      end)
     end
   end
 
   describe "send_message/2" do
-    @tag skip: true
     test "sends message via cast", %{server: server} do
       name = :"test_send_message_#{:rand.uniform(1_000_000)}"
-      {:ok, pid} = STDIO.start_link(server: server, name: name)
 
-      message = "test message"
+      capture_log(fn ->
+        {:ok, pid} = STDIO.start_link(server: server, name: name)
 
-      assert capture_io(pid, fn ->
-               assert :ok = STDIO.send_message(pid, message, timeout: 5000)
-               Process.sleep(50)
-             end) =~ "test message"
+        message = "test message"
 
-      assert :ok = STDIO.shutdown(pid)
-      wait_for_process_exit(pid)
+        assert capture_io(pid, fn ->
+                 assert :ok = STDIO.send_message(pid, message, timeout: 5000)
+                 Process.sleep(50)
+               end) =~ "test message"
+
+        shutdown(pid)
+      end)
     end
   end
 
   describe "shutdown/1" do
     test "shuts down the transport gracefully", %{server: server} do
       name = :"shutdown_test_#{:rand.uniform(1_000_000)}"
-      {:ok, pid} = STDIO.start_link(server: server, name: name)
 
-      ref = Process.monitor(pid)
+      capture_log(fn ->
+        {:ok, pid} = STDIO.start_link(server: server, name: name)
+        ref = Process.monitor(pid)
 
-      assert :ok = STDIO.shutdown(pid)
-      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+        assert :ok = STDIO.shutdown(pid)
+        assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
-      refute Process.whereis(name)
+        refute Process.whereis(name)
+      end)
     end
   end
 
@@ -59,31 +63,28 @@ defmodule Anubis.Server.Transport.STDIOTest do
     test "starts and stops cleanly", %{server: server} do
       name = :"basic_test_#{:rand.uniform(1_000_000)}"
 
-      assert {:ok, pid} = STDIO.start_link(server: server, name: name)
-      assert Process.alive?(pid)
-
-      assert :ok = STDIO.shutdown(pid)
-      wait_for_process_exit(pid)
+      capture_log(fn ->
+        assert {:ok, pid} = STDIO.start_link(server: server, name: name)
+        assert Process.alive?(pid)
+        shutdown(pid)
+      end)
     end
 
     test "manages reading tasks correctly", %{server: server} do
       name = :"async_test_#{:rand.uniform(1_000_000)}"
-      {:ok, pid} = STDIO.start_link(server: server, name: name)
 
-      assert Process.alive?(pid)
-
-      STDIO.shutdown(pid)
-      wait_for_process_exit(pid)
+      capture_log(fn ->
+        {:ok, pid} = STDIO.start_link(server: server, name: name)
+        assert Process.alive?(pid)
+        shutdown(pid)
+      end)
     end
   end
 
-  defp wait_for_process_exit(pid) do
+  defp shutdown(pid) do
     ref = Process.monitor(pid)
-
-    receive do
-      {:DOWN, ^ref, :process, ^pid, _} -> :ok
-    after
-      500 -> :error
-    end
+    :ok = STDIO.shutdown(pid)
+    :ok = Logger.flush()
+    assert_receive {:DOWN, ^ref, _, ^pid, :normal}
   end
 end

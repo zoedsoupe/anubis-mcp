@@ -7,18 +7,16 @@ defmodule Anubis.Transport.STDIOTest do
 
   setup do
     start_supervised!(StubClient)
-
-    command = if :os.type() == {:win32, :nt}, do: "cmd", else: "echo"
-
-    %{command: command}
+    cmd = cmd()
+    %{command: cmd[:command], args: cmd[:args]}
   end
 
   describe "start_link/1" do
-    test "successfully starts transport", %{command: command} do
+    test "successfully starts transport", %{command: command, args: args} do
       opts = [
         client: StubClient,
         command: command,
-        args: ["hello"],
+        args: args,
         name: :test_transport
       ]
 
@@ -42,12 +40,12 @@ defmodule Anubis.Transport.STDIOTest do
   end
 
   describe "send_message/2" do
-    setup %{command: command} do
+    setup %{command: command, args: args} do
       {:ok, pid} =
         STDIO.start_link(
           client: StubClient,
           command: command,
-          args: ["test"],
+          args: args,
           name: :test_send_transport
         )
 
@@ -97,13 +95,12 @@ defmodule Anubis.Transport.STDIOTest do
 
   describe "client message handling" do
     setup do
-      command = if :os.type() == {:win32, :nt}, do: "cmd", else: "cat"
-
       {:ok, pid} =
         STDIO.start_link(
-          client: StubClient,
-          command: command,
-          name: :test_echo_transport
+          [
+            client: StubClient,
+            name: :test_echo_transport
+          ] ++ cmd()
         )
 
       on_exit(fn -> safe_stop(pid) end)
@@ -125,15 +122,14 @@ defmodule Anubis.Transport.STDIOTest do
 
   describe "port behavior" do
     test "handles port restart on close" do
-      command = if :os.type() == {:win32, :nt}, do: "cmd", else: "echo"
-
       transport_name = :restart_test_transport
 
       {:ok, pid} =
         STDIO.start_link(
-          client: StubClient,
-          command: command,
-          name: transport_name
+          [
+            client: StubClient,
+            name: transport_name
+          ] ++ cmd()
         )
 
       original_pid = Process.whereis(transport_name)
@@ -149,17 +145,15 @@ defmodule Anubis.Transport.STDIOTest do
 
   describe "environment variables" do
     test "uses environment variables" do
-      command = if :os.type() == {:win32, :nt}, do: "cmd", else: "echo"
-
       :ok = StubClient.clear_messages()
 
       {:ok, pid} =
         STDIO.start_link(
-          client: StubClient,
-          command: command,
-          args: ["TEST_CUSTOM_VAR=test_value"],
-          env: %{"TEST_CUSTOM_VAR" => "test_value"},
-          name: :env_test_transport
+          [
+            client: StubClient,
+            env: %{"TEST_CUSTOM_VAR" => "test_value"},
+            name: :env_test_transport
+          ] ++ cmd()
         )
 
       Process.sleep(100)
@@ -168,6 +162,14 @@ defmodule Anubis.Transport.STDIOTest do
       refute Enum.empty?(messages)
 
       safe_stop(pid)
+    end
+  end
+
+  defp cmd(text \\ "hello") do
+    if :os.type() == {:win32, :nt} do
+      [command: "cmd", args: ["/c", "echo #{text} 2>nul"]]
+    else
+      [command: "sh", args: ["-c", "echo #{text} 2>/dev/null"]]
     end
   end
 
