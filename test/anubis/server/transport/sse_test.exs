@@ -7,6 +7,8 @@ defmodule Anubis.Server.Transport.SSETest do
   alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
 
+  @moduletag capture_log: true
+
   describe "start_link/1" do
     test "starts with valid options" do
       server = :"test_server_#{System.unique_integer([:positive])}"
