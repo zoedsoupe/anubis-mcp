@@ -1,7 +1,6 @@
 defmodule Anubis.Server.Transport.STDIOTest do
   use Anubis.MCP.Case, async: false
 
-  import ExUnit.CaptureIO
   import ExUnit.CaptureLog
 
   alias Anubis.Server.Transport.STDIO
@@ -27,17 +26,21 @@ defmodule Anubis.Server.Transport.STDIOTest do
   describe "send_message/2" do
     test "sends message via cast", %{server: server} do
       name = :"test_send_message_#{:rand.uniform(1_000_000)}"
+      {:ok, string_io} = StringIO.open("")
 
-      {:ok, pid} = STDIO.start_link(server: server, name: name)
+      capture_log(fn ->
+        {:ok, pid} = STDIO.start_link(server: server, name: name)
+        Process.group_leader(pid, string_io)
 
-      message = "test message"
+        assert :ok = STDIO.send_message(pid, "test message", timeout: 5000)
 
-      assert capture_io(pid, fn ->
-               assert :ok = STDIO.send_message(pid, message, timeout: 5000)
-               Process.sleep(50)
-             end) =~ "test message"
+        {_input, output} = StringIO.contents(string_io)
+        assert output =~ "test message"
 
-      shutdown(pid)
+        shutdown(pid)
+      end)
+
+      StringIO.close(string_io)
     end
   end
 

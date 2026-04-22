@@ -69,7 +69,16 @@ defmodule Anubis.Server.Transport.STDIO do
 
   @impl GenServer
   def init(opts) do
-    :ok = :io.setopts(encoding: :utf8)
+    :logger.update_handler_config(:default, :config, %{type: :standard_error})
+
+    with {:error, err} <- :io.setopts(encoding: :utf8) do
+      Logging.transport_event(
+        "could not set up io options, may produce unexpected behavior: #{inspect(err)}",
+        %{transport: :stdio, server: opts.server},
+        level: :warning
+      )
+    end
+
     Process.flag(:trap_exit, true)
 
     state = %{
@@ -78,7 +87,6 @@ defmodule Anubis.Server.Transport.STDIO do
       request_timeout: opts.request_timeout
     }
 
-    :logger.update_handler_config(:default, :config, %{type: :standard_error})
     Logger.metadata(mcp_transport: :stdio, mcp_server: state.server)
     Logging.transport_event("starting", %{transport: :stdio, server: state.server})
 
