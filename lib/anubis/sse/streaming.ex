@@ -97,13 +97,27 @@ if Code.ensure_loaded?(Plug) do
             {:error, reason} ->
               Logging.transport_event(
                 "sse_send_failed",
-                %{
-                  session_id: session_id,
-                  reason: reason
-                },
-                level: :error
+                %{session_id: session_id, reason: reason},
+                level: :warning
               )
 
+              conn
+          end
+
+        {:sse_message, message, {from, ref}} when is_binary(message) ->
+          case send_event(conn, message, event_counter) do
+            {:ok, conn} ->
+              send(from, {ref, :ok})
+              loop(conn, transport, session_id, event_counter + 1)
+
+            {:error, reason} ->
+              Logging.transport_event(
+                "sse_send_failed",
+                %{session_id: session_id, reason: reason},
+                level: :warning
+              )
+
+              send(from, {ref, {:error, reason}})
               conn
           end
 
