@@ -1,3 +1,5 @@
+# `apply/3` is being used to supress the deprecated warning at compile-time
+# credo:disable-for-this-file
 defmodule Anubis.Server.Transport.SSE.PlugTest do
   use Anubis.MCP.Case, async: false
 
@@ -17,24 +19,24 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
   describe "init/1" do
     test "requires server option" do
       assert_raise KeyError, fn ->
-        SSEPlug.init(mode: :sse)
+        apply(SSEPlug, :init, [[mode: :sse]])
       end
     end
 
     test "requires mode option" do
       assert_raise KeyError, fn ->
-        SSEPlug.init(server: StubServer)
+        apply(SSEPlug, :init, [[server: StubServer]])
       end
     end
 
     test "mode must be :sse or :post" do
       assert_raise ArgumentError, ~r/mode to be either :sse or :post/, fn ->
-        SSEPlug.init(server: StubServer, mode: :invalid)
+        apply(SSEPlug, :init, [[server: StubServer, mode: :invalid]])
       end
     end
 
     test "initializes with valid options" do
-      opts = SSEPlug.init(server: StubServer, mode: :sse, timeout: 5000)
+      opts = apply(SSEPlug, :init, [[server: StubServer, mode: :sse, timeout: 5000]])
 
       assert %{
                transport: transport,
@@ -53,7 +55,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       {:ok, transport} =
         start_supervised({SSE, server: StubServer, name: name})
 
-      sse_opts = SSEPlug.init(server: StubServer, mode: :sse)
+      sse_opts = apply(SSEPlug, :init, [[server: StubServer, mode: :sse]])
       %{sse_opts: sse_opts, transport: transport}
     end
 
@@ -141,7 +143,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       {:ok, transport} =
         start_supervised({SSE, server: StubServer, name: name})
 
-      post_opts = SSEPlug.init(server: StubServer, mode: :post)
+      post_opts = apply(SSEPlug, :init, [[server: StubServer, mode: :post]])
       %{post_opts: post_opts, transport: transport, session_id: session_id}
     end
 
@@ -223,7 +225,7 @@ defmodule Anubis.Server.Transport.SSE.PlugTest do
       {:ok, transport} =
         start_supervised({SSE, server: StubServer, name: name})
 
-      post_opts = SSEPlug.init(server: StubServer, mode: :post)
+      post_opts = apply(SSEPlug, :init, [[server: StubServer, mode: :post]])
       %{post_opts: post_opts, transport: transport}
     end
 
