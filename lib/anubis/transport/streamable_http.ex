@@ -246,7 +246,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   @impl GenServer
   def handle_cast(:close_connection, state) do
     if state.session_id, do: delete_session(state)
-    if state.sse_task, do: Task.shutdown(state.sse_task, :brutal_kill)
+    if state.sse_task, do: Process.exit(state.sse_task, :kill)
 
     {:stop, :normal, state}
   end
@@ -278,7 +278,7 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_info({:DOWN, _ref, :process, pid, reason}, state) when state.sse_task != nil do
-    if pid == state.sse_task.pid do
+    if pid == state.sse_task do
       Logging.transport_event("sse_task_down", %{reason: reason})
       new_state = maybe_start_sse_connection(%{state | sse_task: nil})
       {:noreply, new_state}
@@ -295,7 +295,7 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   @impl GenServer
   def terminate(reason, state) do
-    if state.sse_task, do: Task.shutdown(state.sse_task, 5000)
+    if state.sse_task, do: Process.exit(state.sse_task, :kill)
     if state.session_id, do: delete_session(state)
 
     emit_telemetry(:terminate, state, %{reason: reason})
@@ -351,7 +351,10 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   defp handle_response(%{headers: headers, body: body, status: status}, state) do
-    new_state = update_session_id(state, headers)
+    new_state =
+      state
+      |> update_session_id(headers)
+      |> maybe_start_sse_on_session_acquired(state)
 
     Logging.transport_event("http_response", %{
       status: status,
@@ -482,14 +485,27 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   defp maybe_start_sse_connection(%{enable_sse: true, session_id: nil} = state), do: state
 
+  defp maybe_start_sse_connection(%{enable_sse: true, sse_task: task} = state) when not is_nil(task),
+    do: state
+
   defp maybe_start_sse_connection(%{enable_sse: true} = state) do
-    task = start_sse_task(state)
-    %{state | sse_task: task}
+    pid = start_sse_task(state)
+    %{state | sse_task: pid}
   end
+
+  defp maybe_start_sse_on_session_acquired(%{session_id: nil} = new_state, _old_state), do: new_state
+
+  defp maybe_start_sse_on_session_acquired(new_state, %{session_id: nil}) do
+    maybe_start_sse_connection(new_state)
+  end
+
+  defp maybe_start_sse_on_session_acquired(new_state, _old_state), do: new_state
 
   defp start_sse_task(state) do
     parent = self()
-    Task.start_link(fn -> run_sse_task(parent, state) end)
+    {:ok, pid} = Task.start(fn -> run_sse_task(parent, state) end)
+    Process.monitor(pid)
+    pid
   end
 
   defp run_sse_task(parent, state) do
