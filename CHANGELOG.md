@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.1.0...v1.1.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* buffer chunked STDIO responses before decoding in client ([#127](https://github.com/zoedsoupe/anubis-mcp/issues/127)) ([eff7f24](https://github.com/zoedsoupe/anubis-mcp/commit/eff7f248084077e081d57122648963a1ab24e35e))
+
+
+### Miscellaneous Chores
+
+* capture log from stdio transports processes ([fbcca0a](https://github.com/zoedsoupe/anubis-mcp/commit/fbcca0a1204e4e1602d8abe277af03f067338d10))
+* encapsulate transport_parse_state into the Client.State struct ([602d74c](https://github.com/zoedsoupe/anubis-mcp/commit/602d74c7045e3087db4424ba55d61cfcf2c7f663))
+* suppress SSE deprecation warnings ([05565fc](https://github.com/zoedsoupe/anubis-mcp/commit/05565fc030c449909bbdcb72d67773b9edefea9c))
+* supress SSE deprecation warnings ([8334779](https://github.com/zoedsoupe/anubis-mcp/commit/833477912037a02972fff410aa646c9df7059f09))
+
+
+### Tests
+
+* fix the stdio cast message from server using a buffer ([76d7ecd](https://github.com/zoedsoupe/anubis-mcp/commit/76d7ecd52d8fc469615f4febe151d0cda11b3713))
+
 ## [1.1.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.0.0...v1.1.0) (2026-04-13)
 
 
