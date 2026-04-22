@@ -214,10 +214,7 @@ defmodule Anubis.Server.Session do
           {:reply, {:error, {:recovery_rejected, reason}}, state}
 
         :default ->
-          case maybe_call_init(module, auto_state.client_info, frame) do
-            {:ok, frame} -> do_complete_auto_init(auto_state, frame, protocol_version)
-            {:error, reason} -> {:reply, {:error, {:init_failed, reason}}, state}
-          end
+          fallback_to_init(module, auto_state, frame, protocol_version, state)
       end
     else
       [] -> {:reply, {:error, :no_supported_versions}, state}
@@ -1061,6 +1058,13 @@ defmodule Anubis.Server.Session do
           _ ->
             {nil, nil}
         end
+    end
+  end
+
+  defp fallback_to_init(module, auto_state, frame, protocol_version, state) do
+    case maybe_call_init(module, auto_state.client_info, frame) do
+      {:ok, frame} -> do_complete_auto_init(auto_state, frame, protocol_version)
+      {:error, reason} -> {:reply, {:error, {:init_failed, reason}}, state}
     end
   end
 
