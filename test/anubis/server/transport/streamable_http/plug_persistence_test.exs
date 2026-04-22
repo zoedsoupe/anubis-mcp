@@ -8,6 +8,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
   alias Anubis.Server.Transport.StreamableHTTP.Plug
   alias Anubis.Test.MockSessionStore
 
+  @moduletag capture_log: true
+
   setup do
     {:ok, _} = MockSessionStore.start_link([])
     MockSessionStore.reset!()

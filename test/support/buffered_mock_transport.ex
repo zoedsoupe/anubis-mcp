@@ -8,9 +8,13 @@ defmodule BufferedMockTransport do
 
   alias Anubis.Transport.STDIO
 
+  @impl true
   defdelegate transport_init(opts \\ []), to: STDIO
+  @impl true
   defdelegate parse(raw, state), to: STDIO
+  @impl true
   defdelegate encode(message, state), to: STDIO
+  @impl true
   defdelegate extract_metadata(raw, state), to: STDIO
 
   @impl Anubis.Transport.Behaviour

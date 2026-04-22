@@ -5,6 +5,8 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
 
+  @moduletag capture_log: true
+
   describe "tool annotations" do
     test "annotations callback is optional" do
       assert function_exported?(ToolWithAnnotations, :annotations, 0)

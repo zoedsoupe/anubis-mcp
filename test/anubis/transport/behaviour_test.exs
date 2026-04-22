@@ -183,40 +183,42 @@ defmodule Anubis.Transport.BehaviourTest do
     end
   end
 
+  # `apply/3` is being used to supress the deprecated warning at compile-time
+  # credo:disable-for-lines:88
   describe "Client SSE transport" do
     test "transport_init/1 returns ok with default state" do
-      assert {:ok, %{message_url: nil, last_event_id: nil}} = ClientSSE.transport_init()
+      assert {:ok, %{message_url: nil, last_event_id: nil}} = apply(ClientSSE, :transport_init, [])
     end
 
     test "parse/2 decodes JSON string" do
-      {:ok, state} = ClientSSE.transport_init()
+      {:ok, state} = apply(ClientSSE, :transport_init, [])
       json = JSON.encode!(@sample_request)
 
-      assert {:ok, [@sample_request], ^state} = ClientSSE.parse(json, state)
+      assert {:ok, [@sample_request], ^state} = apply(ClientSSE, :parse, [json, state])
     end
 
     test "parse/2 accepts already-decoded maps" do
-      {:ok, state} = ClientSSE.transport_init()
-      assert {:ok, [@sample_request], ^state} = ClientSSE.parse(@sample_request, state)
+      {:ok, state} = apply(ClientSSE, :transport_init, [])
+      assert {:ok, [@sample_request], ^state} = apply(ClientSSE, :parse, [@sample_request, state])
     end
 
     test "parse/2 returns error on non-object JSON" do
-      {:ok, state} = ClientSSE.transport_init()
-      assert {:error, :invalid_message} = ClientSSE.parse("[1,2]", state)
+      {:ok, state} = apply(ClientSSE, :transport_init, [])
+      assert {:error, :invalid_message} = apply(ClientSSE, :parse, ["[1,2]", state])
     end
 
     test "encode/2 produces JSON with newline" do
-      {:ok, state} = ClientSSE.transport_init()
+      {:ok, state} = apply(ClientSSE, :transport_init, [])
 
-      assert {:ok, encoded, ^state} = ClientSSE.encode(@sample_request, state)
+      assert {:ok, encoded, ^state} = apply(ClientSSE, :encode, [@sample_request, state])
       assert String.ends_with?(encoded, "\n")
     end
 
     test "extract_metadata/2 with SSE Event struct" do
-      {:ok, state} = ClientSSE.transport_init(message_url: "http://localhost/messages")
+      {:ok, state} = apply(ClientSSE, :transport_init, [[message_url: "http://localhost/messages"]])
       event = %Anubis.SSE.Event{event: "message", data: "data", id: "evt_1"}
 
-      metadata = ClientSSE.extract_metadata(event, state)
+      metadata = apply(ClientSSE, :extract_metadata, [event, state])
       assert metadata.transport == :sse
       assert metadata.event_type == "message"
       assert metadata.event_id == "evt_1"
@@ -224,8 +226,8 @@ defmodule Anubis.Transport.BehaviourTest do
     end
 
     test "extract_metadata/2 without Event struct" do
-      {:ok, state} = ClientSSE.transport_init()
-      metadata = ClientSSE.extract_metadata(nil, state)
+      {:ok, state} = apply(ClientSSE, :transport_init, [])
+      metadata = apply(ClientSSE, :extract_metadata, [nil, state])
       assert metadata.transport == :sse
     end
   end
@@ -239,11 +241,11 @@ defmodule Anubis.Transport.BehaviourTest do
 
     for {mod, label} <- @transports do
       test "#{label} implements transport_init/1" do
-        assert {:ok, _state} = unquote(mod).transport_init()
+        assert {:ok, _state} = apply(unquote(mod), :transport_init, [])
       end
 
       test "#{label} can parse a valid JSON-RPC request" do
-        {:ok, state} = unquote(mod).transport_init()
+        {:ok, state} = apply(unquote(mod), :transport_init, [])
 
         json =
           if unquote(mod) in [ClientSTDIO] do
@@ -252,13 +254,13 @@ defmodule Anubis.Transport.BehaviourTest do
             JSON.encode!(@sample_request)
           end
 
-        assert {:ok, [msg], _state} = unquote(mod).parse(json, state)
+        assert {:ok, [msg], _state} = apply(unquote(mod), :parse, [json, state])
         assert msg["jsonrpc"] == "2.0"
         assert msg["method"] == "ping"
       end
 
       test "#{label} rejects invalid JSON" do
-        {:ok, state} = unquote(mod).transport_init()
+        {:ok, state} = apply(unquote(mod), :transport_init, [])
 
         # STDIO transports need newline to process
         input =
@@ -268,7 +270,7 @@ defmodule Anubis.Transport.BehaviourTest do
             "not valid json"
           end
 
-        assert {:error, _reason} = unquote(mod).parse(input, state)
+        assert {:error, _reason} = apply(unquote(mod), :parse, [input, state])
       end
     end
   end

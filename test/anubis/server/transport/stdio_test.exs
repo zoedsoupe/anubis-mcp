@@ -28,18 +28,16 @@ defmodule Anubis.Server.Transport.STDIOTest do
     test "sends message via cast", %{server: server} do
       name = :"test_send_message_#{:rand.uniform(1_000_000)}"
 
-      capture_log(fn ->
-        {:ok, pid} = STDIO.start_link(server: server, name: name)
+      {:ok, pid} = STDIO.start_link(server: server, name: name)
 
-        message = "test message"
+      message = "test message"
 
-        assert capture_io(pid, fn ->
-                 assert :ok = STDIO.send_message(pid, message, timeout: 5000)
-                 Process.sleep(50)
-               end) =~ "test message"
+      assert capture_io(pid, fn ->
+               assert :ok = STDIO.send_message(pid, message, timeout: 5000)
+               Process.sleep(50)
+             end) =~ "test message"
 
-        shutdown(pid)
-      end)
+      shutdown(pid)
     end
   end
 

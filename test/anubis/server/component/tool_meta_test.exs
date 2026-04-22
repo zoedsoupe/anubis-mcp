@@ -36,6 +36,12 @@ defmodule Anubis.Server.Component.ToolMetaTest do
   end
 
   describe "meta callback" do
+    setup do
+      Code.ensure_loaded!(ToolWithMeta)
+      Code.ensure_loaded!(ToolWithoutAnnotations)
+      :ok
+    end
+
     test "meta callback is optional" do
       assert function_exported?(ToolWithMeta, :meta, 0)
       refute function_exported?(ToolWithoutAnnotations, :meta, 0)
