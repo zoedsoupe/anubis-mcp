@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.1.1...v1.2.0) (2026-04-24)
+
+
+### Features
+
+* pluggable session supervisor and :via tuple session naming ([#133](https://github.com/zoedsoupe/anubis-mcp/issues/133)) ([0a1aadc](https://github.com/zoedsoupe/anubis-mcp/commit/0a1aadc3b00be036980920a2c0e0a8ce55d2b392))
+
+
+### Bug Fixes
+
+* correct SSE task lifecycle bugs in StreamableHTTP transport ([#130](https://github.com/zoedsoupe/anubis-mcp/issues/130)) ([3a34382](https://github.com/zoedsoupe/anubis-mcp/commit/3a343828f3d6974fdbdeb9ab1589b9a52a56ad4f))
+* defer streamable_http plug opts fetching to runtime ([#137](https://github.com/zoedsoupe/anubis-mcp/issues/137)) ([ad29215](https://github.com/zoedsoupe/anubis-mcp/commit/ad2921549529eac26488bdcf7be5c876c548e618))
+* handle session expiry gracefully with optional callback and store restore ([#134](https://github.com/zoedsoupe/anubis-mcp/issues/134)) ([a42f462](https://github.com/zoedsoupe/anubis-mcp/commit/a42f4625f466ea46a490014d82c11ab8fde042dc))
+* prevent lost SSE responses when client connection closes ([#132](https://github.com/zoedsoupe/anubis-mcp/issues/132)) ([f961fa0](https://github.com/zoedsoupe/anubis-mcp/commit/f961fa0719d795eeb2a629ae5764cbb8b29a4c1b))
+* replace opaque KeyError with ArgumentError for missing :client_info ([#135](https://github.com/zoedsoupe/anubis-mcp/issues/135)) ([fc9444c](https://github.com/zoedsoupe/anubis-mcp/commit/fc9444cdab045e0275570dfb4f0ff6dcf1a42eb0))
+* server stdio test againts custom io device ([#136](https://github.com/zoedsoupe/anubis-mcp/issues/136)) ([4b567d9](https://github.com/zoedsoupe/anubis-mcp/commit/4b567d99fa1dced884ddc89b6798a540e643ba2c))
+
 ## [1.1.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.1.0...v1.1.1) (2026-04-22)
 
 
