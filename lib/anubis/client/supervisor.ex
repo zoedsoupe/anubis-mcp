@@ -65,7 +65,18 @@ defmodule Anubis.Client.Supervisor do
   def init(opts) do
     transport = Keyword.fetch!(opts, :transport)
 
-    client_info = Keyword.fetch!(opts, :client_info)
+    client_info =
+      Keyword.get(opts, :client_info) ||
+        raise ArgumentError, """
+        :client_info is required when starting Anubis.Client.
+
+        Example:
+          {Anubis.Client,
+           name: MyApp.MCPClient,
+           client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+           transport: {:streamable_http, base_url: "http://localhost:9999"}}
+        """
+
     capabilities = Keyword.get(opts, :capabilities, %{})
     protocol_version = Keyword.get(opts, :protocol_version, Anubis.Protocol.latest_version())
 
