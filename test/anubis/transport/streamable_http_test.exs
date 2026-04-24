@@ -594,6 +594,11 @@ defmodule Anubis.Transport.StreamableHTTPTest do
         end
       end)
 
+      # Handle SSE GET connection attempt after session is acquired
+      Bypass.stub(bypass, "GET", "/mcp", fn conn ->
+        Plug.Conn.resp(conn, 405, "")
+      end)
+
       # Handle DELETE request during shutdown
       Bypass.stub(bypass, "DELETE", "/mcp", fn conn ->
         Plug.Conn.resp(conn, 200, "")

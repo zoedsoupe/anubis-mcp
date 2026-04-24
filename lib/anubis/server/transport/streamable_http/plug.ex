@@ -266,11 +266,21 @@ if Code.ensure_loaded?(Plug) do
 
       cond do
         handler_pid && Process.alive?(handler_pid) ->
-          send(handler_pid, {:sse_message, response})
+          ref = make_ref()
+          send(handler_pid, {:sse_message, response, {self(), ref}})
 
-          conn
-          |> put_resp_content_type("application/json")
-          |> send_resp(202, "{}")
+          receive do
+            {^ref, :ok} ->
+              conn
+              |> put_resp_content_type("application/json")
+              |> send_resp(202, "{}")
+
+            {^ref, {:error, _reason}} ->
+              establish_sse_for_request(conn, response, session_id, opts)
+          after
+            5_000 ->
+              establish_sse_for_request(conn, response, session_id, opts)
+          end
 
         handler_pid ->
           StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
