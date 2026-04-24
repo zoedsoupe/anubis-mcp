@@ -54,16 +54,11 @@ if Code.ensure_loaded?(Plug) do
     @impl Plug
     def init(opts) do
       server = Keyword.fetch!(opts, :server)
-      session_config = ServerSupervisor.get_session_config(server)
-      transport_name = Registry.transport_name(server, :streamable_http)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
 
       %{
         server: server,
-        registry_mod: session_config.registry_mod,
-        registry_name: Registry.registry_name(server),
-        transport: transport_name,
         session_header: session_header,
         timeout: request_timeout
       }
@@ -71,12 +66,24 @@ if Code.ensure_loaded?(Plug) do
 
     @impl Plug
     def call(conn, opts) do
+      opts = resolve_runtime_config(opts)
+
       case conn.method do
         "GET" -> handle_get(conn, opts)
         "POST" -> handle_post(conn, opts)
         "DELETE" -> handle_delete(conn, opts)
         _ -> send_error(conn, 405, "Method not allowed")
       end
+    end
+
+    defp resolve_runtime_config(%{server: server} = opts) do
+      session_config = ServerSupervisor.get_session_config(server)
+
+      Map.merge(opts, %{
+        registry_mod: session_config.registry_mod,
+        registry_name: Registry.registry_name(server),
+        transport: Registry.transport_name(server, :streamable_http)
+      })
     end
 
     # GET request handler - establishes SSE connection

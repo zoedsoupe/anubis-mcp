@@ -51,12 +51,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       opts = StreamableHTTPPlug.init(server: StubServer)
 
       assert %{
-               transport: transport,
                session_header: "mcp-session-id",
                timeout: 30_000
              } = opts
-
-      assert transport == Registry.transport_name(StubServer, :streamable_http)
     end
 
     test "accepts custom session header" do
@@ -67,12 +64,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         )
 
       assert %{
-               transport: transport,
                session_header: "x-custom-session",
                timeout: 30_000
              } = opts
-
-      assert transport == Registry.transport_name(StubServer, :streamable_http)
     end
   end
 
