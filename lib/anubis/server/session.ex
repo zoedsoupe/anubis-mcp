@@ -183,28 +183,42 @@ defmodule Anubis.Server.Session do
   def handle_call(:auto_initialize, _from, %{server_module: module} = state) do
     with [latest_version | _] <- state.supported_versions,
          {:ok, protocol_version, protocol_module} <-
-           Anubis.Protocol.Registry.negotiate(latest_version, state.supported_versions),
-         auto_state = %{
-           state
-           | protocol_version: protocol_version,
-             protocol_module: protocol_module,
-             client_info: %{"name" => "auto-recovered", "version" => "unknown"},
-             client_capabilities: %{},
-             initialized: true
-         },
-         frame = prepare_frame(auto_state),
-         {:ok, frame} <- maybe_call_init(module, auto_state.client_info, frame) do
-      Logging.server_event("session_auto_initialized", %{
-        session_id: auto_state.session_id,
-        protocol_version: protocol_version
-      })
+           Anubis.Protocol.Registry.negotiate(latest_version, state.supported_versions) do
+      {restored_client_info, restored_frame} = maybe_restore_from_store(state.session_id)
 
-      maybe_persist_session(%{auto_state | frame: frame})
-      {:reply, :ok, %{auto_state | frame: frame}}
+      auto_state = %{
+        state
+        | protocol_version: protocol_version,
+          protocol_module: protocol_module,
+          client_info: restored_client_info || %{"name" => "auto-recovered", "version" => "unknown"},
+          client_capabilities: %{},
+          initialized: true,
+          frame: restored_frame || state.frame
+      }
+
+      frame = prepare_frame(auto_state)
+
+      case maybe_call_session_expired(module, auto_state.session_id, frame) do
+        {:ok, frame} ->
+          do_complete_auto_init(auto_state, frame, protocol_version)
+
+        {:ok, client_info, frame} ->
+          do_complete_auto_init(%{auto_state | client_info: client_info}, frame, protocol_version)
+
+        {:error, reason} ->
+          Logging.server_event("session_recovery_rejected", %{
+            session_id: auto_state.session_id,
+            reason: inspect(reason)
+          })
+
+          {:reply, {:error, {:recovery_rejected, reason}}, state}
+
+        :default ->
+          fallback_to_init(module, auto_state, frame, protocol_version, state)
+      end
     else
       [] -> {:reply, {:error, :no_supported_versions}, state}
       :error -> {:reply, {:error, :negotiate_failed}, state}
-      {:error, reason} -> {:reply, {:error, {:init_failed, reason}}, state}
     end
   end
 
@@ -1017,6 +1031,51 @@ defmodule Anubis.Server.Session do
     end
   rescue
     e -> {:error, e}
+  end
+
+  defp maybe_call_session_expired(module, session_id, frame) do
+    if Anubis.exported?(module, :handle_session_expired, 2) do
+      module.handle_session_expired(session_id, frame)
+    else
+      :default
+    end
+  rescue
+    e -> {:error, e}
+  end
+
+  defp maybe_restore_from_store(session_id) do
+    case Anubis.get_session_store_adapter() do
+      nil ->
+        {nil, nil}
+
+      store ->
+        case store.load(session_id, []) do
+          {:ok, saved} ->
+            client_info = saved["client_info"] || saved[:client_info]
+            frame = Frame.from_saved(saved["frame"] || saved[:frame] || %{})
+            {client_info, frame}
+
+          _ ->
+            {nil, nil}
+        end
+    end
+  end
+
+  defp fallback_to_init(module, auto_state, frame, protocol_version, state) do
+    case maybe_call_init(module, auto_state.client_info, frame) do
+      {:ok, frame} -> do_complete_auto_init(auto_state, frame, protocol_version)
+      {:error, reason} -> {:reply, {:error, {:init_failed, reason}}, state}
+    end
+  end
+
+  defp do_complete_auto_init(auto_state, frame, protocol_version) do
+    Logging.server_event("session_auto_initialized", %{
+      session_id: auto_state.session_id,
+      protocol_version: protocol_version
+    })
+
+    maybe_persist_session(%{auto_state | frame: frame})
+    {:reply, :ok, %{auto_state | frame: frame}}
   end
 
   defp maybe_persist_session(%{session_id: session_id} = state) do

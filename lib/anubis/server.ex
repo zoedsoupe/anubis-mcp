@@ -185,6 +185,26 @@ defmodule Anubis.Server do
   """
   @callback server_instructions() :: String.t() | nil
 
+  @doc """
+  Called when a session is being auto-recovered after expiry.
+
+  Invoked during `auto_initialize/1` instead of the normal client handshake.
+  Receives the session ID and the current frame (pre-populated from the session
+  store if one is configured).
+
+  Return values:
+  - `{:ok, frame}` — accept recovery using synthetic client info
+  - `{:ok, client_info, frame}` — accept recovery and supply real client info
+  - `{:error, reason}` — reject recovery; the client receives an internal error
+
+  If this callback is not implemented, the default behavior is unchanged:
+  synthetic client info is used and `init/2` is called normally.
+  """
+  @callback handle_session_expired(session_id :: String.t(), Frame.t()) ::
+              {:ok, Frame.t()}
+              | {:ok, client_info :: map(), Frame.t()}
+              | {:error, reason :: term()}
+
   @callback handle_info(event :: term, Frame.t()) ::
               {:noreply, Frame.t()}
               | {:noreply, Frame.t(), timeout() | :hibernate | {:continue, arg :: term}}
@@ -238,7 +258,8 @@ defmodule Anubis.Server do
                       handle_sampling: 3,
                       handle_completion: 3,
                       handle_roots: 3,
-                      server_instructions: 0
+                      server_instructions: 0,
+                      handle_session_expired: 2
 
   @doc false
   defguard is_server_capability(capability) when capability in @server_capabilities
