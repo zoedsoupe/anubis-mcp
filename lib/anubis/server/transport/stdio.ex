@@ -37,7 +37,8 @@ defmodule Anubis.Server.Transport.STDIO do
   defschema(:parse_options, [
     {:server, {:required, {:oneof, [{:custom, &Anubis.genserver_name/1}, :pid, {:tuple, [:atom, :any]}]}}},
     {:name, {:custom, &Anubis.genserver_name/1}},
-    {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}}
+    {:request_timeout, {:integer, {:default, to_timeout(second: 30)}}},
+    {:io_device, {:any, {:default, :stdio}}}
   ])
 
   @impl Transport
@@ -84,7 +85,8 @@ defmodule Anubis.Server.Transport.STDIO do
     state = %{
       server: opts.server,
       reading_task: nil,
-      request_timeout: opts.request_timeout
+      request_timeout: opts.request_timeout,
+      io_device: opts.io_device
     }
 
     Logger.metadata(mcp_transport: :stdio, mcp_server: state.server)
@@ -100,20 +102,20 @@ defmodule Anubis.Server.Transport.STDIO do
   end
 
   @impl GenServer
-  def handle_continue(:start_reading, state) do
-    task = Task.async(fn -> read_from_stdin() end)
+  def handle_continue(:start_reading, %{io_device: device} = state) do
+    task = Task.async(fn -> read_from_stdin(device) end)
     {:noreply, %{state | reading_task: task}}
   end
 
   @impl GenServer
-  def handle_info({ref, result}, %{reading_task: %Task{ref: ref}} = state) when is_reference(ref) do
+  def handle_info({ref, result}, %{reading_task: %Task{ref: ref}, io_device: device} = state) when is_reference(ref) do
     Process.demonitor(ref, [:flush])
 
     case result do
       {:ok, data} ->
         handle_incoming_data(data, state)
 
-        task = Task.async(fn -> read_from_stdin() end)
+        task = Task.async(fn -> read_from_stdin(device) end)
         {:noreply, %{state | reading_task: task}}
 
       {:error, :eof} ->
@@ -144,7 +146,7 @@ defmodule Anubis.Server.Transport.STDIO do
       %{transport: :stdio, message_size: byte_size(message)}
     )
 
-    IO.write(message)
+    IO.write(state.io_device, message)
     {:reply, :ok, state}
   end
 
@@ -165,7 +167,8 @@ defmodule Anubis.Server.Transport.STDIO do
 
   @impl GenServer
   def terminate(reason, _state) do
-    Logging.transport_event("terminating", %{reason: reason}, level: :info)
+    level = if reason in [:normal, :shutdown] or match?({:shutdown, _}, reason), do: :debug, else: :info
+    Logging.transport_event("terminating", %{reason: reason}, level: level)
 
     Telemetry.execute(
       Telemetry.event_transport_terminate(),
@@ -178,8 +181,8 @@ defmodule Anubis.Server.Transport.STDIO do
 
   # Private helper functions
 
-  defp read_from_stdin do
-    case IO.read(:stdio, :line) do
+  defp read_from_stdin(device) do
+    case IO.read(device, :line) do
       :eof ->
         Logging.transport_event("eof", "End of input stream", level: :info)
 
@@ -257,14 +260,14 @@ defmodule Anubis.Server.Transport.STDIO do
     if Message.is_notification(message) do
       GenServer.cast(session_pid, {:mcp_notification, message, context})
     else
-      forward_request_to_session(session_pid, message, context, state.request_timeout)
+      forward_request_to_session(session_pid, message, context, state)
     end
   end
 
-  defp forward_request_to_session(session_pid, message, context, timeout) do
-    case GenServer.call(session_pid, {:mcp_request, message, context}, timeout) do
+  defp forward_request_to_session(session_pid, message, context, state) do
+    case GenServer.call(session_pid, {:mcp_request, message, context}, state.request_timeout) do
       {:ok, response} when is_binary(response) ->
-        IO.write(response <> "\n")
+        IO.write(state.io_device, response <> "\n")
 
       {:ok, nil} ->
         :ok
