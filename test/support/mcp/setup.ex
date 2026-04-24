@@ -136,10 +136,12 @@ defmodule Anubis.MCP.Setup do
          task_supervisor: task_sup}
       )
 
-    transport =
-      start_supervised!({STDIO, name: transport_name, server: server_module})
+    io_device = start_supervised!({TestIODevice, []})
 
-    Map.merge(ctx, %{server: session, transport: transport})
+    transport =
+      start_supervised!({STDIO, name: transport_name, server: server_module, io_device: io_device})
+
+    Map.merge(ctx, %{server: session, transport: transport, io_device: io_device})
   end
 
   def initialized_client(context) do
