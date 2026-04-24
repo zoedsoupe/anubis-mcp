@@ -28,6 +28,9 @@ defmodule Anubis.Server.Registry.Local do
   end
 
   @impl Anubis.Server.Registry
+  def session_name(registry_name, session_id), do: :"#{registry_name}.session.#{session_id}"
+
+  @impl Anubis.Server.Registry
   def register_session(name, session_id, pid) do
     GenServer.call(name, {:register, session_id, pid})
   end

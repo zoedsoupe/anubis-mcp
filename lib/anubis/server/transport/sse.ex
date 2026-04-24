@@ -355,7 +355,7 @@ defmodule Anubis.Server.Transport.SSE do
 
   defp start_new_session(session_id, state) do
     session_config = ServerSupervisor.get_session_config(state.server)
-    session_name = Registry.session_name(state.server, session_id)
+    session_name = Registry.resolve_session_name(state.registry_mod, state.registry_name, session_id)
 
     session_opts = [
       session_id: session_id,
