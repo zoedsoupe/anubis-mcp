@@ -11,6 +11,9 @@ defmodule Anubis.Server.Registry.None do
   def child_spec(_opts), do: :ignore
 
   @impl Anubis.Server.Registry
+  def session_name(_registry_name, session_id), do: :"Anubis.stdio.session.#{session_id}"
+
+  @impl Anubis.Server.Registry
   def register_session(_name, _session_id, _pid), do: :ok
 
   @impl Anubis.Server.Registry

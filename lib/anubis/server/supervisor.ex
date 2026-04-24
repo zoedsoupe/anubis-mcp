@@ -19,6 +19,7 @@ defmodule Anubis.Server.Supervisor do
           {:transport, transport}
           | {:name, Supervisor.name()}
           | {:registry, {module(), keyword()}}
+          | {:supervisor, {module(), keyword()}}
           | {:session_idle_timeout, pos_integer() | nil}
           | {:request_timeout, pos_integer() | nil}
 
@@ -32,6 +33,7 @@ defmodule Anubis.Server.Supervisor do
       * `:transport` - Transport configuration (required)
       * `:name` - Supervisor name (optional, defaults to atom name)
       * `:registry` - `{module, opts}` for custom registry (auto-selected by default)
+      * `:supervisor` - `{module, opts}` for custom session supervisor (defaults to `{DynamicSupervisor, []}`)
       * `:session_idle_timeout` - Time in milliseconds before idle sessions expire (default: 30 minutes)
       * `:request_timeout` - Time limit in milliseconds for server requests (defaults to 30s)
   """
@@ -43,12 +45,13 @@ defmodule Anubis.Server.Supervisor do
   end
 
   @doc """
-  Starts a new session under the DynamicSupervisor.
+  Starts a new session under the configured session supervisor.
   """
   @spec start_session(module(), keyword()) :: DynamicSupervisor.on_start_child()
   def start_session(server, opts) do
     sup_name = Registry.session_supervisor_name(server)
-    DynamicSupervisor.start_child(sup_name, {Session, opts})
+    sup_mod = get_session_supervisor_mod(server)
+    sup_mod.start_child(sup_name, {Session, opts})
   end
 
   @doc """
@@ -61,7 +64,8 @@ defmodule Anubis.Server.Supervisor do
     case registry_mod.lookup_session(registry_name, session_id) do
       {:ok, pid} ->
         sup_name = Registry.session_supervisor_name(server)
-        DynamicSupervisor.terminate_child(sup_name, pid)
+        sup_mod = get_session_supervisor_mod(server)
+        sup_mod.terminate_child(sup_name, pid)
 
       {:error, :not_found} ->
         {:error, :not_found}
@@ -79,6 +83,9 @@ defmodule Anubis.Server.Supervisor do
       task_supervisor = Registry.task_supervisor_name(server)
 
       {registry_mod, registry_opts} = resolve_registry(opts, transport, server)
+      {sup_mod, _sup_opts} = resolve_session_supervisor(opts)
+
+      :persistent_term.put({__MODULE__, server, :session_supervisor_mod}, sup_mod)
 
       {layer, transport_opts} = parse_transport_child(transport, server)
 
@@ -107,7 +114,7 @@ defmodule Anubis.Server.Supervisor do
             build_stdio_children(server, layer, transport_opts, task_supervisor, session_config)
 
           _ ->
-            build_http_children(server, registry_mod, registry_opts, layer, transport_opts, task_supervisor)
+            build_http_children(server, registry_mod, registry_opts, sup_mod, layer, transport_opts, task_supervisor)
         end
 
       Supervisor.init(children, strategy: :one_for_all)
@@ -119,6 +126,18 @@ defmodule Anubis.Server.Supervisor do
   @doc false
   def get_session_config(server) do
     :persistent_term.get({__MODULE__, server, :session_config})
+  end
+
+  @doc false
+  def get_session_supervisor_mod(server) do
+    :persistent_term.get({__MODULE__, server, :session_supervisor_mod}, DynamicSupervisor)
+  end
+
+  defp resolve_session_supervisor(opts) do
+    case Keyword.get(opts, :supervisor) do
+      {mod, sup_opts} -> {mod, sup_opts}
+      nil -> {DynamicSupervisor, []}
+    end
   end
 
   # Auto-select registry: STDIO -> None, HTTP -> Local
@@ -160,8 +179,8 @@ defmodule Anubis.Server.Supervisor do
     ]
   end
 
-  # For HTTP transports: DynamicSupervisor for sessions + registry
-  defp build_http_children(server, registry_mod, registry_opts, layer, transport_opts, task_supervisor) do
+  # For HTTP transports: session supervisor (DynamicSupervisor or pluggable) + registry
+  defp build_http_children(server, registry_mod, registry_opts, sup_mod, layer, transport_opts, task_supervisor) do
     session_sup_name = Registry.session_supervisor_name(server)
 
     registry_child =
@@ -172,7 +191,7 @@ defmodule Anubis.Server.Supervisor do
 
     children = [
       {Task.Supervisor, name: task_supervisor},
-      {DynamicSupervisor, name: session_sup_name, strategy: :one_for_one},
+      {sup_mod, name: session_sup_name, strategy: :one_for_one},
       {layer, transport_opts}
     ]
 
