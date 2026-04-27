@@ -64,15 +64,6 @@ defmodule Anubis.Client.Elicitation do
 
           {:error, reason} ->
             send_elicitation_error(id, reason, "elicitation_error", %{}, state)
-
-          other ->
-            send_elicitation_error(
-              id,
-              "Invalid elicitation callback return: #{inspect(other)}",
-              "invalid_elicitation_return",
-              %{},
-              state
-            )
         end
       rescue
         e ->
