@@ -156,7 +156,7 @@ defmodule StubTransport do
   end
 
   defp forward_to_session(message, state) when Message.is_request(message) do
-    if message["method"] == "sampling/createMessage" do
+    if message["method"] in ~w(sampling/createMessage elicitation/create roots/list) do
       :ok
     else
       session_name =

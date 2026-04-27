@@ -96,6 +96,7 @@ defmodule Anubis.Server do
       end
   """
 
+  alias Anubis.MCP.ElicitationSchema
   alias Anubis.Server.Component
   alias Anubis.Server.Component.Prompt
   alias Anubis.Server.Component.Resource
@@ -245,6 +246,14 @@ defmodule Anubis.Server do
               {:noreply, Frame.t()}
               | {:stop, reason :: term(), Frame.t()}
 
+  @callback handle_elicitation(
+              response :: map(),
+              request_id :: String.t(),
+              Frame.t()
+            ) ::
+              {:noreply, Frame.t()}
+              | {:stop, reason :: term(), Frame.t()}
+
   @optional_callbacks handle_notification: 2,
                       handle_info: 2,
                       handle_call: 3,
@@ -258,6 +267,7 @@ defmodule Anubis.Server do
                       handle_sampling: 3,
                       handle_completion: 3,
                       handle_roots: 3,
+                      handle_elicitation: 3,
                       server_instructions: 0,
                       handle_session_expired: 2
 
@@ -700,5 +710,69 @@ defmodule Anubis.Server do
     timeout = Keyword.get(opts, :timeout, 30_000)
     send(self(), {:send_roots_request, timeout})
     :ok
+  end
+
+  @doc """
+  Sends an `elicitation/create` request to the client.
+
+  Per the MCP 2025-06-18 specification, the server provides a human-readable
+  `message` and a restricted-subset JSON `requested_schema` describing the
+  expected user input. The client presents this to the user and returns one of
+  three actions: `accept` (with content matching the schema), `decline`, or
+  `cancel`.
+
+  This is an asynchronous operation. The response will be delivered to your
+  `handle_elicitation/3` callback.
+
+  The `requested_schema` is validated synchronously before any wire I/O. The
+  client must advertise the `elicitation` capability or the call returns
+  `{:error, :capability_not_supported}` after enqueueing.
+
+  ## Schema Subset
+
+    * Top level must be `%{"type" => "object", "properties" => %{...}}`
+    * Properties may declare `"type"` of `"string"`, `"number"`, `"integer"`,
+      `"boolean"`, or use `"enum"` (string-only)
+    * String properties may set `"format"` of `"email"`, `"uri"`, `"date"`,
+      or `"date-time"`
+
+  Per the spec, **servers MUST NOT request sensitive information** through
+  elicitation.
+
+  ## Example
+
+      defmodule MyServer.Tools.Greet do
+        use Anubis.Server.Component, type: :tool
+
+        @impl true
+        def execute(_args, frame) do
+          Anubis.Server.send_elicitation_request("What's your name?", %{
+            "type" => "object",
+            "properties" => %{
+              "name" => %{"type" => "string", "minLength" => 1}
+            },
+            "required" => ["name"]
+          })
+
+          {:reply, "asked for name", frame}
+        end
+      end
+  """
+  @spec send_elicitation_request(String.t(), map(), configuration) ::
+          :ok | {:error, term()}
+        when configuration: list({:timeout, non_neg_integer() | nil})
+  def send_elicitation_request(message, requested_schema, opts \\ [])
+      when is_binary(message) and is_map(requested_schema) do
+    with :ok <- ElicitationSchema.validate(requested_schema) do
+      timeout = Keyword.get(opts, :timeout, 30_000)
+
+      params = %{
+        "message" => message,
+        "requestedSchema" => requested_schema
+      }
+
+      send(self(), {:send_elicitation_request, params, requested_schema, timeout})
+      :ok
+    end
   end
 end

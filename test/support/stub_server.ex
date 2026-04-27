@@ -95,6 +95,13 @@ defmodule StubServer do
     {:noreply, frame}
   end
 
+  @impl true
+  def handle_elicitation(response, request_id, frame) do
+    frame = assign(frame, :last_elicitation_response, response)
+    frame = assign(frame, :last_elicitation_request_id, request_id)
+    {:noreply, frame}
+  end
+
   defp handle_tool_call(%{"arguments" => %{"name" => name}, "name" => "greet"}, frame) do
     Response.tool()
     |> Response.text("Hello #{name}!")

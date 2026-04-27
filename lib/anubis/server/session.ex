@@ -15,6 +15,7 @@ defmodule Anubis.Server.Session do
 
   import Peri
 
+  alias Anubis.MCP.ElicitationSchema
   alias Anubis.MCP.Error
   alias Anubis.MCP.ID
   alias Anubis.MCP.Message
@@ -341,6 +342,15 @@ defmodule Anubis.Server.Session do
 
   def handle_info({:roots_request_timeout, request_id}, state) do
     handle_roots_timeout(request_id, state)
+  end
+
+  def handle_info({:send_elicitation_request, params, requested_schema, timeout}, state) do
+    request_id = ID.generate_request_id()
+    handle_elicitation_request_send(request_id, params, requested_schema, timeout, state)
+  end
+
+  def handle_info({:elicitation_request_timeout, request_id}, state) do
+    handle_elicitation_timeout(request_id, state)
   end
 
   def handle_info(event, %{server_module: module} = state) do
@@ -855,6 +865,9 @@ defmodule Anubis.Server.Session do
       "roots/list" ->
         handle_roots(result["roots"] || [], request_id, state)
 
+      "elicitation/create" ->
+        handle_elicitation(result, request_id, request_info, state)
+
       _ ->
         {:noreply, state}
     end
@@ -965,6 +978,129 @@ defmodule Anubis.Server.Session do
       frame = prepare_frame(state)
 
       case module.handle_roots(roots, request_id, frame) do
+        {:noreply, new_frame} ->
+          {:noreply, %{state | frame: new_frame}}
+
+        {:stop, reason, new_frame} ->
+          {:stop, reason, %{state | frame: new_frame}}
+      end
+    else
+      {:noreply, state}
+    end
+  end
+
+  # Elicitation request helpers
+
+  defp handle_elicitation_request_send(request_id, params, requested_schema, timeout, state) do
+    timer_ref =
+      Process.send_after(self(), {:elicitation_request_timeout, request_id}, timeout)
+
+    request_info = %{
+      id: request_id,
+      method: "elicitation/create",
+      session_id: state.session_id,
+      timer_ref: timer_ref,
+      requested_schema: requested_schema
+    }
+
+    state = put_in(state.server_requests[request_id], request_info)
+
+    with :ok <- validate_client_capability(state, "elicitation"),
+         {:ok, request_data} <-
+           encode_request("elicitation/create", params, request_id),
+         :ok <- send_to_transport(state.transport, request_data, timeout: state.timeout) do
+      Logging.server_event("sent_elicitation_request", %{request_id: request_id})
+      {:noreply, state}
+    else
+      {:error, error} ->
+        Process.cancel_timer(timer_ref)
+
+        state = %{
+          state
+          | server_requests: Map.delete(state.server_requests, request_id)
+        }
+
+        Logging.server_event(
+          "failed_send_elicitation_request",
+          %{request_id: request_id, error: error},
+          level: :error
+        )
+
+        {:noreply, state}
+    end
+  end
+
+  defp handle_elicitation_timeout(request_id, state) when is_binary(request_id) do
+    state.server_requests
+    |> Map.pop(request_id)
+    |> handle_elicitation_timeout(state)
+  end
+
+  defp handle_elicitation_timeout({nil, _}, state), do: {:noreply, state}
+
+  defp handle_elicitation_timeout({%{id: request_id}, requests}, state) do
+    with {:ok, notification} <-
+           encode_notification("notifications/cancelled", %{
+             "requestId" => request_id,
+             "reason" => "timeout"
+           }),
+         :ok <- send_to_transport(state.transport, notification, timeout: state.timeout) do
+      Logging.server_event(
+        "elicitation_request_timeout_cancelled",
+        %{request_id: request_id}
+      )
+    end
+
+    Logging.server_event(
+      "elicitation_request_timeout",
+      %{request_id: request_id},
+      level: :warning
+    )
+
+    {:noreply, %{state | server_requests: requests}}
+  end
+
+  defp handle_elicitation(result, request_id, request_info, state) do
+    case sanitize_elicitation_result(result, request_info) do
+      {:ok, sanitized} ->
+        dispatch_elicitation(sanitized, request_id, state)
+
+      {:error, reason} ->
+        Logging.server_event(
+          "invalid_elicitation_response",
+          %{request_id: request_id, reason: reason},
+          level: :error
+        )
+
+        {:noreply, state}
+    end
+  end
+
+  defp sanitize_elicitation_result(%{"action" => "accept", "content" => content} = result, %{requested_schema: schema})
+       when is_map(content) do
+    case ElicitationSchema.validate_content(content, schema) do
+      :ok -> {:ok, result}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp sanitize_elicitation_result(%{"action" => "accept"}, _info) do
+    {:error, "accept action missing content"}
+  end
+
+  defp sanitize_elicitation_result(%{"action" => action} = result, _info) when action in ~w(decline cancel) do
+    {:ok, result}
+  end
+
+  defp sanitize_elicitation_result(_result, _info) do
+    {:error, "elicitation result missing valid action"}
+  end
+
+  defp dispatch_elicitation(result, request_id, %{server_module: module} = state) do
+    if Anubis.exported?(module, :handle_elicitation, 3) do
+      frame = prepare_frame(state)
+
+      case module.handle_elicitation(result, request_id, frame) do
         {:noreply, new_frame} ->
           {:noreply, %{state | frame: new_frame}}
 
