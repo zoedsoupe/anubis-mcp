@@ -20,6 +20,9 @@ defmodule Anubis.Client.State do
           progress_callbacks: %{String.t() => Client.progress_callback()},
           log_callback: Client.log_callback() | nil,
           sampling_callback: (map() -> {:ok, map()} | {:error, String.t()}) | nil,
+          elicitation_callback:
+            (String.t(), map() -> {:accept, map()} | :decline | :cancel | {:error, String.t()})
+            | nil,
           roots: %{String.t() => Client.root()},
           ready_waiters: [GenServer.from()],
           transport_parse_state: map | nil
@@ -37,6 +40,7 @@ defmodule Anubis.Client.State do
     progress_callbacks: %{},
     log_callback: nil,
     sampling_callback: nil,
+    elicitation_callback: nil,
     roots: %{},
     ready_waiters: [],
     transport_parse_state: nil
@@ -612,6 +616,38 @@ defmodule Anubis.Client.State do
   @spec clear_sampling_callback(t()) :: t()
   def clear_sampling_callback(state) do
     %{state | sampling_callback: nil}
+  end
+
+  @doc """
+  Sets the elicitation callback function.
+
+  Callback receives `(message, requested_schema)` and returns one of
+  `{:accept, content}`, `:decline`, `:cancel`, or `{:error, reason}`.
+  """
+  @spec set_elicitation_callback(
+          t(),
+          (String.t(), map() ->
+             {:accept, map()} | :decline | :cancel | {:error, String.t()})
+        ) :: t()
+  def set_elicitation_callback(state, callback) when is_function(callback, 2) do
+    %{state | elicitation_callback: callback}
+  end
+
+  @doc """
+  Gets the elicitation callback function.
+  """
+  @spec get_elicitation_callback(t()) ::
+          (String.t(), map() ->
+             {:accept, map()} | :decline | :cancel | {:error, String.t()})
+          | nil
+  def get_elicitation_callback(state), do: state.elicitation_callback
+
+  @doc """
+  Clears the elicitation callback function.
+  """
+  @spec clear_elicitation_callback(t()) :: t()
+  def clear_elicitation_callback(state) do
+    %{state | elicitation_callback: nil}
   end
 
   # Helper functions

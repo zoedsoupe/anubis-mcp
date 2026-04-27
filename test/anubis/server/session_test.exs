@@ -359,4 +359,122 @@ defmodule Anubis.Server.SessionTest do
       assert map_size(state.server_requests) == 0
     end
   end
+
+  describe "elicitation requests" do
+    setup context do
+      context
+      |> Map.put(:client_capabilities, %{"elicitation" => %{}})
+      |> initialized_server()
+    end
+
+    @schema %{
+      "type" => "object",
+      "properties" => %{"name" => %{"type" => "string"}},
+      "required" => ["name"]
+    }
+
+    test "server emits elicitation/create on the wire", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+      send(session, {:send_elicitation_request, params, @schema, 30_000})
+
+      Process.sleep(10)
+
+      assert_receive {:send_message, request_data}
+      assert {:ok, [decoded]} = Message.decode(request_data)
+      assert Message.is_request(decoded)
+      assert decoded["method"] == "elicitation/create"
+      assert decoded["params"]["message"] == "Name?"
+      assert decoded["params"]["requestedSchema"] == @schema
+    end
+
+    test "accept response routes to handle_elicitation/3", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+      send(session, {:send_elicitation_request, params, @schema, 30_000})
+
+      Process.sleep(10)
+      assert_receive {:send_message, request_data}
+      assert {:ok, [decoded]} = Message.decode(request_data)
+      request_id = decoded["id"]
+
+      response = %{
+        "id" => request_id,
+        "result" => %{"action" => "accept", "content" => %{"name" => "octocat"}}
+      }
+
+      :ok = GenServer.cast(session, {:mcp_response, response, %{}})
+      Process.sleep(10)
+
+      state = :sys.get_state(session)
+      assert state.frame.assigns.last_elicitation_response == response["result"]
+      assert state.frame.assigns.last_elicitation_request_id == request_id
+      assert map_size(state.server_requests) == 0
+    end
+
+    test "decline response routes to handle_elicitation/3", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+      send(session, {:send_elicitation_request, params, @schema, 30_000})
+
+      Process.sleep(10)
+      assert_receive {:send_message, request_data}
+      assert {:ok, [decoded]} = Message.decode(request_data)
+      request_id = decoded["id"]
+
+      response = %{"id" => request_id, "result" => %{"action" => "decline"}}
+      :ok = GenServer.cast(session, {:mcp_response, response, %{}})
+      Process.sleep(10)
+
+      state = :sys.get_state(session)
+      assert state.frame.assigns.last_elicitation_response["action"] == "decline"
+    end
+
+    test "invalid content does not reach handle_elicitation/3", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+      send(session, {:send_elicitation_request, params, @schema, 30_000})
+
+      Process.sleep(10)
+      assert_receive {:send_message, request_data}
+      assert {:ok, [decoded]} = Message.decode(request_data)
+      request_id = decoded["id"]
+
+      response = %{
+        "id" => request_id,
+        "result" => %{"action" => "accept", "content" => %{"name" => 42}}
+      }
+
+      :ok = GenServer.cast(session, {:mcp_response, response, %{}})
+      Process.sleep(10)
+
+      state = :sys.get_state(session)
+      refute Map.has_key?(state.frame.assigns, :last_elicitation_response)
+    end
+
+    test "send_elicitation_request rejects invalid schema synchronously" do
+      bad_schema = %{
+        "type" => "object",
+        "properties" => %{"x" => %{"type" => "object"}}
+      }
+
+      assert {:error, _} = Anubis.Server.send_elicitation_request("hi", bad_schema)
+    end
+  end
 end

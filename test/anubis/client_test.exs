@@ -1340,6 +1340,212 @@ defmodule Anubis.ClientTest do
     end
   end
 
+  describe "elicitation" do
+    setup :initialized_client
+
+    @schema %{
+      "type" => "object",
+      "properties" => %{"name" => %{"type" => "string"}},
+      "required" => ["name"]
+    }
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "register_elicitation_callback sets the callback", %{client: client} do
+      callback = fn _msg, _schema -> {:accept, %{"name" => "x"}} end
+
+      :ok = Anubis.Client.register_elicitation_callback(client, callback)
+
+      state = :sys.get_state(client)
+      assert is_function(state.elicitation_callback, 2)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "unregister_elicitation_callback removes the callback", %{client: client} do
+      callback = fn _msg, _schema -> :decline end
+
+      :ok = Anubis.Client.register_elicitation_callback(client, callback)
+      :ok = Anubis.Client.unregister_elicitation_callback(client)
+
+      state = :sys.get_state(client)
+      assert is_nil(state.elicitation_callback)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "handles elicitation/create accept", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_elicitation_callback(client, fn message, schema ->
+          send(test_pid, {:elicit_called, message, schema})
+          {:accept, %{"name" => "octocat"}}
+        end)
+
+      request_id = "elicit_req_accept"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        decoded = JSON.decode!(message)
+        assert decoded["id"] == request_id
+        assert decoded["result"]["action"] == "accept"
+        assert decoded["result"]["content"] == %{"name" => "octocat"}
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+      assert_receive {:elicit_called, "Name?", @schema}
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "handles elicitation/create decline", %{client: client} do
+      :ok =
+        Anubis.Client.register_elicitation_callback(client, fn _msg, _schema -> :decline end)
+
+      request_id = "elicit_req_decline"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        decoded = JSON.decode!(message)
+        assert decoded["result"]["action"] == "decline"
+        refute Map.has_key?(decoded["result"], "content")
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "handles elicitation/create cancel", %{client: client} do
+      :ok =
+        Anubis.Client.register_elicitation_callback(client, fn _msg, _schema -> :cancel end)
+
+      request_id = "elicit_req_cancel"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        decoded = JSON.decode!(message)
+        assert decoded["result"]["action"] == "cancel"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "rejects accept content not matching schema", %{client: client} do
+      :ok =
+        Anubis.Client.register_elicitation_callback(client, fn _msg, _schema ->
+          {:accept, %{"name" => 42}}
+        end)
+
+      request_id = "elicit_req_invalid"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        decoded = JSON.decode!(message)
+        assert Map.has_key?(decoded, "error")
+        assert decoded["error"]["message"] =~ "does not match requested schema"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "errors when no callback registered", %{client: client} do
+      request_id = "elicit_req_no_cb"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        decoded = JSON.decode!(message)
+        assert decoded["error"]["message"] =~ "No elicitation callback"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    test "errors when capability not advertised", %{client: client} do
+      request_id = "elicit_req_no_cap"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        decoded = JSON.decode!(message)
+        assert decoded["error"]["message"] =~ "elicitation capability"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "handles elicitation callback exception", %{client: client} do
+      :ok =
+        Anubis.Client.register_elicitation_callback(client, fn _msg, _schema ->
+          raise "boom"
+        end)
+
+      request_id = "elicit_req_raise"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        decoded = JSON.decode!(message)
+        assert decoded["error"]["message"] =~ "Elicitation callback error"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+  end
+
   describe "automatic roots notification" do
     setup :initialized_client
 

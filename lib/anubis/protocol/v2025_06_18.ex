@@ -32,9 +32,14 @@ defmodule Anubis.Protocol.V2025_06_18 do
     | @base_features
   ]
 
-  @request_methods V2025_03_26.request_methods()
+  @request_methods ["elicitation/create" | V2025_03_26.request_methods()]
 
   @notification_methods V2025_03_26.notification_methods()
+
+  @elicitation_create_params %{
+    "message" => {:required, :string},
+    "requestedSchema" => {:required, {:custom, &Anubis.MCP.ElicitationSchema.validate/1}}
+  }
 
   @impl true
   def version, do: @version
@@ -54,6 +59,8 @@ defmodule Anubis.Protocol.V2025_06_18 do
   end
 
   @impl true
+  def request_params_schema("elicitation/create"), do: @elicitation_create_params
+
   def request_params_schema(method) do
     V2025_03_26.request_params_schema(method)
   end
