@@ -86,6 +86,7 @@ defmodule Anubis.Client do
   import Peri
 
   alias Anubis.Client.Cache
+  alias Anubis.Client.Elicitation
   alias Anubis.Client.Handlers
   alias Anubis.Client.Operation
   alias Anubis.Client.Request
@@ -99,14 +100,14 @@ defmodule Anubis.Client do
 
   require Message
 
-  @client_capabilities ~w(roots sampling)a
+  @client_capabilities ~w(roots sampling elicitation)a
 
   @default_protocol_version Protocol.latest_version()
   @default_operation_timeout to_timeout(second: 30)
 
   @type t :: GenServer.server()
 
-  @type capability :: :roots | :sampling
+  @type capability :: :roots | :sampling | :elicitation
   @type capability_opts :: [list_changed?: boolean()]
   @type capabilities_input :: [capability() | {capability(), capability_opts()} | map()]
 
@@ -190,14 +191,16 @@ defmodule Anubis.Client do
   - `:roots` - Capabilities related to the roots resource
     - `:listChanged` - Whether the client can handle listChanged notifications
   - `:sampling` - Capabilities related to sampling
+  - `:elicitation` - Capabilities related to elicitation (server-initiated user input requests, 2025-06-18)
 
-  MCP describes these client capabilities on it [specification](https://spec.modelcontextprotocol.io/specification/2024-11-05/client/)
+  MCP describes these client capabilities on its [specification](https://spec.modelcontextprotocol.io/specification/2025-06-18/client/)
   """
   @type capabilities :: %{
           optional(:roots | String.t()) => %{
             optional(:listChanged | String.t()) => boolean
           },
-          optional(:sampling | String.t()) => %{}
+          optional(:sampling | String.t()) => %{},
+          optional(:elicitation | String.t()) => %{}
         }
 
   @typedoc """
@@ -899,6 +902,45 @@ defmodule Anubis.Client do
     GenServer.call(client, :unregister_sampling_callback)
   end
 
+  @typedoc """
+  Elicitation callback function type.
+
+  Called when the server sends an `elicitation/create` request. The callback
+  receives the human-readable `message` and the `requestedSchema` (a restricted
+  JSON Schema subset). It must return one of:
+
+    * `{:accept, content}` — user submitted `content` (a flat map matching the schema)
+    * `:decline` — user explicitly declined
+    * `:cancel` — user dismissed without an explicit choice
+    * `{:error, reason}` — internal error; sent back as a JSON-RPC error
+  """
+  @type elicitation_callback ::
+          (message :: String.t(), requested_schema :: map() ->
+             {:accept, map()} | :decline | :cancel | {:error, String.t()})
+
+  @doc """
+  Registers a callback function to handle elicitation requests from the server.
+
+  The client must advertise the `elicitation` capability during initialization
+  for servers to send `elicitation/create` requests.
+
+  Per the MCP specification, the client SHOULD present the request to the user
+  with clear UI, allow them to review and modify their response, and provide
+  decline/cancel options.
+  """
+  @spec register_elicitation_callback(t, elicitation_callback) :: :ok
+  def register_elicitation_callback(client, callback) when is_function(callback, 2) do
+    GenServer.call(client, {:register_elicitation_callback, callback})
+  end
+
+  @doc """
+  Unregisters the elicitation callback.
+  """
+  @spec unregister_elicitation_callback(t) :: :ok
+  def unregister_elicitation_callback(client) do
+    GenServer.call(client, :unregister_elicitation_callback)
+  end
+
   @doc """
   Closes the client connection and terminates the process.
   """
@@ -1019,6 +1061,14 @@ defmodule Anubis.Client do
 
   def handle_call(:unregister_sampling_callback, _from, state) do
     {:reply, :ok, State.clear_sampling_callback(state)}
+  end
+
+  def handle_call({:register_elicitation_callback, callback}, _from, state) do
+    {:reply, :ok, State.set_elicitation_callback(state, callback)}
+  end
+
+  def handle_call(:unregister_elicitation_callback, _from, state) do
+    {:reply, :ok, State.clear_elicitation_callback(state)}
   end
 
   def handle_call({:register_progress_callback, token, callback}, _from, state) do
@@ -1237,6 +1287,10 @@ defmodule Anubis.Client do
 
   defp handle_server_request(%{"method" => "sampling/createMessage"} = request, state) do
     {:noreply, Sampling.handle_request(request, state)}
+  end
+
+  defp handle_server_request(%{"method" => "elicitation/create"} = request, state) do
+    {:noreply, Elicitation.handle_request(request, state)}
   end
 
   @impl true

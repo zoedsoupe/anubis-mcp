@@ -9,7 +9,7 @@ defmodule Anubis.MCP.Message do
 
   # MCP message schemas
 
-  @request_methods ~w(initialize ping resources/list resources/templates/list resources/read prompts/get prompts/list tools/call tools/list logging/setLevel completion/complete roots/list sampling/createMessage)
+  @request_methods ~w(initialize ping resources/list resources/templates/list resources/read prompts/get prompts/list tools/call tools/list logging/setLevel completion/complete roots/list sampling/createMessage elicitation/create)
 
   @init_params_schema %{
     "protocolVersion" => {:required, :string},
@@ -116,6 +116,11 @@ defmodule Anubis.MCP.Message do
     "maxTokens" => :integer
   }
 
+  @elicitation_create_params %{
+    "message" => {:required, :string},
+    "requestedSchema" => {:required, {:custom, &Anubis.MCP.ElicitationSchema.validate/1}}
+  }
+
   defschema(
     :request_schema,
     %{
@@ -149,6 +154,7 @@ defmodule Anubis.MCP.Message do
   defp parse_request_params_by_method(%{"method" => "logging/setLevel"}), do: {:ok, @set_log_level_params_schema}
   defp parse_request_params_by_method(%{"method" => "completion/complete"}), do: {:ok, @completion_complete_params_schema}
   defp parse_request_params_by_method(%{"method" => "sampling/createMessage"}), do: {:ok, @sampling_create_params}
+  defp parse_request_params_by_method(%{"method" => "elicitation/create"}), do: {:ok, @elicitation_create_params}
   defp parse_request_params_by_method(%{"method" => "roots/list"}), do: {:ok, :map}
   defp parse_request_params_by_method(_), do: {:ok, :map}
 
@@ -232,6 +238,24 @@ defmodule Anubis.MCP.Message do
       get_schema(:response_schema),
       "result",
       get_schema(:sampling_result_schema)
+    ),
+    mode: :strict
+  )
+
+  defschema(
+    :elicitation_result_schema,
+    %{
+      "action" => {:required, {:enum, ~w(accept decline cancel)}},
+      "content" => :map
+    }
+  )
+
+  defschema(
+    :elicitation_response_schema,
+    Map.put(
+      get_schema(:response_schema),
+      "result",
+      get_schema(:elicitation_result_schema)
     ),
     mode: :strict
   )
@@ -557,6 +581,10 @@ defmodule Anubis.MCP.Message do
 
   def encode_sampling_response(response, id) do
     encode_response(response, id, get_schema(:sampling_response_schema))
+  end
+
+  def encode_elicitation_response(response, id) do
+    encode_response(response, id, get_schema(:elicitation_response_schema))
   end
 
   @doc """
