@@ -4,6 +4,7 @@ defmodule Anubis.Server.Component do
   alias Anubis.Server.Component.Prompt
   alias Anubis.Server.Component.Resource
   alias Anubis.Server.Component.Tool
+  alias Anubis.Server.Component.URITemplate
 
   @doc false
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
@@ -21,6 +22,22 @@ defmodule Anubis.Server.Component do
 
     uri = Keyword.get(opts, :uri)
     uri_template = Keyword.get(opts, :uri_template)
+
+    if (type == :resource and uri) && uri_template do
+      raise ArgumentError,
+            "Resource component cannot define both :uri and :uri_template (mutually exclusive)"
+    end
+
+    if type == :resource and uri_template do
+      case URITemplate.parse(uri_template) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          raise ArgumentError, "Invalid :uri_template — #{reason}"
+      end
+    end
+
     basename = if uri && type == :resource, do: Path.basename(uri)
     name = Keyword.get(opts, :name, basename)
     mime_type = Keyword.get(opts, :mime_type, "text/plain")

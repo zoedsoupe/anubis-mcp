@@ -3,6 +3,7 @@ defmodule Anubis.Server.Handlers.Resources do
 
   alias Anubis.MCP.Error
   alias Anubis.Server.Component.Resource
+  alias Anubis.Server.Component.URITemplate
   alias Anubis.Server.Frame
   alias Anubis.Server.Handlers
   alias Anubis.Server.Response
@@ -61,19 +62,24 @@ defmodule Anubis.Server.Handlers.Resources do
   end
 
   defp try_resource_templates([template | rest], server, uri, frame) do
-    case read_single_resource(server, template, uri, frame) do
-      {:error, %Error{code: -32_002}, _frame} ->
-        # Try templates sequentially until one matches or all fail
-        try_resource_templates(rest, server, uri, frame)
+    case URITemplate.match(template.uri_template, uri) do
+      {:ok, vars} ->
+        case read_single_resource(server, template, uri, frame, vars) do
+          {:error, %Error{code: -32_002}, _frame} ->
+            try_resource_templates(rest, server, uri, frame)
 
-      result ->
-        # Either success or a different error (e.g., permission denied)
-        # Return immediately - don't try other templates
-        result
+          result ->
+            result
+        end
+
+      :error ->
+        try_resource_templates(rest, server, uri, frame)
     end
   end
 
-  defp read_single_resource(server, %Resource{handler: nil, mime_type: mime_type}, uri, frame) do
+  defp read_single_resource(server, resource, uri, frame, vars \\ %{})
+
+  defp read_single_resource(server, %Resource{handler: nil, mime_type: mime_type}, uri, frame, _vars) do
     case server.handle_resource_read(uri, frame) do
       {:reply, %Response{} = response, frame} ->
         content = Response.to_protocol(response, uri, mime_type)
@@ -88,8 +94,8 @@ defmodule Anubis.Server.Handlers.Resources do
     end
   end
 
-  defp read_single_resource(_server, %Resource{handler: handler, mime_type: mime_type}, uri, frame) do
-    case handler.read(%{"uri" => uri}, frame) do
+  defp read_single_resource(_server, %Resource{handler: handler, mime_type: mime_type}, uri, frame, vars) do
+    case handler.read(%{"uri" => uri, "params" => vars}, frame) do
       {:reply, %Response{} = response, frame} ->
         content = Response.to_protocol(response, uri, mime_type)
         {:reply, %{"contents" => [content]}, frame}
