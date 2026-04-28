@@ -40,6 +40,32 @@ defmodule Anubis.Server.Component.Resource do
         end
       end
 
+  ## Example with URI template (parameterized resource)
+
+      defmodule MyServer.Resources.UserDoc do
+        use Anubis.Server.Component,
+          type: :resource,
+          uri_template: "file:///docs/{user}/{filename}"
+
+        alias Anubis.Server.Response
+
+        @impl true
+        def read(%{"params" => %{"user" => user, "filename" => name}}, frame) do
+          path = Path.join(["docs", user, name])
+
+          case File.read(path) do
+            {:ok, content} ->
+              {:reply, Response.text(Response.resource(), content), frame}
+
+            {:error, _} ->
+              {:error, Anubis.MCP.Error.resource(:not_found, %{message: "no such file"}), frame}
+          end
+        end
+      end
+
+  Variables in `uri_template` follow RFC 6570 (Level 1 — simple `{var}` expansion).
+  Extracted variables are delivered to `read/2` as the `"params"` key of the first argument.
+
   ## Example with dynamic content
 
       defmodule MyServer.Resources.SystemStatus do
