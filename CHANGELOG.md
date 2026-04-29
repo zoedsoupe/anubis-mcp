@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.2.0...v1.3.0) (2026-04-29)
+
+
+### Features
+
+* **elicitation:** MCP 2025-06-18 elicitation support ([#139](https://github.com/zoedsoupe/anubis-mcp/issues/139)) ([8ab36e2](https://github.com/zoedsoupe/anubis-mcp/commit/8ab36e2f051984a9dc841e7f97e58542e5746800))
+* resource templates with RFC 6570 URI matching ([#141](https://github.com/zoedsoupe/anubis-mcp/issues/141)) ([aaee374](https://github.com/zoedsoupe/anubis-mcp/commit/aaee37489887cd8725821a73b80f71ad21c626e2))
+
+
+### Bug Fixes
+
+* scope POST-with-SSE response to originating conn ([#144](https://github.com/zoedsoupe/anubis-mcp/issues/144)) ([5593006](https://github.com/zoedsoupe/anubis-mcp/commit/5593006ce6bbdcd9e6ce74aff1820247c807a463))
+
 ## [1.2.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.1.1...v1.2.0) (2026-04-24)
 
 
