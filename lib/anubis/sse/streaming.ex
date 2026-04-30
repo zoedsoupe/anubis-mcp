@@ -84,7 +84,7 @@ if Code.ensure_loaded?(Plug) do
               loop(conn, transport, session_id, event_counter + 1)
 
             {:error, reason} ->
-              Logging.transport_event("sse_keepalive_failed", %{session_id: session_id, reason: reason}, level: :error)
+              Logging.transport_event("sse_keepalive_failed", %{session_id: session_id, reason: reason}, level: :warning)
 
               conn
           end
