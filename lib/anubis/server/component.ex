@@ -236,7 +236,7 @@ defmodule Anubis.Server.Component do
   """
   defmacro field(name, type, opts \\ []) when not is_nil(type) and is_list(opts) do
     quote do
-      {unquote(name), Anubis.Server.Component.__build_field__(unquote(type), unquote(opts))}
+      {unquote(name), unquote(__MODULE__).__build_field__(unquote(type), unquote(opts))}
     end
   end
 
@@ -268,7 +268,7 @@ defmodule Anubis.Server.Component do
     type = quote do: {:list, unquote(nested_content)}
 
     quote do
-      {unquote(name), Anubis.Server.Component.__build_field__(unquote(type), unquote(opts))}
+      {unquote(name), unquote(__MODULE__).__build_field__(unquote(type), unquote(opts))}
     end
   end
 
@@ -299,7 +299,7 @@ defmodule Anubis.Server.Component do
       end
 
     quote do
-      {unquote(name), Anubis.Server.Component.__build_field__(unquote(nested_content), unquote(opts))}
+      {unquote(name), unquote(__MODULE__).__build_field__(unquote(nested_content), unquote(opts))}
     end
   end
 
