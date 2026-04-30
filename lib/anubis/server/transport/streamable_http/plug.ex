@@ -246,7 +246,7 @@ if Code.ensure_loaded?(Plug) do
 
       case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
         {:ok, response} when is_binary(response) ->
-          route_sse_response(conn, response, session_id, opts)
+          stream_response_on_conn(conn, response, session_id, session_header)
 
         {:ok, nil} ->
           conn
@@ -268,62 +268,26 @@ if Code.ensure_loaded?(Plug) do
         )
     end
 
-    defp route_sse_response(conn, response, session_id, %{transport: transport} = opts) do
-      handler_pid = StreamableHTTP.get_sse_handler(transport, session_id)
+    # Per MCP 2025-06-18 Streamable HTTP: a POST that opts into SSE response
+    # gets its OWN stream on its OWN HTTP connection, scoped to that request.
+    # Stream the response chunk on this conn and let Plug finalize the chunked
+    # response. Never reuse the session-wide SSE handler (GET stream).
+    defp stream_response_on_conn(conn, response, session_id, session_header) do
+      conn = put_resp_header(conn, session_header, session_id)
+      conn = Streaming.prepare_connection(conn)
 
-      cond do
-        handler_pid && Process.alive?(handler_pid) ->
-          ref = make_ref()
-          send(handler_pid, {:sse_message, response, {self(), ref}})
-
-          receive do
-            {^ref, :ok} ->
-              conn
-              |> put_resp_content_type("application/json")
-              |> send_resp(202, "{}")
-
-            {^ref, {:error, _reason}} ->
-              establish_sse_for_request(conn, response, session_id, opts)
-          after
-            5_000 ->
-              establish_sse_for_request(conn, response, session_id, opts)
-          end
-
-        handler_pid ->
-          StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
-          establish_sse_for_request(conn, response, session_id, opts)
-
-        true ->
-          establish_sse_for_request(conn, response, session_id, opts)
-      end
-    end
-
-    defp establish_sse_for_request(conn, response, session_id, opts) do
-      %{transport: transport, session_header: session_header} = opts
-
-      case StreamableHTTP.register_sse_handler(transport, session_id) do
-        :ok ->
-          handler_pid = self()
-          self_pid = self()
-          Task.start(fn -> send(self_pid, {:sse_message, response}) end)
-
+      case Streaming.send_event(conn, response, 0) do
+        {:ok, conn} ->
           conn
-          |> put_resp_header(session_header, session_id)
-          |> Streaming.prepare_connection()
-          |> Streaming.start(transport, session_id,
-            on_close: fn ->
-              StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
-            end
-          )
 
         {:error, reason} ->
-          Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
-
-          send_jsonrpc_error(
-            conn,
-            Error.protocol(:internal_error, %{reason: reason}),
-            nil
+          Logging.transport_event(
+            "sse_post_send_failed",
+            %{session_id: session_id, reason: inspect(reason)},
+            level: :warning
           )
+
+          conn
       end
     end
 
