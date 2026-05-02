@@ -436,9 +436,9 @@ defmodule Anubis.Server.Component do
   # Builds a native Peri schema fragment from user-facing (type, opts).
   # Replaces the legacy {:mcp_field, type, opts} indirection.
   def __build_field__(type, opts) when is_list(opts) do
-    {required_opt, opts} = Keyword.pop(opts, :required, false)
+    {required_override, opts} = __pop_required_opt__(opts)
     {type, required_from_type} = __pop_required__(type)
-    required = required_opt or required_from_type
+    required = __resolve_required__(required_override, required_from_type)
 
     {type, opts} = __resolve_enum__(type, opts)
 
@@ -448,6 +448,18 @@ defmodule Anubis.Server.Component do
 
     if required, do: {:required, with_meta}, else: with_meta
   end
+
+  # Explicit `required: <bool>` opt wins over the `{:required, t}` type wrapper,
+  # so callers can opt out of a required type at runtime without rebuilding it.
+  defp __pop_required_opt__(opts) do
+    case Keyword.fetch(opts, :required) do
+      {:ok, val} -> {{:set, val}, Keyword.delete(opts, :required)}
+      :error -> {:unset, opts}
+    end
+  end
+
+  defp __resolve_required__({:set, val}, _from_type), do: val
+  defp __resolve_required__(:unset, from_type), do: from_type
 
   defp __pop_required__({:required, t}), do: {t, true}
   defp __pop_required__(t), do: {t, false}
@@ -459,10 +471,12 @@ defmodule Anubis.Server.Component do
     {values, opts} = Keyword.pop(opts, :values)
     {enum_type, opts} = Keyword.pop(opts, :type, :string)
 
-    case values do
-      nil -> {:enum, opts}
-      _ -> {{:enum, values, [type: enum_type]}, opts}
+    if is_nil(values) do
+      raise ArgumentError,
+            "`:enum` field requires a `:values` option listing the allowed values"
     end
+
+    {{:enum, values, [type: enum_type]}, opts}
   end
 
   # Bare-enum type with `type:` opt — promote to typed enum
@@ -567,6 +581,12 @@ defmodule Anubis.Server.Component do
         {:cont, {:field, k, v}}
 
       {:field, k, {:either, {nil, _}} = v} ->
+        {:cont, {:field, k, v}}
+
+      {:field, k, {:meta, {:either, {_, nil}}, _} = v} ->
+        {:cont, {:field, k, v}}
+
+      {:field, k, {:meta, {:either, {nil, _}}, _} = v} ->
         {:cont, {:field, k, v}}
 
       # Lift meta wrapper outside the union so description/title stay at the
