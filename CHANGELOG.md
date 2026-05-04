@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.3.0...v1.3.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* log sse_keepalive_failed at :warning, matching sse_send_failed ([#145](https://github.com/zoedsoupe/anubis-mcp/issues/145)) ([f8dbc43](https://github.com/zoedsoupe/anubis-mcp/commit/f8dbc43e2fc0fd9debd5851aebcb31ab459459bd))
+
+
+### Miscellaneous Chores
+
+* change setup-zig version on ci ([f77a844](https://github.com/zoedsoupe/anubis-mcp/commit/f77a844cd0c706db3240f1c655a7277969940244))
+
+
+### Code Refactoring
+
+* delegate JSON Schema to Peri, retire :mcp_field ([#146](https://github.com/zoedsoupe/anubis-mcp/issues/146)) ([9c674fd](https://github.com/zoedsoupe/anubis-mcp/commit/9c674fd44499a3a0c6ed271748ec7fb44fb4c914))
+
 ## [1.3.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.2.0...v1.3.0) (2026-04-29)
 
 
