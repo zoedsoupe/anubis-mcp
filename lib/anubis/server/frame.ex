@@ -130,11 +130,11 @@ defmodule Anubis.Server.Frame do
                | {:title, String.t() | nil}
                | {:annotations, map() | nil}
   def register_tool(%__MODULE__{} = frame, name, opts) when is_binary(name) do
-    input_schema = Schema.normalize(opts[:input_schema] || %{})
+    input_schema = opts[:input_schema] || %{}
     raw_schema = Component.__clean_schema_for_peri__(input_schema)
     validate_input = fn params -> Peri.validate(raw_schema, params) end
 
-    output_schema = if s = opts[:output_schema], do: Schema.normalize(s)
+    output_schema = opts[:output_schema]
 
     validate_output =
       if output_schema do
@@ -149,7 +149,8 @@ defmodule Anubis.Server.Frame do
       name: name,
       description: opts[:description],
       input_schema: Schema.to_json_schema(input_schema),
-      output_schema: if(output_schema, do: Schema.to_json_schema(output_schema)),
+      output_schema:
+        if(output_schema, do: output_schema |> Component.__make_optional_nullable__() |> Schema.to_json_schema()),
       annotations: annotations,
       meta: opts[:meta],
       title: title,
@@ -166,7 +167,7 @@ defmodule Anubis.Server.Frame do
   @spec register_prompt(t(), String.t(), list(prompt_opt)) :: t()
         when prompt_opt: {:description, String.t() | nil} | {:arguments, map() | nil} | {:title, String.t() | nil}
   def register_prompt(%__MODULE__{} = frame, name, opts) when is_binary(name) do
-    arguments = Schema.normalize(opts[:arguments] || %{})
+    arguments = opts[:arguments] || %{}
     raw_schema = Component.__clean_schema_for_peri__(arguments)
     validate_input = fn params -> Peri.validate(raw_schema, params) end
     title = opts[:title] || name

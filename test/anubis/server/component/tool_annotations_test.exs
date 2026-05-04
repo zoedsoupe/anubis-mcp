@@ -38,6 +38,48 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
       assert item_schema["type"] == "object"
       assert item_schema["required"] == ["id", "title", "score"]
     end
+
+    test "non-required output fields are emitted as nullable union (issue #142)" do
+      defmodule ToolWithOptionalOutputFields do
+        @moduledoc "Tool with optional output fields"
+        use Anubis.Server.Component, type: :tool
+
+        alias Anubis.Server.Response
+
+        schema do
+          field(:query, {:required, :string})
+        end
+
+        output_schema do
+          field(:first_name, {:required, :string}, description: "Required name")
+          field(:last_name, :string, description: "Optional last name")
+          field(:age, :integer)
+        end
+
+        @impl true
+        def execute(_p, frame), do: {:reply, Response.text(Response.tool(), "ok"), frame}
+      end
+
+      schema = ToolWithOptionalOutputFields.output_schema()
+
+      # Required field stays as plain type
+      assert schema["properties"]["first_name"]["type"] == "string"
+      assert "first_name" in schema["required"]
+
+      # Optional fields emit oneOf with null
+      assert schema["properties"]["last_name"]["oneOf"] == [
+               %{"type" => "string"},
+               %{"type" => "null"}
+             ]
+
+      assert schema["properties"]["age"]["oneOf"] == [
+               %{"type" => "integer"},
+               %{"type" => "null"}
+             ]
+
+      refute "last_name" in (schema["required"] || [])
+      refute "age" in (schema["required"] || [])
+    end
   end
 
   describe "tools/list with annotations" do
