@@ -2,6 +2,7 @@ defmodule Anubis.Server.SessionTest do
   use Anubis.MCP.Case, async: false
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Frame
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
 
@@ -111,6 +112,57 @@ defmodule Anubis.Server.SessionTest do
 
                  :ok
                end)
+    end
+  end
+
+  describe "send_resource_updated subscription gating" do
+    setup :initialized_server
+
+    test "emits notification when URI is subscribed", %{server: session, transport: transport} do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      :sys.replace_state(session, fn state ->
+        %{state | frame: Frame.subscribe_resource(state.frame, "file:///watched")}
+      end)
+
+      send(session, {:send_resource_update, "file:///watched", %{"uri" => "file:///watched"}})
+
+      assert_receive {:send_message, data}, 200
+      assert {:ok, [decoded]} = Message.decode(data)
+      assert decoded["method"] == "notifications/resources/updated"
+      assert decoded["params"]["uri"] == "file:///watched"
+    end
+
+    test "drops notification silently when URI is not subscribed", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      send(session, {:send_resource_update, "file:///not-watched", %{"uri" => "file:///not-watched"}})
+
+      refute_receive {:send_message, _}, 100
+    end
+
+    test "Server.send_resource_updated/2 routes through the gate", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      # :sys.replace_state runs its callback inside the session process,
+      # so self() inside the helper resolves to the session pid — the
+      # condition send_resource_updated/2 requires of its callers.
+      :sys.replace_state(session, fn state ->
+        new_frame = Frame.subscribe_resource(state.frame, "file:///watched")
+        Anubis.Server.send_resource_updated("file:///watched")
+        %{state | frame: new_frame}
+      end)
+
+      assert_receive {:send_message, data}, 200
+      assert {:ok, [decoded]} = Message.decode(data)
+      assert decoded["method"] == "notifications/resources/updated"
+      assert decoded["params"]["uri"] == "file:///watched"
     end
   end
 

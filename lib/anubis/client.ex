@@ -422,6 +422,52 @@ defmodule Anubis.Client do
   end
 
   @doc """
+  Subscribes to updates for a specific resource URI.
+
+  After a successful subscribe, the server may send `notifications/resources/updated`
+  notifications for this URI. The server must declare the `resources.subscribe`
+  capability for this method to succeed.
+
+  ## Options
+
+    * `:timeout` - Request timeout in milliseconds
+  """
+  @spec subscribe_resource(t, String.t(), keyword) ::
+          {:ok, Response.t()} | {:error, Error.t()}
+  def subscribe_resource(client, uri, opts \\ []) do
+    operation =
+      Operation.new(%{
+        method: "resources/subscribe",
+        params: %{"uri" => uri},
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
+      })
+
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
+  end
+
+  @doc """
+  Unsubscribes from updates for a previously-subscribed resource URI.
+
+  ## Options
+
+    * `:timeout` - Request timeout in milliseconds
+  """
+  @spec unsubscribe_resource(t, String.t(), keyword) ::
+          {:ok, Response.t()} | {:error, Error.t()}
+  def unsubscribe_resource(client, uri, opts \\ []) do
+    operation =
+      Operation.new(%{
+        method: "resources/unsubscribe",
+        params: %{"uri" => uri},
+        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
+      })
+
+    buffer_timeout = operation.timeout + to_timeout(second: 1)
+    GenServer.call(client, {:operation, operation}, buffer_timeout)
+  end
+
+  @doc """
   Lists available prompts from the server.
 
   ## Options

@@ -28,6 +28,14 @@ defmodule Anubis.MCP.Message do
     "uri" => {:required, :string}
   }
 
+  @resources_subscribe_params_schema %{
+    "uri" => {:required, :string}
+  }
+
+  @resources_unsubscribe_params_schema %{
+    "uri" => {:required, :string}
+  }
+
   @prompts_list_params_schema %{
     "cursor" => :string
   }
@@ -125,6 +133,8 @@ defmodule Anubis.MCP.Message do
     "resources/list" => Map.merge(@resources_list_params_schema, @progress_params),
     "resources/templates/list" => :map,
     "resources/read" => Map.merge(@resources_read_params_schema, @progress_params),
+    "resources/subscribe" => Map.merge(@resources_subscribe_params_schema, @progress_params),
+    "resources/unsubscribe" => Map.merge(@resources_unsubscribe_params_schema, @progress_params),
     "prompts/list" => Map.merge(@prompts_list_params_schema, @progress_params),
     "prompts/get" => Map.merge(@prompts_get_params_schema, @progress_params),
     "tools/list" => Map.merge(@tools_list_params_schema, @progress_params),
@@ -183,7 +193,10 @@ defmodule Anubis.MCP.Message do
     "notifications/message" => @logging_message_notif_params_schema,
     "notifications/roots/list_changed" => :map,
     "notifications/log/message" => :map,
-    "notifications/tools/list_changed" => :map
+    "notifications/tools/list_changed" => :map,
+    "notifications/prompts/list_changed" => :map,
+    "notifications/resources/list_changed" => :map,
+    "notifications/resources/updated" => :map
   }
 
   @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->

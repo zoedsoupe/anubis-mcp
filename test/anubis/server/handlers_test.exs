@@ -52,6 +52,18 @@ defmodule Anubis.Server.HandlersTest do
     end
   end
 
+  defmodule SubscribingServer do
+    @moduledoc false
+    def __components__(:resource), do: []
+    def server_capabilities, do: %{"resources" => %{subscribe: true}}
+  end
+
+  defmodule NonSubscribingServer do
+    @moduledoc false
+    def __components__(:resource), do: []
+    def server_capabilities, do: %{"resources" => %{}}
+  end
+
   describe "maybe_paginate/3" do
     test "returns all items when limit is nil" do
       components = [
@@ -527,6 +539,77 @@ defmodule Anubis.Server.HandlersTest do
       assert_raise ArgumentError, fn ->
         Handlers.handle(request, MockServer, frame)
       end
+    end
+  end
+
+  describe "resources/subscribe routing" do
+    test "subscribes when capability is declared" do
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "file:///x"}}
+
+      assert {:reply, %{}, frame} = Handlers.handle(request, SubscribingServer, Frame.new())
+      assert Frame.resource_subscribed?(frame, "file:///x")
+    end
+
+    test "returns method_not_found when capability is not declared" do
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "file:///x"}}
+
+      assert {:error, error, _frame} =
+               Handlers.handle(request, NonSubscribingServer, Frame.new())
+
+      assert error.code == -32_601
+    end
+
+    test "subscribing to a URI not registered as a resource still succeeds" do
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "ghost:///nowhere"}}
+
+      assert {:reply, %{}, frame} = Handlers.handle(request, SubscribingServer, Frame.new())
+      assert Frame.resource_subscribed?(frame, "ghost:///nowhere")
+    end
+  end
+
+  describe "resources/unsubscribe routing" do
+    test "removes a previously-recorded subscription" do
+      starting_frame = Frame.subscribe_resource(Frame.new(), "file:///x")
+      request = %{"method" => "resources/unsubscribe", "params" => %{"uri" => "file:///x"}}
+
+      assert {:reply, %{}, frame} =
+               Handlers.handle(request, SubscribingServer, starting_frame)
+
+      refute Frame.resource_subscribed?(frame, "file:///x")
+    end
+
+    test "returns method_not_found when capability is not declared" do
+      request = %{"method" => "resources/unsubscribe", "params" => %{"uri" => "file:///x"}}
+
+      assert {:error, error, _frame} =
+               Handlers.handle(request, NonSubscribingServer, Frame.new())
+
+      assert error.code == -32_601
+    end
+  end
+
+  describe "unknown sub-action routing (Phase 0 regression)" do
+    test "resources/<unknown> returns method_not_found instead of crashing" do
+      request = %{"method" => "resources/foo", "params" => %{}}
+
+      assert {:error, error, _frame} =
+               Handlers.handle(request, SubscribingServer, Frame.new())
+
+      assert error.code == -32_601
+    end
+
+    test "tools/<unknown> returns method_not_found instead of crashing" do
+      request = %{"method" => "tools/nonexistent", "params" => %{}}
+
+      assert {:error, error, _frame} = Handlers.handle(request, MockServer, Frame.new())
+      assert error.code == -32_601
+    end
+
+    test "prompts/<unknown> returns method_not_found instead of crashing" do
+      request = %{"method" => "prompts/nope", "params" => %{}}
+
+      assert {:error, error, _frame} = Handlers.handle(request, MockServer, Frame.new())
+      assert error.code == -32_601
     end
   end
 end
