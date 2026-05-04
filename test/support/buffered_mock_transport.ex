@@ -21,7 +21,13 @@ defmodule BufferedMockTransport do
   def start_link(_opts), do: {:ok, self()}
 
   @impl Anubis.Transport.Behaviour
-  def send_message(_, _, _opts \\ [timeout: 1_000]), do: :ok
+  def send_message(_, message, _opts \\ [timeout: 1_000]) do
+    if pid = :persistent_term.get({__MODULE__, :test_pid}, nil) do
+      send(pid, {:mcp_send, message})
+    end
+
+    :ok
+  end
 
   @impl Anubis.Transport.Behaviour
   def shutdown(_), do: :ok

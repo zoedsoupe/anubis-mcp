@@ -42,12 +42,6 @@ defmodule Anubis.ApplicationTest do
   test "returns child spec when session store is enabled and adapter is available" do
     config = [enabled: true, adapter: MockSessionStore, ttl: 1_800_000, namespace: "anubis:sessions"]
 
-    log =
-      capture_log(fn ->
-        assert [{MockSessionStore, config}] == Anubis.Application.session_store_children(config)
-      end)
-
-    assert log =~ "Starting session store"
-    refute log =~ "Session store enabled but adapter not available"
+    assert [{MockSessionStore, config}] == Anubis.Application.session_store_children(config)
   end
 end

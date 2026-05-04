@@ -132,9 +132,11 @@ defmodule Anubis.Server.SessionTest do
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
            task_supervisor: task_sup,
-           session_idle_timeout: 100},
+           session_idle_timeout: 50},
           id: :expiry_session
         )
+
+      ref = Process.monitor(session)
 
       init_msg =
         init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
@@ -144,11 +146,7 @@ defmodule Anubis.Server.SessionTest do
       init_notification = build_notification("notifications/initialized", %{})
       assert :ok = GenServer.cast(session, {:mcp_notification, init_notification, %{}})
 
-      assert Process.alive?(session)
-
-      Process.sleep(150)
-
-      refute Process.alive?(session)
+      assert_receive {:DOWN, ^ref, :process, _, _}, 500
     end
 
     test "session timer resets on activity" do
@@ -168,9 +166,11 @@ defmodule Anubis.Server.SessionTest do
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
            task_supervisor: task_sup,
-           session_idle_timeout: 200},
+           session_idle_timeout: 80},
           id: :reset_session
         )
+
+      ref = Process.monitor(session)
 
       init_msg =
         init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
@@ -181,15 +181,13 @@ defmodule Anubis.Server.SessionTest do
       assert :ok = GenServer.cast(session, {:mcp_notification, init_notification, %{}})
 
       for _ <- 1..3 do
-        Process.sleep(100)
+        Process.sleep(40)
         ping = build_request("ping", %{}, System.unique_integer())
         assert {:ok, _} = GenServer.call(session, {:mcp_request, ping, %{}})
         assert Process.alive?(session)
       end
 
-      Process.sleep(250)
-
-      refute Process.alive?(session)
+      assert_receive {:DOWN, ^ref, :process, _, _}, 500
     end
 
     test "notifications reset expiry timer" do
@@ -209,9 +207,11 @@ defmodule Anubis.Server.SessionTest do
            name: session_name,
            transport: [layer: StubTransport, name: transport_name],
            task_supervisor: task_sup,
-           session_idle_timeout: 200},
+           session_idle_timeout: 80},
           id: :notif_session
         )
+
+      ref = Process.monitor(session)
 
       init_msg =
         init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
@@ -222,7 +222,7 @@ defmodule Anubis.Server.SessionTest do
       assert :ok = GenServer.cast(session, {:mcp_notification, init_notification, %{}})
 
       for _ <- 1..3 do
-        Process.sleep(100)
+        Process.sleep(40)
 
         notification =
           build_notification("notifications/message", %{
@@ -239,9 +239,7 @@ defmodule Anubis.Server.SessionTest do
         assert Process.alive?(session)
       end
 
-      Process.sleep(250)
-
-      refute Process.alive?(session)
+      assert_receive {:DOWN, ^ref, :process, _, _}, 500
     end
   end
 
