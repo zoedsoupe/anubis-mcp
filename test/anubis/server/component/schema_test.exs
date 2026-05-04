@@ -390,11 +390,11 @@ defmodule Anubis.Server.Component.SchemaTest do
     end
   end
 
-  describe "to_json_schema/1 with mcp_field" do
-    test "converts mcp_field with format and description" do
+  describe "to_json_schema/1 with metadata" do
+    test "converts field with format and description" do
       schema = %{
-        email: {:mcp_field, {:required, :string}, format: "email", description: "User's email address"},
-        age: {:mcp_field, :integer, description: "Age in years"}
+        email: {:required, :string, format: "email", description: "User's email address"},
+        age: {:integer, description: "Age in years"}
       }
 
       result = Schema.to_json_schema(schema)
@@ -416,10 +416,10 @@ defmodule Anubis.Server.Component.SchemaTest do
              }
     end
 
-    test "handles nested mcp_field with constraints" do
+    test "handles nested fields with constraints" do
       schema = %{
-        website: {:mcp_field, :string, format: "uri"},
-        score: {:mcp_field, {:integer, {:range, {0, 100}}}, description: "Score percentage"}
+        website: {:string, format: "uri"},
+        score: {:integer, min: 0, max: 100, description: "Score percentage"}
       }
 
       result = Schema.to_json_schema(schema)
@@ -441,9 +441,9 @@ defmodule Anubis.Server.Component.SchemaTest do
              }
     end
 
-    test "handles required mcp_field" do
+    test "handles required field with metadata" do
       schema = %{
-        name: {:required, {:mcp_field, :string, description: "Full name"}}
+        name: {:required, :string, description: "Full name"}
       }
 
       result = Schema.to_json_schema(schema)
@@ -461,11 +461,11 @@ defmodule Anubis.Server.Component.SchemaTest do
     end
   end
 
-  describe "to_prompt_arguments/1 with mcp_field" do
-    test "uses custom description from mcp_field" do
+  describe "to_prompt_arguments/1 with metadata" do
+    test "uses custom description from metadata" do
       schema = %{
-        language: {:mcp_field, {:required, :string}, description: "Programming language"},
-        focus: {:mcp_field, :string, description: "Areas to focus on"}
+        language: {:required, :string, description: "Programming language"},
+        focus: {:string, description: "Areas to focus on"}
       }
 
       result = Schema.to_prompt_arguments(schema)
@@ -486,7 +486,7 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "falls back to generated description when not provided" do
       schema = %{
-        count: {:mcp_field, :integer, format: "int32"}
+        count: {:integer, format: "int32"}
       }
 
       result = Schema.to_prompt_arguments(schema)
@@ -501,18 +501,18 @@ defmodule Anubis.Server.Component.SchemaTest do
     end
   end
 
-  describe "nested schemas with mcp_field" do
-    test "handles nested schemas with mcp_field metadata" do
+  describe "nested schemas with metadata" do
+    test "handles nested schemas with metadata" do
       schema = %{
         user: %{
-          email: {:mcp_field, {:required, :string}, format: "email", description: "Email address"},
+          email: {:required, :string, format: "email", description: "Email address"},
           profile: %{
-            age: {:mcp_field, :integer, description: "User age"},
-            website: {:mcp_field, :string, format: "uri"}
+            age: {:integer, description: "User age"},
+            website: {:string, format: "uri"}
           }
         },
         settings:
-          {:mcp_field,
+          {:object,
            %{
              theme: :string,
              notifications: :boolean
@@ -561,153 +561,6 @@ defmodule Anubis.Server.Component.SchemaTest do
     end
   end
 
-  describe "normalize/1" do
-    test "handles simple atom types" do
-      schema = %{
-        name: :string,
-        age: :integer,
-        active: :boolean
-      }
-
-      assert Schema.normalize(schema) == schema
-    end
-
-    test "handles required fields with simple syntax" do
-      schema = %{
-        name: {:required, :string},
-        email: {:required, :string}
-      }
-
-      assert Schema.normalize(schema) == schema
-    end
-
-    test "handles fields with constraints and metadata" do
-      schema = %{
-        text: {:string, max: 150, description: "Sample text"},
-        count: {:integer, min: 1, max: 100, description: "Count value"}
-      }
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               text: {:mcp_field, :string, [max: 150, description: "Sample text"]},
-               count: {:mcp_field, :integer, [min: 1, max: 100, description: "Count value"]}
-             }
-    end
-
-    test "handles required fields with constraints and metadata" do
-      schema = %{
-        name: {:required, :string, max: 50, description: "User name"}
-      }
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               name: {:mcp_field, {:required, :string}, [max: 50, description: "User name"]}
-             }
-    end
-
-    test "handles nested objects" do
-      schema = %{
-        user:
-          {:object,
-           %{
-             name: {:required, :string},
-             age: :integer
-           }}
-      }
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               user: %{
-                 name: {:required, :string},
-                 age: :integer
-               }
-             }
-    end
-
-    test "handles nested objects with metadata" do
-      schema = %{
-        profile:
-          {:object,
-           %{
-             name: :string,
-             bio: {:string, max: 500}
-           }, description: "User profile"}
-      }
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               profile:
-                 {:mcp_field,
-                  %{
-                    name: :string,
-                    bio: {:mcp_field, :string, [max: 500]}
-                  }, [description: "User profile"]}
-             }
-    end
-
-    test "handles list types" do
-      schema = %{
-        tags: {:list, :string},
-        scores: {:list, :integer}
-      }
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               tags: {:list, :string},
-               scores: {:list, :integer}
-             }
-    end
-
-    test "handles list types with metadata" do
-      schema = %{
-        tags: {:list, :string, description: "Tag list"}
-      }
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               tags: {:mcp_field, {:list, :string}, [description: "Tag list"]}
-             }
-    end
-
-    test "handles field macro output format" do
-      schema = [
-        {:text, {:mcp_field, {:required, :string}, [max: 150, description: "Text field"]}}
-      ]
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               text: {:mcp_field, {:required, :string}, [max: 150, description: "Text field"]}
-             }
-    end
-
-    test "handles already normalized mcp_field" do
-      schema = %{
-        field: {:mcp_field, :string, [description: "Already normalized"]}
-      }
-
-      assert Schema.normalize(schema) == schema
-    end
-
-    test "handles constraints with defaults" do
-      schema = %{
-        limit: {:integer, min: 1, max: 100, default: 10, description: "Page limit"}
-      }
-
-      normalized = Schema.normalize(schema)
-
-      assert normalized == %{
-               limit: {:mcp_field, :integer, [min: 1, max: 100, default: 10, description: "Page limit"]}
-             }
-    end
-  end
-
   describe "integration with runtime format" do
     test "complete workflow from runtime format to JSON Schema" do
       runtime_schema = %{
@@ -716,14 +569,12 @@ defmodule Anubis.Server.Component.SchemaTest do
         filters:
           {:object,
            %{
-             status: {:required, {:enum, ["active", "inactive"]}, type: "string", description: "possible statuses"},
+             status: {:required, :enum, values: ["active", "inactive"], type: :string, description: "possible statuses"},
              created_after: :datetime
            }, description: "Search filters"}
       }
 
-      normalized = Schema.normalize(runtime_schema)
-
-      json_schema = Schema.to_json_schema(normalized)
+      json_schema = Schema.to_json_schema(runtime_schema)
 
       assert json_schema == %{
                "type" => "object",
@@ -764,8 +615,7 @@ defmodule Anubis.Server.Component.SchemaTest do
         age: {:integer, min: 0, max: 150}
       }
 
-      normalized = Schema.normalize(runtime_schema)
-      validator = Schema.validator(normalized)
+      validator = Schema.validator(runtime_schema)
 
       assert {:ok, _} = validator.(%{email: "test@example.com", age: 25})
 
@@ -780,9 +630,9 @@ defmodule Anubis.Server.Component.SchemaTest do
   describe "GitHub issues regression tests" do
     test "issue honungsburk: string length constraints work in JSON schema generation" do
       schema = %{
-        username: {:mcp_field, :string, min_length: 3, max_length: 20, description: "Username"},
-        bio: {:mcp_field, :string, max_length: 500, description: "Bio"},
-        code: {:mcp_field, :string, min_length: 1, description: "Code"}
+        username: {:string, min_length: 3, max_length: 20, description: "Username"},
+        bio: {:string, max_length: 500, description: "Bio"},
+        code: {:string, min_length: 1, description: "Code"}
       }
 
       result = Schema.to_json_schema(schema)
@@ -870,12 +720,11 @@ defmodule Anubis.Server.Component.SchemaTest do
       assert result["properties"]["level"]["type"] == "string"
     end
 
-    test "complex constraints with mcp_field work correctly" do
+    test "complex constraints with metadata work correctly" do
       schema = %{
-        username:
-          {:mcp_field, :string, [min_length: 3, max_length: 20, regex: ~r/^[a-zA-Z0-9_]+$/, description: "Username"]},
-        age: {:mcp_field, :integer, [min: 13, max: 120, description: "Age in years"]},
-        role: {:mcp_field, {:enum, ["admin", "user", "guest"]}, [description: "User role"]}
+        username: {:string, [min_length: 3, max_length: 20, regex: ~r/^[a-zA-Z0-9_]+$/, description: "Username"]},
+        age: {:integer, [min: 13, max: 120, description: "Age in years"]},
+        role: {:meta, {:enum, ["admin", "user", "guest"]}, description: "User role"}
       }
 
       result = Schema.to_json_schema(schema)
@@ -947,10 +796,9 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "natural enum syntax: field :name, :enum, type: :string, values: [...] works correctly" do
       schema = %{
-        status: {:mcp_field, :enum, [type: :string, values: ["active", "inactive", "pending"], description: "Status"]},
-        priority:
-          {:mcp_field, {:required, :enum}, [type: :string, values: ["low", "medium", "high"], description: "Priority"]},
-        category: {:mcp_field, :enum, [type: :integer, values: [1, 2, 3], description: "Category"]}
+        status: {:meta, {:enum, ["active", "inactive", "pending"], [type: :string]}, description: "Status"},
+        priority: {:required, :enum, [type: :string, values: ["low", "medium", "high"], description: "Priority"]},
+        category: {:meta, {:enum, [1, 2, 3], [type: :integer]}, description: "Category"}
       }
 
       result = Schema.to_json_schema(schema)
@@ -972,9 +820,9 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "string constraints: min: and max: on strings emit minLength/maxLength not minimum/maximum" do
       schema = %{
-        text: {:mcp_field, :string, [max: 150, description: "Text field"]},
-        short_code: {:mcp_field, :string, [min: 3, max: 10]},
-        long_text: {:mcp_field, :string, [min: 5]}
+        text: {:string, [max: 150, description: "Text field"]},
+        short_code: {:string, [min: 3, max: 10]},
+        long_text: {:string, [min: 5]}
       }
 
       result = Schema.to_json_schema(schema)
@@ -995,8 +843,8 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "numeric constraints: min: and max: on integers/floats still emit minimum/maximum" do
       schema = %{
-        age: {:mcp_field, :integer, [min: 18, max: 120]},
-        price: {:mcp_field, :float, [min: 0.01, max: 999.99]}
+        age: {:integer, [min: 18, max: 120]},
+        price: {:float, [min: 0.01, max: 999.99]}
       }
 
       result = Schema.to_json_schema(schema)
@@ -1015,7 +863,7 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "string validation: validator accepts strings within min:/max: constraints" do
       schema = %{
-        text: {:mcp_field, :string, [max: 150, description: "Text field"]}
+        text: {:string, [max: 150, description: "Text field"]}
       }
 
       validator = Schema.validator(schema)
@@ -1035,7 +883,7 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "string validation: validator accepts strings within min: constraints" do
       schema = %{
-        code: {:mcp_field, :string, [min: 3]}
+        code: {:string, [min: 3]}
       }
 
       validator = Schema.validator(schema)
@@ -1053,7 +901,7 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "string validation: validator respects both min: and max: constraints" do
       schema = %{
-        username: {:mcp_field, :string, [min: 3, max: 20]}
+        username: {:string, [min: 3, max: 20]}
       }
 
       validator = Schema.validator(schema)
@@ -1070,7 +918,7 @@ defmodule Anubis.Server.Component.SchemaTest do
 
     test "required string constraints: min:/max: work on required strings" do
       schema = %{
-        text: {:mcp_field, {:required, :string}, [max: 100]}
+        text: {:required, :string, [max: 100]}
       }
 
       result = Schema.to_json_schema(schema)
@@ -1084,12 +932,11 @@ defmodule Anubis.Server.Component.SchemaTest do
     test "field macro with min:/max: works and validates correctly" do
       # Simulate what field() macro generates
       schema = %{
-        content: {:mcp_field, {:required, :string}, [max: 500, description: "Post content"]}
+        content: {:required, :string, [max: 500, description: "Post content"]}
       }
 
-      normalized = Schema.normalize(schema)
-      json_schema = Schema.to_json_schema(normalized)
-      validator = Schema.validator(normalized)
+      json_schema = Schema.to_json_schema(schema)
+      validator = Schema.validator(schema)
 
       # JSON Schema should have correct constraint
       assert json_schema["properties"]["content"]["maxLength"] == 500

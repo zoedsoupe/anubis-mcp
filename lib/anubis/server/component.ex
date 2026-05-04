@@ -204,7 +204,9 @@ defmodule Anubis.Server.Component do
       def output_schema do
         alias Anubis.Server.Component.Schema
 
-        Schema.to_json_schema(__mcp_output_schema__())
+        __mcp_output_schema__()
+        |> Component.__make_optional_nullable__()
+        |> Schema.to_json_schema()
       end
     end
   end
@@ -233,11 +235,8 @@ defmodule Anubis.Server.Component do
       end
   """
   defmacro field(name, type, opts \\ []) when not is_nil(type) and is_list(opts) do
-    {required, remaining_opts} = Keyword.pop(opts, :required, false)
-    type = if required, do: {:required, type}, else: type
-
     quote do
-      {unquote(name), {:mcp_field, unquote(type), unquote(remaining_opts)}}
+      {unquote(name), unquote(__MODULE__).__build_field__(unquote(type), unquote(opts))}
     end
   end
 
@@ -257,8 +256,6 @@ defmodule Anubis.Server.Component do
       end
   """
   defmacro embeds_many(name, opts \\ [], do: block) do
-    {required, remaining_opts} = Keyword.pop(opts, :required, false)
-
     nested_content =
       case block do
         {:__block__, _, expressions} ->
@@ -268,10 +265,10 @@ defmodule Anubis.Server.Component do
           {:%{}, [], [single_expr]}
       end
 
-    type = if required, do: {:required, {:list, nested_content}}, else: {:list, nested_content}
+    type = quote do: {:list, unquote(nested_content)}
 
     quote do
-      {unquote(name), {:mcp_field, unquote(type), unquote(remaining_opts)}}
+      {unquote(name), unquote(__MODULE__).__build_field__(unquote(type), unquote(opts))}
     end
   end
 
@@ -292,8 +289,6 @@ defmodule Anubis.Server.Component do
       end
   """
   defmacro embeds_one(name, opts \\ [], do: block) do
-    {required, remaining_opts} = Keyword.pop(opts, :required, false)
-
     nested_content =
       case block do
         {:__block__, _, expressions} ->
@@ -303,10 +298,8 @@ defmodule Anubis.Server.Component do
           {:%{}, [], [single_expr]}
       end
 
-    type = if required, do: {:required, nested_content}, else: nested_content
-
     quote do
-      {unquote(name), {:mcp_field, unquote(type), unquote(remaining_opts)}}
+      {unquote(name), unquote(__MODULE__).__build_field__(unquote(nested_content), unquote(opts))}
     end
   end
 
@@ -409,84 +402,296 @@ defmodule Anubis.Server.Component do
     not is_nil(get_type(module))
   end
 
+  @meta_keys [
+    :title,
+    :description,
+    :example,
+    :examples,
+    :deprecated,
+    :format,
+    :pattern,
+    :read_only,
+    :write_only,
+    :content_encoding,
+    :content_media_type
+  ]
+
+  # Peri-native list constraint keys (passed through verbatim to Peri encoder)
+  @list_constraint_keys [:min, :max, :unique]
+
+  # User-friendly string constraint aliases mapped to Peri keys
+  @string_constraint_aliases %{min_length: :min, max_length: :max}
+
+  # Peri-native string constraint keys (passed through verbatim)
+  @string_constraint_keys [:min, :max, :regex, :eq]
+
+  # User-friendly numeric constraint aliases mapped to Peri keys
+  @numeric_constraint_aliases %{min: :gte, max: :lte}
+
+  # Peri-native numeric constraint keys (passed through verbatim)
+  @numeric_constraint_keys [:gt, :gte, :lt, :lte, :eq, :neq, :multiple_of, :range]
+
+  @doc false
+  # Builds a native Peri schema fragment from user-facing (type, opts).
+  # Replaces the legacy {:mcp_field, type, opts} indirection.
+  def __build_field__(type, opts) when is_list(opts) do
+    {required_override, opts} = __pop_required_opt__(opts)
+    {type, required_from_type} = __pop_required__(type)
+    required = __resolve_required__(required_override, required_from_type)
+
+    {type, opts} = __resolve_enum__(type, opts)
+    {default_wrap, opts} = __pop_default__(opts)
+
+    {meta, constraints} = __split_meta_constraints__(opts)
+    base = __apply_constraints__(type, constraints)
+    with_default = if default_wrap, do: {base, default_wrap}, else: base
+    with_meta = if meta == [], do: with_default, else: {:meta, with_default, meta}
+
+    if required, do: {:required, with_meta}, else: with_meta
+  end
+
+  # `:default` belongs in Peri's `{type, {:default, v}}` shape, not the meta
+  # wrapper — pull it out before splitting meta/constraints so downstream
+  # consumers (schema docs, JSON Schema, validators) find it where they expect.
+  defp __pop_default__(opts) do
+    case Keyword.fetch(opts, :default) do
+      {:ok, v} -> {{:default, v}, Keyword.delete(opts, :default)}
+      :error -> {nil, opts}
+    end
+  end
+
+  # Explicit `required: <bool>` opt wins over the `{:required, t}` type wrapper,
+  # so callers can opt out of a required type at runtime without rebuilding it.
+  defp __pop_required_opt__(opts) do
+    case Keyword.fetch(opts, :required) do
+      {:ok, val} -> {{:set, val}, Keyword.delete(opts, :required)}
+      :error -> {:unset, opts}
+    end
+  end
+
+  defp __resolve_required__({:set, val}, _from_type), do: val
+  defp __resolve_required__(:unset, from_type), do: from_type
+
+  defp __pop_required__({:required, t}), do: {t, true}
+  defp __pop_required__(t), do: {t, false}
+
+  # Translates field-macro enum opts into Peri's typed enum form.
+  # `field :role, :enum, values: [...], type: :string` →
+  # `{:enum, [...], [type: :string]}`. Defaults type to `:string` when omitted.
+  defp __resolve_enum__(:enum, opts) do
+    {values, opts} = Keyword.pop(opts, :values)
+    {enum_type, opts} = Keyword.pop(opts, :type, :string)
+
+    if is_nil(values) do
+      raise ArgumentError,
+            "`:enum` field requires a `:values` option listing the allowed values"
+    end
+
+    {{:enum, values, [type: enum_type]}, opts}
+  end
+
+  # Bare-enum type with `type:` opt — promote to typed enum
+  defp __resolve_enum__({:enum, values}, opts) when is_list(values) do
+    case Keyword.pop(opts, :type) do
+      {nil, opts} -> {{:enum, values}, opts}
+      {enum_type, opts} -> {{:enum, values, [type: enum_type]}, opts}
+    end
+  end
+
+  # Legacy 3-arity form {:enum, vals, type_atom} as type slot → keyword form
+  defp __resolve_enum__({:enum, values, type}, opts) when is_list(values) and is_atom(type) do
+    {{:enum, values, [type: type]}, Keyword.delete(opts, :type)}
+  end
+
+  # `field :env, :string, enum: [...]` → typed enum
+  defp __resolve_enum__(type, opts) when is_atom(type) do
+    case Keyword.pop(opts, :enum) do
+      {nil, opts} -> {type, opts |> Keyword.delete(:values) |> Keyword.delete(:type)}
+      {values, opts} -> {{:enum, values, [type: type]}, Keyword.delete(opts, :type)}
+    end
+  end
+
+  defp __resolve_enum__(type, opts) do
+    {type, opts |> Keyword.delete(:values) |> Keyword.delete(:type)}
+  end
+
+  defp __split_meta_constraints__(opts) do
+    {meta, cons} =
+      Enum.reduce(opts, {[], []}, fn
+        {k, v}, {m, c} when k in @meta_keys -> {[{k, v} | m], c}
+        {k, v}, {m, c} -> {m, [{k, v} | c]}
+      end)
+
+    {Enum.reverse(meta), Enum.reverse(cons)}
+  end
+
+  defp __apply_constraints__(type, []), do: type
+
+  defp __apply_constraints__({:list, item}, opts) do
+    list_opts =
+      Enum.flat_map(opts, fn
+        {k, _} = pair when k in @list_constraint_keys -> [pair]
+        _ -> []
+      end)
+
+    if list_opts == [], do: {:list, item}, else: {:list, item, list_opts}
+  end
+
+  defp __apply_constraints__(:string, opts) do
+    string_opts =
+      Enum.flat_map(opts, fn
+        {k, v} when is_map_key(@string_constraint_aliases, k) ->
+          [{Map.fetch!(@string_constraint_aliases, k), v}]
+
+        {k, _} = pair when k in @string_constraint_keys ->
+          [pair]
+
+        _ ->
+          []
+      end)
+
+    __wrap_type_opts__(:string, string_opts)
+  end
+
+  defp __apply_constraints__(type, opts) when type in [:integer, :float] do
+    num_opts =
+      Enum.flat_map(opts, fn
+        {k, v} when is_map_key(@numeric_constraint_aliases, k) ->
+          [{Map.fetch!(@numeric_constraint_aliases, k), v}]
+
+        {k, _} = pair when k in @numeric_constraint_keys ->
+          [pair]
+
+        _ ->
+          []
+      end)
+
+    __wrap_type_opts__(type, num_opts)
+  end
+
+  defp __apply_constraints__(type, _opts), do: type
+
+  defp __wrap_type_opts__(type, []), do: type
+  defp __wrap_type_opts__(type, [single]), do: {type, single}
+  defp __wrap_type_opts__(type, multi), do: {type, multi}
+
+  @doc false
+  # Walks a Peri schema and wraps every non-required field type in
+  # `{:either, {type, nil}}` so JSON Schema output emits a oneOf with
+  # `{"type": "null"}` allowed. Used for tool output schemas to match
+  # Anthropic backend expectations (see issue #142). Required fields and
+  # already-nullable fields are left untouched.
+  def __make_optional_nullable__(schema) do
+    schema
+    |> __expand_user_input__()
+    |> Peri.walk(fn
+      {:field, k, {:required, _} = v} ->
+        {:cont, {:field, k, v}}
+
+      {:field, k, {:either, {_, nil}} = v} ->
+        {:cont, {:field, k, v}}
+
+      {:field, k, {:either, {nil, _}} = v} ->
+        {:cont, {:field, k, v}}
+
+      {:field, k, {:meta, {:either, {_, nil}}, _} = v} ->
+        {:cont, {:field, k, v}}
+
+      {:field, k, {:meta, {:either, {nil, _}}, _} = v} ->
+        {:cont, {:field, k, v}}
+
+      # Lift meta wrapper outside the union so description/title stay at the
+      # field's top-level JSON schema, not buried inside a oneOf branch.
+      {:field, k, {:meta, type, opts}} ->
+        {:cont, {:field, k, {:meta, {:either, {type, nil}}, opts}}}
+
+      {:field, k, v} ->
+        {:cont, {:field, k, {:either, {v, nil}}}}
+
+      other ->
+        {:cont, other}
+    end)
+  end
+
+  @doc false
+  # Recursively translates user-friendly schema shapes into native Peri.
+  # Handles runtime shorthand `{type, opts}`, `{:required, type, opts}`,
+  # `{:object, fields, opts}`, `{:list, item, opts}`, nested maps.
+  def __expand_user_input__(schema) when is_map(schema) do
+    Map.new(schema, fn {k, v} -> {k, __expand_value__(v)} end)
+  end
+
+  def __expand_user_input__(other), do: other
+
+  defp __expand_value__({:object, fields}) when is_map(fields) do
+    __expand_user_input__(fields)
+  end
+
+  defp __expand_value__({:object, fields, opts}) when is_map(fields) and is_list(opts) do
+    fields |> __expand_user_input__() |> __build_field__(opts)
+  end
+
+  defp __expand_value__({:required, {:object, fields}}) when is_map(fields) do
+    {:required, __expand_user_input__(fields)}
+  end
+
+  defp __expand_value__({:required, {:object, fields, opts}}) when is_map(fields) and is_list(opts) do
+    __build_field__({:required, __expand_user_input__(fields)}, opts)
+  end
+
+  defp __expand_value__({:required, type, opts}) when is_list(opts) do
+    __build_field__({:required, __expand_inner__(type)}, opts)
+  end
+
+  defp __expand_value__({:list, item, opts}) when is_list(opts) do
+    __build_field__({:list, __expand_value__(item)}, opts)
+  end
+
+  defp __expand_value__({:list, item}) do
+    {:list, __expand_value__(item)}
+  end
+
+  defp __expand_value__({:required, type}) do
+    {:required, __expand_inner__(type)}
+  end
+
+  # Legacy positional 3-arity {:enum, values, type_atom} → Peri keyword form
+  defp __expand_value__({:enum, values, type}) when is_list(values) and is_atom(type) do
+    {:enum, values, [type: type]}
+  end
+
+  # Peri-native bare/keyword enums — pass through
+  defp __expand_value__({:enum, values}) when is_list(values), do: {:enum, values}
+
+  # Peri-native list-of-types shapes — pass through
+  defp __expand_value__({:oneof, types}) when is_list(types), do: {:oneof, types}
+  defp __expand_value__({:tuple, types}) when is_list(types), do: {:tuple, types}
+
+  # Runtime shorthand `{type, opts}` for atomic types
+  defp __expand_value__({type, opts}) when is_atom(type) and is_list(opts) do
+    __build_field__(type, opts)
+  end
+
+  defp __expand_value__(nested) when is_map(nested), do: __expand_user_input__(nested)
+
+  defp __expand_value__(other), do: other
+
+  defp __expand_inner__({:list, item}), do: {:list, __expand_value__(item)}
+  defp __expand_inner__({:list, item, opts}) when is_list(opts), do: {:list, __expand_value__(item), opts}
+  defp __expand_inner__(nested) when is_map(nested), do: __expand_user_input__(nested)
+  defp __expand_inner__(other), do: other
+
   @doc false
   def __clean_schema_for_peri__(schema) when is_map(schema) do
-    Map.new(schema, fn
-      {key, {:mcp_field, type, opts}} -> {key, __convert_mcp_field_to_peri__(type, opts)}
-      {key, nested} when is_map(nested) -> {key, __clean_schema_for_peri__(nested)}
-      {key, value} -> {key, __inject_transforms__(value)}
-    end)
+    schema
+    |> __expand_user_input__()
+    |> __walk_inject__()
   end
 
   def __clean_schema_for_peri__(schema), do: __inject_transforms__(schema)
 
-  defp __convert_mcp_field_to_peri__(type, opts) do
-    {constraints, metadata} = __extract_peri_constraints__(opts)
-    {base_type, is_required} = __extract_type_info__(type)
-    constrained_type = __build_constrained_type__(base_type, constraints, metadata)
-    final_type = if is_required, do: {:required, constrained_type}, else: constrained_type
-    __inject_transforms__(final_type)
-  end
-
-  defp __extract_type_info__({:required, inner_type}), do: {inner_type, true}
-  defp __extract_type_info__(inner_type), do: {inner_type, false}
-
-  defp __build_constrained_type__(:enum, _constraints, metadata) do
-    values = Keyword.get(metadata, :values, [])
-    {:enum, values}
-  end
-
-  defp __build_constrained_type__(:string, constraints, _metadata) do
-    string_constraints =
-      Enum.map(constraints, fn
-        {:gte, n} -> {:min, n}
-        {:lte, n} -> {:max, n}
-        other -> other
-      end)
-
-    __wrap_constraints__(:string, string_constraints)
-  end
-
-  defp __build_constrained_type__(base_type, constraints, _metadata) do
-    numeric_constraints =
-      Enum.map(constraints, fn
-        {:min, n} -> {:gte, n}
-        {:max, n} -> {:lte, n}
-        other -> other
-      end)
-
-    __wrap_constraints__(base_type, numeric_constraints)
-  end
-
-  defp __wrap_constraints__(base_type, constraints) do
-    case constraints do
-      [] -> base_type
-      [single] -> {base_type, single}
-      multiple -> {base_type, multiple}
-    end
-  end
-
-  defp __extract_peri_constraints__(opts) do
-    constraints =
-      []
-      |> maybe_add_constraint(opts, :min_length, :min)
-      |> maybe_add_constraint(opts, :max_length, :max)
-      |> maybe_add_constraint(opts, :regex, :regex)
-      |> maybe_add_constraint(opts, :min, :min)
-      |> maybe_add_constraint(opts, :max, :max)
-      |> maybe_add_constraint(opts, :enum, :enum)
-      |> Enum.reverse()
-
-    # Keep :values in metadata for enum types, don't treat it as a constraint
-    metadata = Keyword.drop(opts, [:min, :max, :min_length, :max_length, :regex, :enum])
-    {constraints, metadata}
-  end
-
-  defp maybe_add_constraint(constraints, opts, opt_key, peri_key) do
-    case Keyword.get(opts, opt_key) do
-      nil -> constraints
-      value -> [{peri_key, value} | constraints]
-    end
+  defp __walk_inject__(schema) when is_map(schema) do
+    Map.new(schema, fn {k, v} -> {k, __inject_transforms__(v)} end)
   end
 
   defp __inject_transforms__({type, {:default, default}}) when type in ~w(date datetime naive_datetime time)a do
@@ -514,12 +719,32 @@ defmodule Anubis.Server.Component do
     {:required, __inject_transforms__(type)}
   end
 
+  defp __inject_transforms__({:meta, type, opts}) do
+    {:meta, __inject_transforms__(type), opts}
+  end
+
   defp __inject_transforms__({:list, type}) do
     {:list, __inject_transforms__(type)}
   end
 
+  defp __inject_transforms__({:list, type, opts}) do
+    {:list, __inject_transforms__(type), opts}
+  end
+
+  defp __inject_transforms__({:oneof, types}) when is_list(types) do
+    {:oneof, Enum.map(types, &__inject_transforms__/1)}
+  end
+
+  defp __inject_transforms__({:tuple, types}) when is_list(types) do
+    {:tuple, Enum.map(types, &__inject_transforms__/1)}
+  end
+
+  defp __inject_transforms__({:either, {a, b}}) do
+    {:either, {__inject_transforms__(a), __inject_transforms__(b)}}
+  end
+
   defp __inject_transforms__(nested) when is_map(nested) do
-    __clean_schema_for_peri__(nested)
+    __walk_inject__(nested)
   end
 
   defp __inject_transforms__(type), do: type

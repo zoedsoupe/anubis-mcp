@@ -9,8 +9,6 @@ defmodule Anubis.MCP.Message do
 
   # MCP message schemas
 
-  @request_methods ~w(initialize ping resources/list resources/templates/list resources/read prompts/get prompts/list tools/call tools/list logging/setLevel completion/complete roots/list sampling/createMessage elicitation/create)
-
   @init_params_schema %{
     "protocolVersion" => {:required, :string},
     "capabilities" => {:map, {:default, %{}}},
@@ -121,42 +119,38 @@ defmodule Anubis.MCP.Message do
     "requestedSchema" => {:required, {:custom, &Anubis.MCP.ElicitationSchema.validate/1}}
   }
 
+  @request_branch_specs %{
+    "initialize" => Map.merge(@init_params_schema, @progress_params),
+    "ping" => @ping_params_schema,
+    "resources/list" => Map.merge(@resources_list_params_schema, @progress_params),
+    "resources/templates/list" => :map,
+    "resources/read" => Map.merge(@resources_read_params_schema, @progress_params),
+    "prompts/list" => Map.merge(@prompts_list_params_schema, @progress_params),
+    "prompts/get" => Map.merge(@prompts_get_params_schema, @progress_params),
+    "tools/list" => Map.merge(@tools_list_params_schema, @progress_params),
+    "tools/call" => Map.merge(@tools_call_params_schema, @progress_params),
+    "logging/setLevel" => Map.merge(@set_log_level_params_schema, @progress_params),
+    "completion/complete" => Map.merge(@completion_complete_params_schema, @progress_params),
+    "sampling/createMessage" => Map.merge(@sampling_create_params, @progress_params),
+    "elicitation/create" => Map.merge(@elicitation_create_params, @progress_params),
+    "roots/list" => :map
+  }
+
+  @request_branches Map.new(@request_branch_specs, fn {method, params_schema} ->
+                      {method,
+                       %{
+                         "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+                         "method" => {:required, {:literal, method}},
+                         "params" => params_schema,
+                         "id" => {:required, {:either, {:string, :integer}}}
+                       }}
+                    end)
+
   defschema(
     :request_schema,
-    %{
-      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-      "method" => {:required, {:enum, @request_methods}},
-      "params" => {:dependent, &params_with_progress_token/1},
-      "id" => {:required, {:either, {:string, :integer}}}
-    },
+    {:multi, :method, @request_branches},
     mode: :strict
   )
-
-  defp params_with_progress_token(attrs) do
-    with {:ok, %{} = schema} <- parse_request_params_by_method(attrs) do
-      schema =
-        if get_in(attrs, ["params", "_meta"]),
-          do: Map.merge(schema, @progress_params),
-          else: schema
-
-      {:ok, schema}
-    end
-  end
-
-  defp parse_request_params_by_method(%{"method" => "initialize"}), do: {:ok, @init_params_schema}
-  defp parse_request_params_by_method(%{"method" => "ping"}), do: {:ok, @ping_params_schema}
-  defp parse_request_params_by_method(%{"method" => "resources/list"}), do: {:ok, @resources_list_params_schema}
-  defp parse_request_params_by_method(%{"method" => "resources/read"}), do: {:ok, @resources_read_params_schema}
-  defp parse_request_params_by_method(%{"method" => "prompts/list"}), do: {:ok, @prompts_list_params_schema}
-  defp parse_request_params_by_method(%{"method" => "prompts/get"}), do: {:ok, @prompts_get_params_schema}
-  defp parse_request_params_by_method(%{"method" => "tools/list"}), do: {:ok, @tools_list_params_schema}
-  defp parse_request_params_by_method(%{"method" => "tools/call"}), do: {:ok, @tools_call_params_schema}
-  defp parse_request_params_by_method(%{"method" => "logging/setLevel"}), do: {:ok, @set_log_level_params_schema}
-  defp parse_request_params_by_method(%{"method" => "completion/complete"}), do: {:ok, @completion_complete_params_schema}
-  defp parse_request_params_by_method(%{"method" => "sampling/createMessage"}), do: {:ok, @sampling_create_params}
-  defp parse_request_params_by_method(%{"method" => "elicitation/create"}), do: {:ok, @elicitation_create_params}
-  defp parse_request_params_by_method(%{"method" => "roots/list"}), do: {:ok, :map}
-  defp parse_request_params_by_method(_), do: {:ok, :map}
 
   @init_noti_params_schema :map
   @cancel_noti_params_schema %{
@@ -182,34 +176,30 @@ defmodule Anubis.MCP.Message do
     "logger" => :string
   }
 
+  @notification_branch_specs %{
+    "notifications/initialized" => @init_noti_params_schema,
+    "notifications/cancelled" => @cancel_noti_params_schema,
+    "notifications/progress" => @progress_notif_params_schema,
+    "notifications/message" => @logging_message_notif_params_schema,
+    "notifications/roots/list_changed" => :map,
+    "notifications/log/message" => :map,
+    "notifications/tools/list_changed" => :map
+  }
+
+  @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->
+                           {method,
+                            %{
+                              "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+                              "method" => {:required, {:literal, method}},
+                              "params" => params_schema
+                            }}
+                         end)
+
   defschema(
     :notification_schema,
-    %{
-      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-      "method" =>
-        {:required,
-         {:enum,
-          ~w(notifications/initialized notifications/cancelled notifications/progress notifications/message notifications/roots/list_changed notifications/log/message notifications/tools/list_changed)}},
-      "params" => {:dependent, &parse_notification_params_by_method/1}
-    },
+    {:multi, :method, @notification_branches},
     mode: :strict
   )
-
-  defp parse_notification_params_by_method(%{"method" => "notifications/initialized"}),
-    do: {:ok, @init_noti_params_schema}
-
-  defp parse_notification_params_by_method(%{"method" => "notifications/cancelled"}),
-    do: {:ok, @cancel_noti_params_schema}
-
-  defp parse_notification_params_by_method(%{"method" => "notifications/progress"}),
-    do: {:ok, @progress_notif_params_schema}
-
-  defp parse_notification_params_by_method(%{"method" => "notifications/message"}),
-    do: {:ok, @logging_message_notif_params_schema}
-
-  defp parse_notification_params_by_method(%{"method" => "notifications/roots/list_changed"}), do: {:ok, :map}
-
-  defp parse_notification_params_by_method(_), do: {:ok, :map}
 
   defschema(
     :response_schema,
