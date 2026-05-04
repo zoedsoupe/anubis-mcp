@@ -16,8 +16,9 @@ defmodule Anubis.Server.Component.Schema do
   end
 
   def to_json_schema(schema) when is_map(schema) do
-    # Peri stores `:default` inside the type tuple (`{type, {:default, v}}`),
-    # not as a meta key — exclude it so output schemas don't duplicate the value.
+    # Defaults live in `{type, {:default, v}}` after `__build_field__/2`. Strip
+    # them from JSON Schema output so consumer schemas don't surface internal
+    # defaults — prompt docs and validation still use them.
     schema
     |> Component.__expand_user_input__()
     |> Peri.to_json_schema(exclude_meta_keys: [:default])

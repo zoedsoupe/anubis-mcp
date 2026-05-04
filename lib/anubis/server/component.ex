@@ -408,7 +408,6 @@ defmodule Anubis.Server.Component do
     :example,
     :examples,
     :deprecated,
-    :default,
     :format,
     :pattern,
     :read_only,
@@ -441,12 +440,24 @@ defmodule Anubis.Server.Component do
     required = __resolve_required__(required_override, required_from_type)
 
     {type, opts} = __resolve_enum__(type, opts)
+    {default_wrap, opts} = __pop_default__(opts)
 
     {meta, constraints} = __split_meta_constraints__(opts)
     base = __apply_constraints__(type, constraints)
-    with_meta = if meta == [], do: base, else: {:meta, base, meta}
+    with_default = if default_wrap, do: {base, default_wrap}, else: base
+    with_meta = if meta == [], do: with_default, else: {:meta, with_default, meta}
 
     if required, do: {:required, with_meta}, else: with_meta
+  end
+
+  # `:default` belongs in Peri's `{type, {:default, v}}` shape, not the meta
+  # wrapper — pull it out before splitting meta/constraints so downstream
+  # consumers (schema docs, JSON Schema, validators) find it where they expect.
+  defp __pop_default__(opts) do
+    case Keyword.fetch(opts, :default) do
+      {:ok, v} -> {{:default, v}, Keyword.delete(opts, :default)}
+      :error -> {nil, opts}
+    end
   end
 
   # Explicit `required: <bool>` opt wins over the `{:required, t}` type wrapper,
@@ -625,7 +636,7 @@ defmodule Anubis.Server.Component do
   end
 
   defp __expand_value__({:required, {:object, fields, opts}}) when is_map(fields) and is_list(opts) do
-    {:required, fields |> __expand_user_input__() |> __build_field__(opts)}
+    __build_field__({:required, __expand_user_input__(fields)}, opts)
   end
 
   defp __expand_value__({:required, type, opts}) when is_list(opts) do
@@ -718,6 +729,18 @@ defmodule Anubis.Server.Component do
 
   defp __inject_transforms__({:list, type, opts}) do
     {:list, __inject_transforms__(type), opts}
+  end
+
+  defp __inject_transforms__({:oneof, types}) when is_list(types) do
+    {:oneof, Enum.map(types, &__inject_transforms__/1)}
+  end
+
+  defp __inject_transforms__({:tuple, types}) when is_list(types) do
+    {:tuple, Enum.map(types, &__inject_transforms__/1)}
+  end
+
+  defp __inject_transforms__({:either, {a, b}}) do
+    {:either, {__inject_transforms__(a), __inject_transforms__(b)}}
   end
 
   defp __inject_transforms__(nested) when is_map(nested) do
