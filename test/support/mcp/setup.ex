@@ -13,19 +13,43 @@ defmodule Anubis.MCP.Setup do
 
   require Message
 
-  def get_request_id(client, method, retries \\ 5) do
-    Process.sleep(15 * retries)
-    state = :sys.get_state(client)
+  @doc """
+  Awaits the next outbound MCP request matching `method` and returns its id.
 
-    request_id =
-      Enum.find_value(state.pending_requests, fn {id, request} ->
-        if request.method == method, do: id
-      end)
+  Drains forwarded `{:mcp_send, raw_json}` messages emitted by `MockTransport`
+  (see `register_mock_transport_forwarding/0`) until one matches `method`.
+  Returns `nil` on timeout.
+  """
+  def get_request_id(_client, method, timeout \\ 500) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_get_request_id(method, deadline)
+  end
 
-    cond do
-      request_id != nil -> request_id
-      retries > 0 -> get_request_id(client, method, retries - 1)
-      true -> nil
+  defp do_get_request_id(method, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:mcp_send, raw} ->
+        case JSON.decode(raw) do
+          {:ok, %{"method" => ^method, "id" => id}} -> id
+          _ -> do_get_request_id(method, deadline)
+        end
+    after
+      remaining -> nil
+    end
+  end
+
+  @doc """
+  Returns a `Mox.expect/3`-compatible lambda that forwards every outbound MCP
+  send to `pid` as `{:mcp_send, raw_json}` and replies `:ok`. Use when a test
+  needs the forward but no per-call assertion.
+
+      expect(Anubis.MockTransport, :send_message, forwarder(self()))
+  """
+  def forwarder(pid) do
+    fn _, message, _ ->
+      send(pid, {:mcp_send, message})
+      :ok
     end
   end
 
@@ -54,7 +78,6 @@ defmodule Anubis.MCP.Setup do
         }
 
     GenServer.cast(client, :initialize)
-    Process.sleep(50)
 
     request_id = get_request_id(client, "initialize")
     assert request_id
@@ -69,7 +92,30 @@ defmodule Anubis.MCP.Setup do
 
     send_response(client, response)
 
-    Process.sleep(50)
+    sync_client(client)
+    flush_mcp_sends()
+  end
+
+  @doc """
+  Forces the client mailbox to drain by issuing a synchronous `:get_server_info`
+  call. Replaces fixed `Process.sleep` after async casts.
+  """
+  def sync_client(client) do
+    _ = GenServer.call(client, :get_server_info)
+    :ok
+  end
+
+  @doc """
+  Drains every pending `{:mcp_send, _}` forwarded message from the test pid
+  mailbox. Called after `initialize_client/2` so the test body starts with a
+  clean mailbox and `assert_receive` matches the message the test cares about.
+  """
+  def flush_mcp_sends do
+    receive do
+      {:mcp_send, _} -> flush_mcp_sends()
+    after
+      0 -> :ok
+    end
   end
 
   def initialized_server(ctx) do

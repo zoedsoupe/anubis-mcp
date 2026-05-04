@@ -2,6 +2,7 @@ defmodule Anubis.Transport.SSETest do
   use ExUnit.Case, async: false
 
   alias Anubis.MCP.Message
+  alias Anubis.Test.SyncHelpers
   alias Anubis.Transport.SSE
 
   @moduletag capture_log: true
@@ -48,21 +49,13 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      # Give time for the SSE connection to establish and process the event
-      Process.sleep(200)
-
-      # force client to initialize
-      _ = :sys.get_state(stub_client)
-      state = :sys.get_state(transport)
-      assert state.message_url
+      state = SyncHelpers.await_state(transport, & &1.message_url)
       assert String.ends_with?(to_string(state.message_url), "/messages/123")
 
-      # Clean up
       StubClient.clear_messages()
-      # Shut down gracefully
+      ref = Process.monitor(transport)
       SSE.shutdown(transport)
-      # Allow time for shutdown
-      Process.sleep(50)
+      assert_receive {:DOWN, ^ref, :process, _, _}, 500
     end
   end
 
@@ -115,28 +108,18 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      # Give time for the SSE connection to establish
-      Process.sleep(200)
-
-      # Verify the transport has received the endpoint
-      transport_state = :sys.get_state(transport)
-      assert transport_state.message_url
+      transport_state = SyncHelpers.await_state(transport, & &1.message_url)
 
       assert String.ends_with?(
                to_string(transport_state.message_url),
                "/messages/123"
              )
 
-      # Send a ping message through the transport
       {:ok, ping_message} =
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
 
       assert :ok = SSE.send_message(transport, ping_message, timeout: 5000)
 
-      # Give time for the response to come back
-      Process.sleep(100)
-
-      # Clean up
       StubClient.clear_messages()
       SSE.shutdown(transport)
     end
@@ -148,7 +131,7 @@ defmodule Anubis.Transport.SSETest do
       {:ok, stub_client} = StubClient.start_link()
 
       # Set up the SSE connection but don't send an endpoint event
-      Bypass.expect(bypass, "GET", "/sse", fn conn ->
+      Bypass.stub(bypass, "GET", "/sse", fn conn ->
         conn = Plug.Conn.put_resp_header(conn, "content-type", "text/event-stream")
         Plug.Conn.send_chunked(conn, 200)
       end)
@@ -164,10 +147,6 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      # Wait for transport to start
-      Process.sleep(100)
-
-      # Try to send a message without having an endpoint
       assert {:error, :not_connected} = SSE.send_message(transport, "test message", timeout: 5000)
 
       # Clean up
@@ -213,14 +192,8 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      # Give the SSE connection time to establish
-      Process.sleep(200)
+      _ = SyncHelpers.await_state(transport, & &1.message_url)
 
-      # Verify the transport has received the endpoint
-      transport_state = :sys.get_state(transport)
-      assert transport_state.message_url
-
-      # Send a message and check for error response
       assert {:error, {:http_error, 500, "Internal Server Error"}} =
                SSE.send_message(transport, "test message", timeout: 5000)
 
@@ -239,6 +212,7 @@ defmodule Anubis.Transport.SSETest do
 
       # Start the StubClient from test_helpers.exs
       {:ok, stub_client} = StubClient.start_link()
+      StubClient.subscribe()
 
       # Set up the SSE connection
       Bypass.expect(bypass, "GET", "/sse", fn conn ->
@@ -278,16 +252,10 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      # Give time for the connection to be established and messages to be processed
-      Process.sleep(300)
+      assert_receive {:stub_client_response, ^test_message}, 500
 
-      # Verify the transport has set up the message URL
       transport_state = :sys.get_state(transport)
       assert transport_state.message_url
-
-      # Check that the StubClient received our message
-      messages = StubClient.get_messages()
-      assert test_message in messages
 
       # Clean up
       StubClient.clear_messages()
@@ -302,7 +270,7 @@ defmodule Anubis.Transport.SSETest do
 
       # Set up the SSE connection - bypass is needed but we don't assert
       # any specific behavior since we're testing disconnection
-      Bypass.expect(bypass, fn conn ->
+      Bypass.stub(bypass, "GET", "/sse", fn conn ->
         Plug.Conn.resp(conn, 200, "")
       end)
 
@@ -317,17 +285,9 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: [max_reconnections: 0]
         )
 
-      # Allow time for the initial connection attempt
-      Process.sleep(100)
-
-      # Directly call shutdown on the transport to trigger clean termination
+      ref = Process.monitor(transport)
       SSE.shutdown(transport)
-
-      # Give it a moment to shut down
-      Process.sleep(100)
-
-      # Verify the process is no longer alive
-      refute Process.alive?(transport)
+      assert_receive {:DOWN, ^ref, :process, _, _}, 500
 
       # Clean up
       StubClient.clear_messages()
@@ -376,10 +336,7 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      Process.sleep(200)
-
-      transport_state = :sys.get_state(transport)
-      assert transport_state.message_url
+      _ = SyncHelpers.await_state(transport, & &1.message_url)
       assert :ok = SSE.send_message(transport, "test message", timeout: 5000)
 
       SSE.shutdown(transport)
@@ -416,9 +373,7 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      Process.sleep(200)
-
-      transport_state = :sys.get_state(transport)
+      transport_state = SyncHelpers.await_state(transport, & &1.message_url)
       assert transport_state.message_url == "#{server_url}/messages/123"
       assert :ok = SSE.send_message(transport, "test message", timeout: 5000)
 
@@ -451,9 +406,7 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      Process.sleep(200)
-
-      transport_state = :sys.get_state(transport)
+      transport_state = SyncHelpers.await_state(transport, & &1.message_url)
       assert transport_state.message_url == absolute_endpoint
 
       SSE.shutdown(transport)
@@ -489,9 +442,7 @@ defmodule Anubis.Transport.SSETest do
           transport_opts: @test_http_opts
         )
 
-      Process.sleep(200)
-
-      transport_state = :sys.get_state(transport)
+      transport_state = SyncHelpers.await_state(transport, & &1.message_url)
       assert transport_state.message_url == "#{server_url}/messages/123"
       refute String.contains?(transport_state.message_url, "/mcp/mcp/")
       assert :ok = SSE.send_message(transport, "test message", timeout: 5000)
