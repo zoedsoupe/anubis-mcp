@@ -20,3 +20,5 @@ config :logger, :default_formatter,
 #   ttl: 1800,  # TTL is in ms
 #   namespace: "anubis:sessions",
 #   connection_name: :anubis_redis
+
+if config_env() != :prod, do: import_config("#{config_env()}.exs")
