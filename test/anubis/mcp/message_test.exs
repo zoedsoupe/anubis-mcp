@@ -146,6 +146,16 @@ defmodule Anubis.MCP.MessageTest do
       assert {:ok, _} = Message.validate_message(msg)
     end
 
+    test "rejects notifications/resources/updated notification missing uri" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/resources/updated",
+        "params" => %{}
+      }
+
+      assert {:error, _} = Message.validate_message(msg)
+    end
+
     test "validates notifications/resources/list_changed notification" do
       msg = %{
         "jsonrpc" => "2.0",

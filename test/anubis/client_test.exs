@@ -936,14 +936,14 @@ defmodule Anubis.ClientTest do
         nil
       )
 
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
       send_notification(
         client,
         build_notification("notifications/resources/updated", %{"uri" => "file:///x"})
       )
 
       assert_receive {:client_notification, %{method: "resources/updated", uri: "file:///x"}}, 200
-
-      :telemetry.detach(handler_id)
     end
   end
 

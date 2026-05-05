@@ -186,6 +186,10 @@ defmodule Anubis.MCP.Message do
     "logger" => :string
   }
 
+  @resource_updated_notif_params_schema %{
+    "uri" => {:required, :string}
+  }
+
   @notification_branch_specs %{
     "notifications/initialized" => @init_noti_params_schema,
     "notifications/cancelled" => @cancel_noti_params_schema,
@@ -196,7 +200,7 @@ defmodule Anubis.MCP.Message do
     "notifications/tools/list_changed" => :map,
     "notifications/prompts/list_changed" => :map,
     "notifications/resources/list_changed" => :map,
-    "notifications/resources/updated" => :map
+    "notifications/resources/updated" => @resource_updated_notif_params_schema
   }
 
   @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->
