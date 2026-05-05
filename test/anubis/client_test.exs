@@ -270,8 +270,7 @@ defmodule Anubis.ClientTest do
       task =
         Task.async(fn -> Anubis.Client.subscribe_resource(client, "file:///x") end)
 
-      assert {:error,
-              %Error{reason: :method_not_found, data: %{method: "resources/subscribe"}}} =
+      assert {:error, %Error{reason: :method_not_found, data: %{method: "resources/subscribe"}}} =
                Task.await(task)
     end
 
@@ -281,8 +280,7 @@ defmodule Anubis.ClientTest do
       task =
         Task.async(fn -> Anubis.Client.unsubscribe_resource(client, "file:///x") end)
 
-      assert {:error,
-              %Error{reason: :method_not_found, data: %{method: "resources/unsubscribe"}}} =
+      assert {:error, %Error{reason: :method_not_found, data: %{method: "resources/unsubscribe"}}} =
                Task.await(task)
     end
 
