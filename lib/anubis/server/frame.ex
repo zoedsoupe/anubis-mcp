@@ -337,14 +337,23 @@ defmodule Anubis.Server.Frame do
   """
   @spec from_saved(map()) :: t()
   def from_saved(map) when is_map(map) do
+    subs =
+      map
+      |> Map.get("resource_subscriptions", [])
+      |> Enum.filter(&is_binary/1)
+      |> build_subscriptions()
+
     %__MODULE__{
       assigns: Map.get(map, "assigns", %{}),
       pagination_limit: Map.get(map, "pagination_limit"),
-      resource_subscriptions: map |> Map.get("resource_subscriptions", []) |> MapSet.new()
+      resource_subscriptions: subs
     }
   end
 
-  def from_saved(_), do: %__MODULE__{}
+  def from_saved(_), do: %__MODULE__{resource_subscriptions: build_subscriptions([])}
+
+  @spec build_subscriptions([String.t()]) :: MapSet.t(String.t())
+  defp build_subscriptions(list), do: MapSet.new(list)
 end
 
 defimpl Inspect, for: Anubis.Server.Frame do
