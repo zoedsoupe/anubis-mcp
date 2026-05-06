@@ -57,7 +57,19 @@ defmodule Anubis.Server.Session do
             }
           },
           timeout: pos_integer(),
-          task_supervisor: GenServer.name()
+          task_supervisor: GenServer.name(),
+          in_flight:
+            nil
+            | %{
+                ref: reference(),
+                pid: pid(),
+                request_id: String.t(),
+                from: GenServer.from(),
+                started_at: integer(),
+                method: String.t()
+              },
+          request_queue: :queue.queue({map(), map(), GenServer.from()}),
+          deferred_callbacks: :queue.queue({:cast | :info, term()})
         }
 
   defschema(:parse_options, [
@@ -142,7 +154,10 @@ defmodule Anubis.Server.Session do
       pending_requests: %{},
       server_requests: %{},
       timeout: opts.timeout,
-      task_supervisor: opts.task_supervisor
+      task_supervisor: opts.task_supervisor,
+      in_flight: nil,
+      request_queue: :queue.new(),
+      deferred_callbacks: :queue.new()
     }
 
     state = schedule_session_expiry(state)
@@ -170,11 +185,11 @@ defmodule Anubis.Server.Session do
   # Request/Response handling
 
   @impl GenServer
-  def handle_call({:mcp_request, decoded, transport_context}, _from, state) when is_map(decoded) do
+  def handle_call({:mcp_request, decoded, transport_context}, from, state) when is_map(decoded) do
     state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
-    handle_single_request(decoded, transport_context, state)
+    handle_single_request(decoded, transport_context, from, state)
   end
 
   def handle_call(:auto_initialize, _from, %{initialized: true} = state) do
@@ -254,7 +269,38 @@ defmodule Anubis.Server.Session do
   # Notification dispatch
 
   @impl GenServer
-  def handle_cast({:mcp_notification, decoded, transport_context}, state) when is_map(decoded) do
+  def handle_cast({:mcp_notification, decoded, _ctx} = msg, %{in_flight: f} = state)
+      when not is_nil(f) and is_map(decoded) do
+    if cancellation_notification?(decoded) do
+      process_mcp_notification(msg, state)
+    else
+      {:noreply, defer_callback(state, {:cast, msg})}
+    end
+  end
+
+  def handle_cast({:mcp_notification, decoded, _ctx} = msg, state) when is_map(decoded) do
+    process_mcp_notification(msg, state)
+  end
+
+  # Server-initiated request responses (sampling/roots)
+
+  def handle_cast({:mcp_response, decoded, _ctx} = msg, %{in_flight: f} = state) when not is_nil(f) and is_map(decoded) do
+    {:noreply, defer_callback(state, {:cast, msg})}
+  end
+
+  def handle_cast({:mcp_response, decoded, _context}, state) when is_map(decoded) do
+    process_mcp_response(decoded, state)
+  end
+
+  def handle_cast(request, %{in_flight: f} = state) when not is_nil(f) do
+    {:noreply, defer_callback(state, {:cast, request})}
+  end
+
+  def handle_cast(request, state) do
+    process_user_cast(request, state)
+  end
+
+  defp process_mcp_notification({:mcp_notification, decoded, transport_context}, state) do
     state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
@@ -271,9 +317,7 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  # Server-initiated request responses (sampling/roots)
-
-  def handle_cast({:mcp_response, decoded, _context}, state) when is_map(decoded) do
+  defp process_mcp_response(decoded, state) do
     cond do
       Message.is_response(decoded) and server_request?(decoded["id"], state) ->
         handle_server_request_response(decoded, state)
@@ -292,11 +336,28 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  def handle_cast(request, %{server_module: module} = state) do
+  defp cancellation_notification?(%{"method" => "notifications/cancelled"}), do: true
+  defp cancellation_notification?(_), do: false
+
+  defp process_user_cast(request, %{server_module: module} = state) do
     if Anubis.exported?(module, :handle_cast, 2) do
       frame = prepare_frame(state)
 
       case module.handle_cast(request, frame) do
+        {:noreply, frame} -> {:noreply, %{state | frame: frame}}
+        {:noreply, frame, cont} -> {:noreply, %{state | frame: frame}, cont}
+        {:stop, reason, frame} -> {:stop, reason, %{state | frame: frame}}
+      end
+    else
+      {:noreply, state}
+    end
+  end
+
+  defp process_user_info(event, %{server_module: module} = state) do
+    if Anubis.exported?(module, :handle_info, 2) do
+      frame = prepare_frame(state)
+
+      case module.handle_info(event, frame) do
         {:noreply, frame} -> {:noreply, %{state | frame: frame}}
         {:noreply, frame, cont} -> {:noreply, %{state | frame: frame}, cont}
         {:stop, reason, frame} -> {:stop, reason, %{state | frame: frame}}
@@ -353,23 +414,55 @@ defmodule Anubis.Server.Session do
     handle_elicitation_timeout(request_id, state)
   end
 
-  def handle_info(event, %{server_module: module} = state) do
-    if Anubis.exported?(module, :handle_info, 2) do
-      frame = prepare_frame(state)
+  def handle_info({ref, callback_result}, %{in_flight: %{ref: ref} = inflight} = state) do
+    Process.demonitor(ref, [:flush])
+    {reply, state} = decode_task_result(callback_result, inflight, state)
+    state = complete_request(%{state | in_flight: nil}, inflight.request_id)
+    GenServer.reply(inflight.from, reply)
 
-      case module.handle_info(event, frame) do
-        {:noreply, frame} -> {:noreply, %{state | frame: frame}}
-        {:noreply, frame, cont} -> {:noreply, %{state | frame: frame}, cont}
-        {:stop, reason, frame} -> {:stop, reason, %{state | frame: frame}}
-      end
-    else
-      {:noreply, state}
-    end
+    state
+    |> drain_deferred_callbacks()
+    |> dispatch_next_queued()
+    |> noreply()
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{in_flight: %{ref: ref} = inflight} = state) do
+    Logging.server_event(
+      "request_task_crashed",
+      %{request_id: inflight.request_id, method: inflight.method, reason: inspect(reason)},
+      level: :error
+    )
+
+    Telemetry.execute(
+      Telemetry.event_server_error(),
+      %{system_time: System.system_time()},
+      %{id: inflight.request_id, method: inflight.method, error: reason}
+    )
+
+    error = Error.protocol(:internal_error, %{message: "Tool execution crashed"})
+    reply = {:ok, encode_reply(Error.build_json_rpc(error, inflight.request_id))}
+
+    state = complete_request(%{state | in_flight: nil}, inflight.request_id)
+    GenServer.reply(inflight.from, reply)
+
+    state
+    |> drain_deferred_callbacks()
+    |> dispatch_next_queued()
+    |> noreply()
+  end
+
+  def handle_info(event, %{in_flight: f} = state) when not is_nil(f) do
+    {:noreply, defer_callback(state, {:info, event})}
+  end
+
+  def handle_info(event, state) do
+    process_user_info(event, state)
   end
 
   @impl GenServer
   def terminate(reason, %{server_module: module, server_info: server_info} = state) do
     cancel_session_expiry(state)
+    reply_to_pending_callers(state, reason)
 
     Logging.server_event("session_terminating", %{
       session_id: state.session_id,
@@ -389,6 +482,24 @@ defmodule Anubis.Server.Session do
     else
       :ok
     end
+  end
+
+  defp reply_to_pending_callers(%{in_flight: in_flight, request_queue: q}, reason) do
+    error =
+      Error.protocol(:internal_error, %{
+        message: "Session terminating",
+        reason: inspect(reason)
+      })
+
+    if in_flight do
+      reply = {:ok, encode_reply(Error.build_json_rpc(error, in_flight.request_id))}
+      GenServer.reply(in_flight.from, reply)
+    end
+
+    Enum.each(:queue.to_list(q), fn {%{"id" => request_id}, _ctx, from} ->
+      reply = {:ok, encode_reply(Error.build_json_rpc(error, request_id))}
+      GenServer.reply(from, reply)
+    end)
   end
 
   @impl GenServer
@@ -417,13 +528,15 @@ defmodule Anubis.Server.Session do
             when Message.is_initialize_lifecycle(decoded) or
                    state.initialized == true
 
-  defp handle_single_request(decoded, transport_context, state) do
+  defp handle_single_request(decoded, transport_context, from, state) do
     cond do
       Message.is_response(decoded) and server_request?(decoded["id"], state) ->
-        handle_server_request_response(decoded, state)
+        {:noreply, new_state} = handle_server_request_response(decoded, state)
+        {:reply, {:ok, nil}, new_state}
 
       Message.is_error(decoded) and server_request?(decoded["id"], state) ->
-        handle_server_request_error(decoded, state)
+        {:noreply, new_state} = handle_server_request_error(decoded, state)
+        {:reply, {:ok, nil}, new_state}
 
       Message.is_ping(decoded) ->
         handle_server_ping(decoded, state)
@@ -432,7 +545,7 @@ defmodule Anubis.Server.Session do
         handle_server_not_initialized(state)
 
       Message.is_request(decoded) ->
-        handle_request(decoded, transport_context, state)
+        handle_request(decoded, transport_context, from, state)
 
       true ->
         handle_invalid_request(state)
@@ -466,7 +579,8 @@ defmodule Anubis.Server.Session do
 
   # Initialize handling
 
-  defp handle_request(%{"params" => params} = request, _transport_context, state) when Message.is_initialize(request) do
+  defp handle_request(%{"params" => params} = request, _transport_context, _from, state)
+       when Message.is_initialize(request) do
     %{
       "clientInfo" => client_info,
       "capabilities" => client_capabilities,
@@ -508,14 +622,26 @@ defmodule Anubis.Server.Session do
     {:reply, {:ok, encode_reply(Message.build_response(result, request["id"]))}, state}
   end
 
-  defp handle_request(%{"id" => request_id, "method" => "logging/setLevel"} = request, _transport_context, state)
+  defp handle_request(%{"id" => request_id, "method" => "logging/setLevel"} = request, _transport_context, _from, state)
        when Server.is_supported_capability(state.capabilities, "logging") do
     level = request["params"]["level"]
     state = %{state | log_level: level}
     {:reply, {:ok, encode_reply(Message.build_response(%{}, request_id))}, state}
   end
 
-  defp handle_request(%{"id" => request_id, "method" => method} = request, transport_context, state) do
+  defp handle_request(%{"id" => _, "method" => _} = request, transport_context, from, state) do
+    enqueue_or_dispatch(request, transport_context, from, state)
+  end
+
+  defp enqueue_or_dispatch(request, ctx, from, %{in_flight: nil} = state) do
+    {:noreply, dispatch_request(request, ctx, from, state)}
+  end
+
+  defp enqueue_or_dispatch(request, ctx, from, state) do
+    {:noreply, %{state | request_queue: :queue.in({request, ctx, from}, state.request_queue)}}
+  end
+
+  defp dispatch_request(%{"id" => request_id, "method" => method} = request, transport_context, from, state) do
     Logging.server_event("handling_request", %{
       id: request_id,
       method: method,
@@ -531,8 +657,118 @@ defmodule Anubis.Server.Session do
     )
 
     frame = prepare_frame(state, transport_context)
-    server_request(request, %{state | frame: frame})
+    module = state.server_module
+
+    task =
+      Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+        do_handle_request(module, request, frame, method)
+      end)
+
+    %{
+      state
+      | in_flight: %{
+          ref: task.ref,
+          pid: task.pid,
+          request_id: request_id,
+          from: from,
+          started_at: System.system_time(:millisecond),
+          method: method
+        }
+    }
   end
+
+  defp do_handle_request(module, %{"method" => "tools/call"} = request, frame, _method) do
+    tool_name = get_in(request, ["params", "name"])
+
+    :telemetry.span(
+      Telemetry.event_server_tool_call(),
+      %{tool: tool_name},
+      fn -> {module.handle_request(request, frame), %{tool: tool_name}} end
+    )
+  end
+
+  defp do_handle_request(module, request, frame, _method) do
+    module.handle_request(request, frame)
+  end
+
+  # Async dispatch helpers
+
+  defp decode_task_result({:reply, response, %Frame{} = frame}, inflight, state) do
+    Telemetry.execute(
+      Telemetry.event_server_response(),
+      %{system_time: System.system_time()},
+      %{id: inflight.request_id, method: inflight.method, status: :success}
+    )
+
+    reply = {:ok, encode_reply(Message.build_response(response, inflight.request_id))}
+    {reply, %{state | frame: frame}}
+  end
+
+  defp decode_task_result({:noreply, %Frame{} = frame}, inflight, state) do
+    Telemetry.execute(
+      Telemetry.event_server_response(),
+      %{system_time: System.system_time()},
+      %{id: inflight.request_id, method: inflight.method, status: :noreply}
+    )
+
+    {{:ok, nil}, %{state | frame: frame}}
+  end
+
+  defp decode_task_result({:error, %Error{} = error, %Frame{} = frame}, inflight, state) do
+    Logging.server_event(
+      "request_error",
+      %{id: inflight.request_id, method: inflight.method, error: error},
+      level: :warning
+    )
+
+    Telemetry.execute(
+      Telemetry.event_server_error(),
+      %{system_time: System.system_time()},
+      %{id: inflight.request_id, method: inflight.method, error: error}
+    )
+
+    reply = {:ok, encode_reply(Error.build_json_rpc(error, inflight.request_id))}
+    {reply, %{state | frame: frame}}
+  end
+
+  defp defer_callback(state, item) do
+    %{state | deferred_callbacks: :queue.in(item, state.deferred_callbacks)}
+  end
+
+  defp drain_deferred_callbacks(%{deferred_callbacks: q} = state) do
+    state = %{state | deferred_callbacks: :queue.new()}
+    Enum.reduce(:queue.to_list(q), state, &apply_deferred/2)
+  end
+
+  defp apply_deferred({:cast, msg}, state) do
+    msg |> dispatch_deferred_cast(state) |> unwrap_state()
+  end
+
+  defp apply_deferred({:info, msg}, state) do
+    msg |> process_user_info(state) |> unwrap_state()
+  end
+
+  defp dispatch_deferred_cast({:mcp_notification, _, _} = msg, state), do: process_mcp_notification(msg, state)
+
+  defp dispatch_deferred_cast({:mcp_response, decoded, _ctx}, state), do: process_mcp_response(decoded, state)
+
+  defp dispatch_deferred_cast(other, state), do: process_user_cast(other, state)
+
+  defp unwrap_state({:noreply, state}), do: state
+  defp unwrap_state({:noreply, state, _cont}), do: state
+  defp unwrap_state({:stop, _reason, state}), do: state
+
+  defp dispatch_next_queued(%{request_queue: q} = state) do
+    case :queue.out(q) do
+      {:empty, _} ->
+        state
+
+      {{:value, {request, ctx, from}}, rest} ->
+        dispatch_request(request, ctx, from, %{state | request_queue: rest})
+    end
+  end
+
+  defp noreply(state), do: {:noreply, state}
 
   # Notification handling
 
@@ -567,36 +803,19 @@ defmodule Anubis.Server.Session do
     request_id = params["requestId"]
     reason = Map.get(params, "reason", "cancelled")
 
-    case Map.get(state.pending_requests, request_id) do
-      nil ->
+    cond do
+      in_flight?(state, request_id) ->
+        cancel_in_flight(state, request_id, reason)
+
+      queued?(state, request_id) ->
+        cancel_queued(state, request_id, reason)
+
+      true ->
         Logging.server_event("cancellation_for_unknown_request", %{
           session_id: state.session_id,
           request_id: request_id,
           reason: reason
         })
-
-        {:noreply, state}
-
-      request_info ->
-        state = complete_request(state, request_id)
-
-        Logging.server_event("request_cancelled", %{
-          session_id: state.session_id,
-          request_id: request_id,
-          reason: reason,
-          method: request_info[:method],
-          duration_ms: System.system_time(:millisecond) - request_info[:started_at]
-        })
-
-        Telemetry.execute(
-          Telemetry.event_server_notification(),
-          %{system_time: System.system_time()},
-          %{
-            method: "cancelled",
-            session_id: state.session_id,
-            request_id: request_id
-          }
-        )
 
         {:noreply, state}
     end
@@ -617,49 +836,70 @@ defmodule Anubis.Server.Session do
     server_notification(notification, %{state | frame: frame})
   end
 
-  # Server request/notification dispatch
+  defp in_flight?(%{in_flight: %{request_id: rid}}, rid), do: true
+  defp in_flight?(_, _), do: false
 
-  defp server_request(%{"id" => request_id, "method" => method} = request, %{server_module: module} = state) do
-    case module.handle_request(request, state.frame) do
-      {:reply, response, %Frame{} = frame} ->
-        Telemetry.execute(
-          Telemetry.event_server_response(),
-          %{system_time: System.system_time()},
-          %{id: request_id, method: method, status: :success}
-        )
-
-        state = complete_request(%{state | frame: frame}, request_id)
-
-        {:reply, {:ok, encode_reply(Message.build_response(response, request_id))}, state}
-
-      {:noreply, %Frame{} = frame} ->
-        Telemetry.execute(
-          Telemetry.event_server_response(),
-          %{system_time: System.system_time()},
-          %{id: request_id, method: method, status: :noreply}
-        )
-
-        state = complete_request(%{state | frame: frame}, request_id)
-        {:reply, {:ok, nil}, state}
-
-      {:error, %Error{} = error, %Frame{} = frame} ->
-        Logging.server_event(
-          "request_error",
-          %{id: request_id, method: method, error: error},
-          level: :warning
-        )
-
-        Telemetry.execute(
-          Telemetry.event_server_error(),
-          %{system_time: System.system_time()},
-          %{id: request_id, method: method, error: error}
-        )
-
-        state = complete_request(%{state | frame: frame}, request_id)
-
-        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, request_id))}, state}
-    end
+  defp queued?(%{request_queue: q}, rid) do
+    Enum.any?(:queue.to_list(q), fn {%{"id" => id}, _ctx, _from} -> id == rid end)
   end
+
+  defp cancel_in_flight(%{in_flight: inflight} = state, request_id, reason) do
+    Task.Supervisor.terminate_child(state.task_supervisor, inflight.pid)
+    Process.demonitor(inflight.ref, [:flush])
+
+    Logging.server_event("request_cancelled", %{
+      session_id: state.session_id,
+      request_id: request_id,
+      reason: reason,
+      method: inflight.method,
+      duration_ms: System.system_time(:millisecond) - inflight.started_at
+    })
+
+    emit_cancellation_telemetry(state.session_id, request_id)
+
+    error = Error.execution("Request cancelled", %{reason: reason})
+    reply = {:ok, encode_reply(Error.build_json_rpc(error, request_id))}
+    GenServer.reply(inflight.from, reply)
+
+    state = complete_request(%{state | in_flight: nil}, request_id)
+
+    state
+    |> drain_deferred_callbacks()
+    |> dispatch_next_queued()
+    |> noreply()
+  end
+
+  defp cancel_queued(state, request_id, reason) do
+    {cancelled, kept} =
+      state.request_queue
+      |> :queue.to_list()
+      |> Enum.split_with(fn {%{"id" => id}, _ctx, _from} -> id == request_id end)
+
+    error = Error.execution("Request cancelled", %{reason: reason})
+    reply = {:ok, encode_reply(Error.build_json_rpc(error, request_id))}
+
+    Enum.each(cancelled, fn {_request, _ctx, from} -> GenServer.reply(from, reply) end)
+
+    Logging.server_event("queued_request_cancelled", %{
+      session_id: state.session_id,
+      request_id: request_id,
+      reason: reason
+    })
+
+    emit_cancellation_telemetry(state.session_id, request_id)
+
+    {:noreply, %{state | request_queue: :queue.from_list(kept)}}
+  end
+
+  defp emit_cancellation_telemetry(session_id, request_id) do
+    Telemetry.execute(
+      Telemetry.event_server_notification(),
+      %{system_time: System.system_time()},
+      %{method: "cancelled", session_id: session_id, request_id: request_id}
+    )
+  end
+
+  # Notification dispatch to user module
 
   defp server_notification(%{"method" => method} = notification, %{server_module: module} = state) do
     if Anubis.exported?(module, :handle_notification, 2) do
