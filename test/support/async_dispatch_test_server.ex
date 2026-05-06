@@ -48,6 +48,11 @@ defmodule AsyncDispatchTestServer do
         "properties" => %{"value" => %{"type" => "string"}},
         "required" => ["value"]
       }
+    },
+    %{
+      "name" => "malformed_return",
+      "description" => "returns an invalid handler tuple",
+      "inputSchema" => %{"type" => "object", "properties" => %{}}
     }
   ]
 
@@ -111,6 +116,10 @@ defmodule AsyncDispatchTestServer do
 
   defp handle_tool("crash", _args, _frame) do
     raise "intentional crash from AsyncDispatchTestServer"
+  end
+
+  defp handle_tool("malformed_return", _args, _frame) do
+    :not_a_valid_handler_return
   end
 
   defp handle_tool("echo", %{"value" => value}, frame) do

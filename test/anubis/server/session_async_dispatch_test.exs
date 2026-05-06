@@ -90,6 +90,26 @@ defmodule Anubis.Server.SessionAsyncDispatchTest do
       assert {:ok, encoded2} = GenServer.call(session, {:mcp_request, followup, ctx}, 5_000)
       assert tool_text(encoded2) == "alive"
     end
+
+    test "malformed handler return becomes internal_error, session survives", %{session: session} do
+      caller = self()
+      ctx = with_test_pid()
+
+      Task.start(fn ->
+        req = tool_call_request("malformed_return", %{}, "bad-1")
+        send(caller, {:reply, GenServer.call(session, {:mcp_request, req, ctx}, 5_000)})
+      end)
+
+      assert_receive {:reply, {:ok, encoded}}, 1_000
+      decoded = decode_one(encoded)
+      assert decoded["error"]["code"] == -32_603
+      assert decoded["error"]["data"]["message"] == "Invalid handler return value"
+      assert Process.alive?(session)
+
+      followup = tool_call_request("echo", %{"value" => "still-alive"}, "ok-2")
+      assert {:ok, encoded2} = GenServer.call(session, {:mcp_request, followup, ctx}, 5_000)
+      assert tool_text(encoded2) == "still-alive"
+    end
   end
 
   describe "cancel queued request" do
@@ -195,6 +215,7 @@ defmodule Anubis.Server.SessionAsyncDispatchTest do
   defp start_async_session(_ctx) do
     session_id = "async-#{System.unique_integer([:positive])}"
     transport_name = Registry.transport_name(AsyncDispatchTestServer, StubTransport)
+    # StubTransport (not MockTransport) — captures outbound frames and exposes clear/1 for isolation
     transport = start_supervised!({StubTransport, name: transport_name}, id: {:transport, session_id})
     task_sup = Registry.task_supervisor_name(AsyncDispatchTestServer)
 

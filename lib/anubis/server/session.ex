@@ -336,7 +336,8 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  defp cancellation_notification?(%{"method" => "notifications/cancelled"}), do: true
+  defp cancellation_notification?(%{"method" => "notifications/cancelled"} = msg), do: Message.is_notification(msg)
+
   defp cancellation_notification?(_), do: false
 
   defp process_user_cast(request, %{server_module: module} = state) do
@@ -671,10 +672,18 @@ defmodule Anubis.Server.Session do
           pid: task.pid,
           request_id: request_id,
           from: from,
-          started_at: System.system_time(:millisecond),
+          started_at: System.monotonic_time(:millisecond),
           method: method
         }
     }
+  end
+
+  defp flush_task_reply(ref) do
+    receive do
+      {^ref, _result} -> :ok
+    after
+      0 -> :ok
+    end
   end
 
   defp do_handle_request(module, %{"method" => "tools/call"} = request, frame, _method) do
@@ -729,6 +738,24 @@ defmodule Anubis.Server.Session do
 
     reply = {:ok, encode_reply(Error.build_json_rpc(error, inflight.request_id))}
     {reply, %{state | frame: frame}}
+  end
+
+  defp decode_task_result(other, inflight, state) do
+    Logging.server_event(
+      "invalid_handle_request_return",
+      %{id: inflight.request_id, method: inflight.method, returned: inspect(other)},
+      level: :error
+    )
+
+    Telemetry.execute(
+      Telemetry.event_server_error(),
+      %{system_time: System.system_time()},
+      %{id: inflight.request_id, method: inflight.method, error: :invalid_return}
+    )
+
+    error = Error.protocol(:internal_error, %{message: "Invalid handler return value"})
+    reply = {:ok, encode_reply(Error.build_json_rpc(error, inflight.request_id))}
+    {reply, state}
   end
 
   defp defer_callback(state, item) do
@@ -846,13 +873,14 @@ defmodule Anubis.Server.Session do
   defp cancel_in_flight(%{in_flight: inflight} = state, request_id, reason) do
     Task.Supervisor.terminate_child(state.task_supervisor, inflight.pid)
     Process.demonitor(inflight.ref, [:flush])
+    flush_task_reply(inflight.ref)
 
     Logging.server_event("request_cancelled", %{
       session_id: state.session_id,
       request_id: request_id,
       reason: reason,
       method: inflight.method,
-      duration_ms: System.system_time(:millisecond) - inflight.started_at
+      duration_ms: System.monotonic_time(:millisecond) - inflight.started_at
     })
 
     emit_cancellation_telemetry(state.session_id, request_id)
