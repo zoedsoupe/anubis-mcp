@@ -184,7 +184,7 @@ defmodule Anubis.Server.SessionAsyncDispatchTest do
   end
 
   describe "session terminate" do
-    test "queued and in-flight requests get internal_error reply on shutdown", %{session: session} do
+    test "queued and in-flight requests get internal_error reply on shutdown", %{session: session, task_sup: task_sup} do
       caller = self()
       ctx = with_test_pid()
 
@@ -193,7 +193,8 @@ defmodule Anubis.Server.SessionAsyncDispatchTest do
         send(caller, {:reply, :blocker, GenServer.call(session, {:mcp_request, req, ctx}, 5_000)})
       end)
 
-      assert_receive {:tool_running, _pid, :blocker2}, 1_000
+      assert_receive {:tool_running, blocker_pid, :blocker2}, 1_000
+      ref = Process.monitor(blocker_pid)
 
       Task.start(fn ->
         req = tool_call_request("wait_signal", %{"signal" => "queued2"}, "term-queued")
@@ -209,6 +210,10 @@ defmodule Anubis.Server.SessionAsyncDispatchTest do
 
       assert decode_one(encoded_blocker)["error"]["code"] == -32_603
       assert decode_one(encoded_queued)["error"]["code"] == -32_603
+
+      # In-flight task pid was terminated, not left running on the per-server task_supervisor
+      assert_receive {:DOWN, ^ref, :process, _, _}, 500
+      refute blocker_pid in Task.Supervisor.children(task_sup)
     end
   end
 

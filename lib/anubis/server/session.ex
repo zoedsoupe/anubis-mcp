@@ -421,10 +421,7 @@ defmodule Anubis.Server.Session do
     state = complete_request(%{state | in_flight: nil}, inflight.request_id)
     GenServer.reply(inflight.from, reply)
 
-    state
-    |> drain_deferred_callbacks()
-    |> dispatch_next_queued()
-    |> noreply()
+    finalize_after_task(state)
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{in_flight: %{ref: ref} = inflight} = state) do
@@ -446,10 +443,7 @@ defmodule Anubis.Server.Session do
     state = complete_request(%{state | in_flight: nil}, inflight.request_id)
     GenServer.reply(inflight.from, reply)
 
-    state
-    |> drain_deferred_callbacks()
-    |> dispatch_next_queued()
-    |> noreply()
+    finalize_after_task(state)
   end
 
   def handle_info(event, %{in_flight: f} = state) when not is_nil(f) do
@@ -485,7 +479,7 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  defp reply_to_pending_callers(%{in_flight: in_flight, request_queue: q}, reason) do
+  defp reply_to_pending_callers(%{in_flight: in_flight, request_queue: q, task_supervisor: task_supervisor}, reason) do
     error =
       Error.protocol(:internal_error, %{
         message: "Session terminating",
@@ -493,6 +487,10 @@ defmodule Anubis.Server.Session do
       })
 
     if in_flight do
+      Task.Supervisor.terminate_child(task_supervisor, in_flight.pid)
+      Process.demonitor(in_flight.ref, [:flush])
+      flush_task_reply(in_flight.ref)
+
       reply = {:ok, encode_reply(Error.build_json_rpc(error, in_flight.request_id))}
       GenServer.reply(in_flight.from, reply)
     end
@@ -764,26 +762,27 @@ defmodule Anubis.Server.Session do
 
   defp drain_deferred_callbacks(%{deferred_callbacks: q} = state) do
     state = %{state | deferred_callbacks: :queue.new()}
-    Enum.reduce(:queue.to_list(q), state, &apply_deferred/2)
+
+    Enum.reduce_while(:queue.to_list(q), state, fn item, acc ->
+      case apply_deferred(item, acc) do
+        {:noreply, new_state} -> {:cont, new_state}
+        {:noreply, new_state, _cont} -> {:cont, new_state}
+        {:stop, _reason, _new_state} = stop -> {:halt, stop}
+      end
+    end)
   end
 
-  defp apply_deferred({:cast, msg}, state) do
-    msg |> dispatch_deferred_cast(state) |> unwrap_state()
+  defp apply_deferred({:cast, {:mcp_notification, _, _} = msg}, state), do: process_mcp_notification(msg, state)
+  defp apply_deferred({:cast, {:mcp_response, decoded, _ctx}}, state), do: process_mcp_response(decoded, state)
+  defp apply_deferred({:cast, msg}, state), do: process_user_cast(msg, state)
+  defp apply_deferred({:info, msg}, state), do: process_user_info(msg, state)
+
+  defp finalize_after_task(state) do
+    case drain_deferred_callbacks(state) do
+      {:stop, _reason, _new_state} = stop -> stop
+      new_state -> new_state |> dispatch_next_queued() |> noreply()
+    end
   end
-
-  defp apply_deferred({:info, msg}, state) do
-    msg |> process_user_info(state) |> unwrap_state()
-  end
-
-  defp dispatch_deferred_cast({:mcp_notification, _, _} = msg, state), do: process_mcp_notification(msg, state)
-
-  defp dispatch_deferred_cast({:mcp_response, decoded, _ctx}, state), do: process_mcp_response(decoded, state)
-
-  defp dispatch_deferred_cast(other, state), do: process_user_cast(other, state)
-
-  defp unwrap_state({:noreply, state}), do: state
-  defp unwrap_state({:noreply, state, _cont}), do: state
-  defp unwrap_state({:stop, _reason, state}), do: state
 
   defp dispatch_next_queued(%{request_queue: q} = state) do
     case :queue.out(q) do
@@ -890,11 +889,7 @@ defmodule Anubis.Server.Session do
     GenServer.reply(inflight.from, reply)
 
     state = complete_request(%{state | in_flight: nil}, request_id)
-
-    state
-    |> drain_deferred_callbacks()
-    |> dispatch_next_queued()
-    |> noreply()
+    finalize_after_task(state)
   end
 
   defp cancel_queued(state, request_id, reason) do
