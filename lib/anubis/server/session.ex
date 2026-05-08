@@ -383,6 +383,16 @@ defmodule Anubis.Server.Session do
     end
   end
 
+  def handle_info({:send_resource_update, uri, params}, state) do
+    subscribed? = Frame.resource_subscribed?(state.frame, uri)
+
+    if subscribed? do
+      send(self(), {:send_notification, "notifications/resources/updated", params})
+    end
+
+    {:noreply, state}
+  end
+
   def handle_info(:session_expired, state) do
     Logging.server_event("session_expired", %{session_id: state.session_id})
     {:stop, {:shutdown, :session_expired}, state}

@@ -17,6 +17,7 @@ defmodule Anubis.Server.Handlers do
     case action do
       "list" -> Tools.handle_list(request, frame, module)
       "call" -> Tools.handle_call(request, frame, module)
+      _ -> {:error, Error.protocol(:method_not_found, %{method: request["method"]}), frame}
     end
   end
 
@@ -24,6 +25,7 @@ defmodule Anubis.Server.Handlers do
     case action do
       "list" -> Prompts.handle_list(request, frame, module)
       "get" -> Prompts.handle_get(request, frame, module)
+      _ -> {:error, Error.protocol(:method_not_found, %{method: request["method"]}), frame}
     end
   end
 
@@ -32,6 +34,9 @@ defmodule Anubis.Server.Handlers do
       "list" -> Resources.handle_list(request, frame, module)
       "read" -> Resources.handle_read(request, frame, module)
       "templates/list" -> Resources.handle_templates_list(request, frame, module)
+      "subscribe" -> Resources.handle_subscribe(request, frame, module)
+      "unsubscribe" -> Resources.handle_unsubscribe(request, frame, module)
+      _ -> {:error, Error.protocol(:method_not_found, %{method: request["method"]}), frame}
     end
   end
 

@@ -30,6 +30,7 @@ defmodule Anubis.Protocol.V2024_11_05 do
   @request_methods ~w(
     initialize ping
     resources/list resources/templates/list resources/read
+    resources/subscribe resources/unsubscribe
     prompts/get prompts/list
     tools/call tools/list
     logging/setLevel completion/complete
@@ -41,6 +42,9 @@ defmodule Anubis.Protocol.V2024_11_05 do
     notifications/progress notifications/message
     notifications/roots/list_changed notifications/log/message
     notifications/tools/list_changed
+    notifications/prompts/list_changed
+    notifications/resources/list_changed
+    notifications/resources/updated
   )
 
   @progress_params_schema %{
@@ -80,6 +84,8 @@ defmodule Anubis.Protocol.V2024_11_05 do
   def request_params_schema("resources/list"), do: %{"cursor" => :string}
   def request_params_schema("resources/templates/list"), do: %{"cursor" => :string}
   def request_params_schema("resources/read"), do: %{"uri" => {:required, :string}}
+  def request_params_schema("resources/subscribe"), do: %{"uri" => {:required, :string}}
+  def request_params_schema("resources/unsubscribe"), do: %{"uri" => {:required, :string}}
   def request_params_schema("prompts/list"), do: %{"cursor" => :string}
 
   def request_params_schema("prompts/get") do

@@ -102,4 +102,96 @@ defmodule Anubis.Server.FrameTest do
       assert Enum.any?(resources, &(&1.name == "second"))
     end
   end
+
+  describe "subscribe_resource/2" do
+    test "records a subscription for the given URI" do
+      frame = Frame.subscribe_resource(Frame.new(), "file:///foo")
+
+      assert Frame.resource_subscribed?(frame, "file:///foo")
+    end
+
+    test "is idempotent — subscribing twice keeps a single entry" do
+      frame =
+        Frame.new()
+        |> Frame.subscribe_resource("file:///foo")
+        |> Frame.subscribe_resource("file:///foo")
+
+      assert MapSet.size(frame.resource_subscriptions) == 1
+    end
+
+    test "URIs do not need to refer to a registered resource" do
+      frame = Frame.subscribe_resource(Frame.new(), "does-not-exist:///x")
+
+      assert Frame.resource_subscribed?(frame, "does-not-exist:///x")
+    end
+  end
+
+  describe "unsubscribe_resource/2" do
+    test "removes an existing subscription" do
+      frame =
+        Frame.new()
+        |> Frame.subscribe_resource("file:///foo")
+        |> Frame.unsubscribe_resource("file:///foo")
+
+      refute Frame.resource_subscribed?(frame, "file:///foo")
+    end
+
+    test "is a no-op for a URI that was not subscribed" do
+      frame = Frame.unsubscribe_resource(Frame.new(), "file:///never-subscribed")
+
+      assert MapSet.size(frame.resource_subscriptions) == 0
+    end
+
+    test "leaves other subscriptions intact" do
+      frame =
+        Frame.new()
+        |> Frame.subscribe_resource("file:///a")
+        |> Frame.subscribe_resource("file:///b")
+        |> Frame.unsubscribe_resource("file:///a")
+
+      refute Frame.resource_subscribed?(frame, "file:///a")
+      assert Frame.resource_subscribed?(frame, "file:///b")
+    end
+  end
+
+  describe "resource_subscribed?/2" do
+    test "returns false for an empty frame" do
+      refute Frame.resource_subscribed?(Frame.new(), "file:///foo")
+    end
+
+    test "returns true for a subscribed URI" do
+      frame = Frame.subscribe_resource(Frame.new(), "file:///foo")
+
+      assert Frame.resource_subscribed?(frame, "file:///foo")
+    end
+  end
+
+  describe "to_saved/1 and from_saved/1 round-trip" do
+    test "preserves subscriptions across persistence" do
+      frame =
+        Frame.new()
+        |> Frame.subscribe_resource("file:///a")
+        |> Frame.subscribe_resource("file:///b")
+
+      restored = frame |> Frame.to_saved() |> Frame.from_saved()
+
+      assert Frame.resource_subscribed?(restored, "file:///a")
+      assert Frame.resource_subscribed?(restored, "file:///b")
+    end
+
+    test "serializes subscriptions as a list (JSON-friendly)" do
+      frame = Frame.subscribe_resource(Frame.new(), "file:///x")
+
+      saved = Frame.to_saved(frame)
+
+      assert is_list(saved["resource_subscriptions"])
+      assert "file:///x" in saved["resource_subscriptions"]
+    end
+
+    test "from_saved/1 restores an empty MapSet when key is missing" do
+      restored = Frame.from_saved(%{"assigns" => %{}})
+
+      assert restored.resource_subscriptions == MapSet.new()
+    end
+  end
 end

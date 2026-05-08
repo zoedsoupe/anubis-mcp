@@ -607,13 +607,17 @@ defmodule Anubis.Server do
   @doc """
   Sends a resource updated notification for a specific resource.
 
+  Subscription-gated: only emits if the current session has previously
+  received a `resources/subscribe` request for this URI. Calls for
+  unsubscribed URIs are silently dropped.
+
   **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_resource_updated(uri :: String.t(), timestamp :: DateTime.t() | nil) :: :ok
   def send_resource_updated(uri, timestamp \\ nil) do
     params = %{"uri" => uri}
     params = if timestamp, do: Map.put(params, "timestamp", timestamp), else: params
-    send(self(), {:send_notification, "notifications/resources/updated", params})
+    send(self(), {:send_resource_update, uri, params})
     :ok
   end
 

@@ -51,7 +51,31 @@ defmodule Anubis.Server.Handlers.Resources do
     end
   end
 
+  @spec handle_subscribe(map(), Frame.t(), module()) ::
+          {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
+  def handle_subscribe(%{"params" => %{"uri" => uri}}, frame, server) when is_binary(uri) do
+    if subscribe_enabled?(server) do
+      {:reply, %{}, Frame.subscribe_resource(frame, uri)}
+    else
+      {:error, Error.protocol(:method_not_found, %{method: "resources/subscribe"}), frame}
+    end
+  end
+
+  @spec handle_unsubscribe(map(), Frame.t(), module()) ::
+          {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
+  def handle_unsubscribe(%{"params" => %{"uri" => uri}}, frame, server) when is_binary(uri) do
+    if subscribe_enabled?(server) do
+      {:reply, %{}, Frame.unsubscribe_resource(frame, uri)}
+    else
+      {:error, Error.protocol(:method_not_found, %{method: "resources/unsubscribe"}), frame}
+    end
+  end
+
   # Private functions
+
+  defp subscribe_enabled?(server) do
+    get_in(server.server_capabilities(), ["resources", :subscribe]) == true
+  end
 
   defp find_static_resource(resources, uri), do: Enum.find(resources, &(&1.uri == uri))
 
