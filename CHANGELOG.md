@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.3.1...v1.4.0) (2026-05-08)
+
+
+### Features
+
+* add resource subscription capability implementation ([#152](https://github.com/zoedsoupe/anubis-mcp/issues/152)) ([10a09cf](https://github.com/zoedsoupe/anubis-mcp/commit/10a09cf89ffbd26651138c74961c442b6257cc40))
+* dispatch session requests in supervised tasks ([#153](https://github.com/zoedsoupe/anubis-mcp/issues/153)) ([f0496b4](https://github.com/zoedsoupe/anubis-mcp/commit/f0496b41a40eb6fabd4e015ec3f0ed35575efd44))
+
+
+### Tests
+
+* cut suite from 62s to 8s ([#149](https://github.com/zoedsoupe/anubis-mcp/issues/149)) ([e5a86f5](https://github.com/zoedsoupe/anubis-mcp/commit/e5a86f592778b85d790a9ca41e577b56a2b3744d))
+
 ## [1.3.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.3.0...v1.3.1) (2026-05-04)
 
 
