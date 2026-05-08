@@ -657,8 +657,9 @@ defmodule Anubis.Client.State do
   defp valid_capability?(_capabilities, ["roots", "list"]), do: true
 
   defp valid_capability?(capabilities, ["resources", sub]) when sub in ~w(subscribe unsubscribe) do
-    if resources = Map.get(capabilities, "resources") do
-      valid_capability?(resources, [sub, nil])
+    case Map.get(capabilities, "resources") do
+      %{} = resources -> Map.get(resources, "subscribe") == true
+      _ -> false
     end
   end
 
