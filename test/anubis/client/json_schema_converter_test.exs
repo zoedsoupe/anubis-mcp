@@ -9,11 +9,11 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
     end
 
     test "converts basic number type" do
-      assert {:ok, :float} = JSONSchemaConverter.to_peri(%{"type" => "number"})
+      assert {:ok, {:either, {:integer, :float}}} = JSONSchemaConverter.to_peri(%{"type" => "number"})
     end
 
     test "converts basic integer type" do
-      assert {:ok, :integer} = JSONSchemaConverter.to_peri(%{"type" => "integer"})
+      assert {:ok, {:either, {:integer, :float}}} = JSONSchemaConverter.to_peri(%{"type" => "integer"})
     end
 
     test "converts basic boolean type" do
@@ -64,32 +64,33 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
 
     test "converts integer with minimum" do
       schema = %{"type" => "integer", "minimum" => 0}
-      assert {:ok, {:integer, {:gte, 0}}} = JSONSchemaConverter.to_peri(schema)
+      assert {:ok, {:either, {{:integer, {:gte, 0}}, {:float, {:gte, 0}}}}} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts integer with maximum" do
       schema = %{"type" => "integer", "maximum" => 100}
-      assert {:ok, {:integer, {:lte, 100}}} = JSONSchemaConverter.to_peri(schema)
+      assert {:ok, {:either, {{:integer, {:lte, 100}}, {:float, {:lte, 100}}}}} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts integer with exclusiveMinimum" do
       schema = %{"type" => "integer", "exclusiveMinimum" => 0}
-      assert {:ok, {:integer, {:gt, 0}}} = JSONSchemaConverter.to_peri(schema)
+      assert {:ok, {:either, {{:integer, {:gt, 0}}, {:float, {:gt, 0}}}}} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts integer with exclusiveMaximum" do
       schema = %{"type" => "integer", "exclusiveMaximum" => 100}
-      assert {:ok, {:integer, {:lt, 100}}} = JSONSchemaConverter.to_peri(schema)
+      assert {:ok, {:either, {{:integer, {:lt, 100}}, {:float, {:lt, 100}}}}} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts number with minimum" do
       schema = %{"type" => "number", "minimum" => 0.0}
-      assert {:ok, {:float, {:gte, +0.0}}} = JSONSchemaConverter.to_peri(schema)
+      assert {:ok, {:either, {{:integer, {:gte, +0.0}}, {:float, {:gte, +0.0}}}}} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts number with maximum" do
       schema = %{"type" => "number", "maximum" => 100.0}
-      assert {:ok, {:float, {:lte, 100.0}}} = JSONSchemaConverter.to_peri(schema)
+      type = {:either, {{:integer, {:lte, 100.0}}, {:float, {:lte, 100.0}}}}
+      assert {:ok, ^type} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts const value" do
@@ -112,8 +113,8 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
       }
 
       expected = %{
-        name: :string,
-        age: :integer
+        "name" => :string,
+        "age" => {:either, {:integer, :float}}
       }
 
       assert {:ok, ^expected} = JSONSchemaConverter.to_peri(schema)
@@ -130,8 +131,8 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
       }
 
       expected = %{
-        name: {:required, :string},
-        age: :integer
+        "name" => {:required, :string},
+        "age" => {:either, {:integer, :float}}
       }
 
       assert {:ok, ^expected} = JSONSchemaConverter.to_peri(schema)
@@ -154,8 +155,8 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
 
       result = JSONSchemaConverter.to_peri(schema)
 
-      assert {:ok, %{user: user_schema}} = result
-      assert %{name: {:required, :string}, email: {:string, {:regex, _}}} = user_schema
+      assert {:ok, %{"user" => user_schema}} = result
+      assert %{"name" => {:required, :string}, "email" => {:string, {:regex, _}}} = user_schema
     end
 
     test "converts array with items" do
@@ -179,7 +180,7 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
         }
       }
 
-      expected = {:list, %{id: :integer, name: :string}}
+      expected = {:list, %{"id" => {:either, {:integer, :float}}, "name" => :string}}
       assert {:ok, ^expected} = JSONSchemaConverter.to_peri(schema)
     end
 
@@ -200,7 +201,7 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
         ]
       }
 
-      assert {:ok, {:either, {:string, :integer}}} = JSONSchemaConverter.to_peri(schema)
+      assert {:ok, {:either, {:string, {:either, {:integer, :float}}}}} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts oneOf with multiple schemas" do
@@ -212,7 +213,7 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
         ]
       }
 
-      assert {:ok, {:oneof, [:string, :integer, :boolean]}} = JSONSchemaConverter.to_peri(schema)
+      assert {:ok, {:oneof, [:string, {:either, {:integer, :float}}, :boolean]}} = JSONSchemaConverter.to_peri(schema)
     end
 
     test "converts multiple types" do
