@@ -314,14 +314,7 @@ defmodule Anubis.Server do
   """
   defmacro component(module, opts \\ []) do
     quote bind_quoted: [module: module, opts: opts] do
-      if not Component.component?(module) do
-        raise CompileError,
-          description:
-            "Module #{to_string(module)} is not a valid component. " <>
-              "Use `use Anubis.Server.Component, type: :tool/:prompt/:resource`"
-      end
-
-      @components {Component.get_type(module), opts[:name] || Anubis.Server.__derive_component_name__(module), module}
+      @components {module, opts}
     end
   end
 
@@ -370,6 +363,20 @@ defmodule Anubis.Server do
     components
     |> Enum.flat_map(&parse_components/1)
     |> Enum.sort_by(& &1.name)
+  end
+
+  def parse_components({mod, opts}) when is_atom(mod) and is_list(opts) do
+    Code.ensure_loaded(mod)
+
+    if not function_exported?(mod, :__mcp_component_type__, 0) do
+      raise ArgumentError,
+            "Module #{inspect(mod)} is not a valid component. " <>
+              "Use `use Anubis.Server.Component, type: :tool/:prompt/:resource`"
+    end
+
+    type = Component.get_type(mod)
+    name = opts[:name] || __derive_component_name__(mod)
+    parse_components({type, name, mod})
   end
 
   def parse_components({:tool, name, mod}) do
