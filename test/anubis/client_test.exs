@@ -220,6 +220,70 @@ defmodule Anubis.ClientTest do
       assert response.is_error == false
     end
 
+    @tag server_capabilities: %{"resources" => %{"subscribe" => true}, "tools" => %{}, "prompts" => %{}}
+    test "subscribe_resource sends correct request", %{client: client} do
+      test_pid = self()
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        send(test_pid, {:request_sent, JSON.decode!(message)})
+        :ok
+      end)
+
+      task =
+        Task.async(fn -> Anubis.Client.subscribe_resource(client, "file:///watched") end)
+
+      assert_receive {:request_sent, decoded}, 200
+      assert decoded["method"] == "resources/subscribe"
+      assert decoded["params"] == %{"uri" => "file:///watched"}
+      assert decoded["jsonrpc"] == "2.0"
+      assert is_binary(decoded["id"])
+
+      send_response(client, build_response(%{}, decoded["id"]))
+
+      assert {:ok, %Response{result: %{}}} = Task.await(task)
+    end
+
+    @tag server_capabilities: %{"resources" => %{"subscribe" => true}, "tools" => %{}, "prompts" => %{}}
+    test "unsubscribe_resource sends correct request", %{client: client} do
+      test_pid = self()
+
+      expect(Anubis.MockTransport, :send_message, fn _, message, _ ->
+        send(test_pid, {:request_sent, JSON.decode!(message)})
+        :ok
+      end)
+
+      task =
+        Task.async(fn -> Anubis.Client.unsubscribe_resource(client, "file:///watched") end)
+
+      assert_receive {:request_sent, decoded}, 200
+      assert decoded["method"] == "resources/unsubscribe"
+      assert decoded["params"] == %{"uri" => "file:///watched"}
+
+      send_response(client, build_response(%{}, decoded["id"]))
+
+      assert {:ok, %Response{result: %{}}} = Task.await(task)
+    end
+
+    @tag server_capabilities: %{"resources" => %{}, "tools" => %{}, "prompts" => %{}}
+    test "subscribe_resource fails when server did not declare subscribe capability",
+         %{client: client} do
+      task =
+        Task.async(fn -> Anubis.Client.subscribe_resource(client, "file:///x") end)
+
+      assert {:error, %Error{reason: :method_not_found, data: %{method: "resources/subscribe"}}} =
+               Task.await(task)
+    end
+
+    @tag server_capabilities: %{"resources" => %{}, "tools" => %{}, "prompts" => %{}}
+    test "unsubscribe_resource fails when server did not declare subscribe capability",
+         %{client: client} do
+      task =
+        Task.async(fn -> Anubis.Client.unsubscribe_resource(client, "file:///x") end)
+
+      assert {:error, %Error{reason: :method_not_found, data: %{method: "resources/unsubscribe"}}} =
+               Task.await(task)
+    end
+
     test "list_prompts sends correct request", %{client: client} do
       test_pid = self()
 
@@ -849,6 +913,37 @@ defmodule Anubis.ClientTest do
       state = :sys.get_state(client)
       assert state.server_info
       assert state.server_capabilities
+    end
+  end
+
+  describe "resource update notifications" do
+    setup :initialized_client
+
+    test "handles notifications/resources/updated", %{client: client} do
+      # The client's notification handler logs + emits telemetry; success here
+      # means (1) the dispatcher recognized the method, (2) the Peri schema
+      # accepted the payload (regression for the missing-method bug we fixed),
+      # and (3) the URI made it through to the metadata.
+      test_pid = self()
+      handler_id = "test-resource-updated-#{System.unique_integer()}"
+
+      :telemetry.attach(
+        handler_id,
+        [:anubis_mcp | Anubis.Telemetry.event_client_notification()],
+        fn _event, _measurements, metadata, _config ->
+          send(test_pid, {:client_notification, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      send_notification(
+        client,
+        build_notification("notifications/resources/updated", %{"uri" => "file:///x"})
+      )
+
+      assert_receive {:client_notification, %{method: "resources/updated", uri: "file:///x"}}, 200
     end
   end
 
