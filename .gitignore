@@ -54,6 +54,7 @@ result
 /.lexical/
 /.expert/
 /.elixir-tools/
+.dexter.*
 
 # macOS
 **/.DS_Store

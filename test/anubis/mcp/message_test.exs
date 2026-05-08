@@ -103,6 +103,77 @@ defmodule Anubis.MCP.MessageTest do
       assert {:ok, _} = Message.validate_message(msg)
     end
 
+    test "validates resources/subscribe request" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "resources/subscribe",
+        "id" => 1,
+        "params" => %{"uri" => "file:///watched"}
+      }
+
+      assert {:ok, _} = Message.validate_message(msg)
+    end
+
+    test "validates resources/unsubscribe request" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "resources/unsubscribe",
+        "id" => 1,
+        "params" => %{"uri" => "file:///watched"}
+      }
+
+      assert {:ok, _} = Message.validate_message(msg)
+    end
+
+    test "rejects resources/subscribe request missing uri" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "resources/subscribe",
+        "id" => 1,
+        "params" => %{}
+      }
+
+      assert {:error, _} = Message.validate_message(msg)
+    end
+
+    test "validates notifications/resources/updated notification" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/resources/updated",
+        "params" => %{"uri" => "file:///x"}
+      }
+
+      assert {:ok, _} = Message.validate_message(msg)
+    end
+
+    test "rejects notifications/resources/updated notification missing uri" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/resources/updated",
+        "params" => %{}
+      }
+
+      assert {:error, _} = Message.validate_message(msg)
+    end
+
+    test "validates notifications/resources/list_changed notification" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/resources/list_changed"
+      }
+
+      assert {:ok, _} = Message.validate_message(msg)
+    end
+
+    test "validates notifications/prompts/list_changed notification" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/prompts/list_changed"
+      }
+
+      assert {:ok, _} = Message.validate_message(msg)
+    end
+
     test "validates cancelled notification" do
       msg = %{
         "jsonrpc" => "2.0",

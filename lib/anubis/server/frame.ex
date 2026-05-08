@@ -40,6 +40,7 @@ defmodule Anubis.Server.Frame do
           resources: %{optional(String.t()) => Resource.t()},
           prompts: %{optional(String.t()) => Prompt.t()},
           resource_templates: %{optional(String.t()) => Resource.t()},
+          resource_subscriptions: MapSet.t(String.t()),
           pagination_limit: non_neg_integer() | nil,
           context: Context.t()
         }
@@ -49,6 +50,7 @@ defmodule Anubis.Server.Frame do
             resources: %{},
             prompts: %{},
             resource_templates: %{},
+            resource_subscriptions: MapSet.new(),
             pagination_limit: nil,
             context: %Context{}
 
@@ -239,6 +241,30 @@ defmodule Anubis.Server.Frame do
     %{frame | resource_templates: Map.put(frame.resource_templates, name, resource)}
   end
 
+  @doc """
+  Records that this session has subscribed to updates for the given resource
+  URI.
+
+  Idempotent — subscribing twice to the same URI is a no-op. Per the MCP spec,
+  the URI does not need to refer to a currently-registered resource.
+  """
+  @spec subscribe_resource(t(), uri :: String.t()) :: t()
+  def subscribe_resource(%__MODULE__{} = frame, uri) when is_binary(uri) do
+    %{frame | resource_subscriptions: MapSet.put(frame.resource_subscriptions, uri)}
+  end
+
+  @doc "Removes a previously-recorded subscription for the given URI."
+  @spec unsubscribe_resource(t(), uri :: String.t()) :: t()
+  def unsubscribe_resource(%__MODULE__{} = frame, uri) when is_binary(uri) do
+    %{frame | resource_subscriptions: MapSet.delete(frame.resource_subscriptions, uri)}
+  end
+
+  @doc "Returns whether this session has an active subscription for the given URI."
+  @spec resource_subscribed?(t(), uri :: String.t()) :: boolean()
+  def resource_subscribed?(%__MODULE__{} = frame, uri) when is_binary(uri) do
+    MapSet.member?(frame.resource_subscriptions, uri)
+  end
+
   @doc "Clears all runtime-registered components"
   @spec clear_components(t()) :: t()
   def clear_components(%__MODULE__{} = frame) do
@@ -296,27 +322,38 @@ defmodule Anubis.Server.Frame do
   def to_saved(%__MODULE__{} = frame) do
     %{
       "assigns" => frame.assigns,
-      "pagination_limit" => frame.pagination_limit
+      "pagination_limit" => frame.pagination_limit,
+      "resource_subscriptions" => MapSet.to_list(frame.resource_subscriptions)
     }
   end
 
   @doc """
   Reconstructs Frame from a previously saved map.
 
-  Only `assigns` and `pagination_limit` are restored. Runtime-only fields (`tools`,
-  `resources`, `prompts`, `resource_templates`) are initialized empty — their validator
-  functions are not serializable. `context` is left as the default struct and will be
-  set by Session before each callback invocation.
+  Restored: `assigns`, `pagination_limit`, `resource_subscriptions`. Runtime-only fields
+  (`tools`, `resources`, `prompts`, `resource_templates`) are initialized empty — their
+  validator functions are not serializable. `context` is left as the default struct and
+  will be set by Session before each callback invocation.
   """
   @spec from_saved(map()) :: t()
   def from_saved(map) when is_map(map) do
+    subs =
+      map
+      |> Map.get("resource_subscriptions", [])
+      |> Enum.filter(&is_binary/1)
+      |> build_subscriptions()
+
     %__MODULE__{
       assigns: Map.get(map, "assigns", %{}),
-      pagination_limit: Map.get(map, "pagination_limit")
+      pagination_limit: Map.get(map, "pagination_limit"),
+      resource_subscriptions: subs
     }
   end
 
-  def from_saved(_), do: %__MODULE__{}
+  def from_saved(_), do: %__MODULE__{resource_subscriptions: build_subscriptions([])}
+
+  @spec build_subscriptions([String.t()]) :: MapSet.t(String.t())
+  defp build_subscriptions(list), do: MapSet.new(list)
 end
 
 defimpl Inspect, for: Anubis.Server.Frame do
@@ -328,7 +365,8 @@ defimpl Inspect, for: Anubis.Server.Frame do
       tools: map_size(frame.tools),
       resources: map_size(frame.resources),
       prompts: map_size(frame.prompts),
-      resource_templates: map_size(frame.resource_templates)
+      resource_templates: map_size(frame.resource_templates),
+      resource_subscriptions: MapSet.size(frame.resource_subscriptions)
     ]
 
     info =
