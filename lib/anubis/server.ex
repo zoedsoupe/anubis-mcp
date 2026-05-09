@@ -396,6 +396,7 @@ defmodule Anubis.Server do
     annotations = if Anubis.exported?(mod, :annotations, 0), do: mod.annotations()
     meta = if Anubis.exported?(mod, :meta, 0), do: mod.meta()
     output_schema = if Anubis.exported?(mod, :output_schema, 0), do: mod.output_schema()
+    task_support = if Anubis.exported?(mod, :task_support, 0), do: mod.task_support(), else: :forbidden
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
     title = determine_tool_title(annotations, title)
     scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
@@ -425,6 +426,7 @@ defmodule Anubis.Server do
           output_schema: output_schema,
           annotations: annotations,
           meta: meta,
+          task_support: task_support,
           handler: mod,
           validate_input: validate_input,
           validate_output: validate_output,
@@ -581,6 +583,38 @@ defmodule Anubis.Server do
     Map.put(capabilities, to_string(capability), capability_config)
   end
 
+  def parse_capability(:tasks, %{} = capabilities) do
+    parse_capability({:tasks, []}, capabilities)
+  end
+
+  def parse_capability({:tasks, opts}, %{} = capabilities) do
+    Map.put(capabilities, "tasks", build_tasks_capability(opts))
+  end
+
+  defp build_tasks_capability(opts) do
+    list? = Keyword.get(opts, :list?, false)
+    cancel? = Keyword.get(opts, :cancel?, true)
+    requests = Keyword.get(opts, :requests, tools: [:call])
+
+    %{}
+    |> maybe_put_tasks_flag("list", list?)
+    |> maybe_put_tasks_flag("cancel", cancel?)
+    |> Map.put("requests", build_tasks_requests(requests))
+  end
+
+  defp maybe_put_tasks_flag(map, _key, false), do: map
+  defp maybe_put_tasks_flag(map, key, true), do: Map.put(map, key, %{})
+
+  defp build_tasks_requests(requests) when is_list(requests) do
+    Enum.reduce(requests, %{}, fn {category, methods}, acc ->
+      Map.put(acc, to_string(category), build_tasks_request_methods(methods))
+    end)
+  end
+
+  defp build_tasks_request_methods(methods) when is_list(methods) do
+    Map.new(methods, fn method -> {to_string(method), %{}} end)
+  end
+
   @doc false
   def __after_compile__(env, _bytecode) do
     module = env.module
@@ -699,6 +733,24 @@ defmodule Anubis.Server do
     params = if total, do: Map.put(params, "total", total), else: params
     params = if message, do: Map.put(params, "message", message), else: params
     send(self(), {:send_notification, "notifications/progress", params})
+    :ok
+  end
+
+  @doc """
+  Sends a `notifications/tasks/status` notification with the current state of
+  the given task.
+
+  **Must be called from within a Session callback** — see
+  `send_resources_list_changed/0` for details.
+
+  Per spec (2025-11-25), receivers MAY send these notifications when a task's
+  status changes; they are optional and requestors MUST NOT rely on them. This
+  helper looks up the task in the configured task store and emits the full
+  `Task` projection.
+  """
+  @spec send_task_status(task_id :: String.t()) :: :ok
+  def send_task_status(task_id) when is_binary(task_id) do
+    send(self(), {:send_task_status, task_id})
     :ok
   end
 

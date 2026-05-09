@@ -22,12 +22,29 @@ defmodule Anubis.Server.Session do
   alias Anubis.Server
   alias Anubis.Server.Context
   alias Anubis.Server.Frame
+  alias Anubis.Server.Handlers
+  alias Anubis.Server.Handlers.Tasks, as: TasksHandler
+  alias Anubis.Server.Task, as: McpTask
   alias Anubis.Telemetry
 
   require Message
   require Server
 
   @default_session_idle_timeout to_timeout(minute: 30)
+  @default_task_ttl 60_000
+  @max_task_ttl to_timeout(hour: 1)
+  @min_task_ttl 1_000
+  @default_task_poll_interval 1_000
+
+  @type task_waiter :: {from :: GenServer.from(), request_id :: String.t() | integer()}
+
+  @type task_runtime :: %{
+          worker_ref: reference() | nil,
+          worker_pid: pid() | nil,
+          ttl_timer: reference() | nil,
+          waiters: [task_waiter()],
+          request_id: String.t() | integer()
+        }
 
   @type t :: %{
           session_id: String.t(),
@@ -58,6 +75,9 @@ defmodule Anubis.Server.Session do
           },
           timeout: pos_integer(),
           task_supervisor: GenServer.name(),
+          task_store: %{adapter: module(), name: term()} | nil,
+          tasks: %{String.t() => task_runtime()},
+          task_refs: %{reference() => String.t()},
           in_flight:
             nil
             | %{
@@ -80,7 +100,9 @@ defmodule Anubis.Server.Session do
     {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:session_idle_timeout, {{:integer, {:gte, 1}}, {:default, @default_session_idle_timeout}}},
     {:timeout, {:integer, {:default, to_timeout(second: 30)}}},
-    {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}}
+    {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
+    {:task_store,
+     {[adapter: {:required, :atom}, name: {:required, {:custom, &Anubis.genserver_name/1}}], {:default, nil}}}
   ])
 
   @doc """
@@ -155,6 +177,9 @@ defmodule Anubis.Server.Session do
       server_requests: %{},
       timeout: opts.timeout,
       task_supervisor: opts.task_supervisor,
+      task_store: build_task_store(opts[:task_store]),
+      tasks: %{},
+      task_refs: %{},
       in_flight: nil,
       request_queue: :queue.new(),
       deferred_callbacks: :queue.new()
@@ -434,7 +459,48 @@ defmodule Anubis.Server.Session do
     finalize_after_task(state)
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, reason}, %{in_flight: %{ref: ref} = inflight} = state) do
+  def handle_info({ref, callback_result}, state) when is_reference(ref) do
+    case task_id_for_ref(state, ref) do
+      nil ->
+        {:noreply, state}
+
+      task_id ->
+        Process.demonitor(ref, [:flush])
+        handle_task_worker_completion(task_id, callback_result, state)
+    end
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, state) when is_reference(ref) do
+    cond do
+      task_id = task_id_for_ref(state, ref) ->
+        handle_task_worker_down(task_id, reason, state)
+
+      state.in_flight && state.in_flight.ref == ref ->
+        handle_in_flight_down(reason, state)
+
+      true ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_info({:task_expired, task_id}, state) do
+    handle_task_expired(task_id, state)
+  end
+
+  def handle_info({:send_task_status, task_id}, state) do
+    _ = emit_task_status_notification(state, task_id)
+    {:noreply, state}
+  end
+
+  def handle_info(event, %{in_flight: f} = state) when not is_nil(f) do
+    {:noreply, defer_callback(state, {:info, event})}
+  end
+
+  def handle_info(event, state) do
+    process_user_info(event, state)
+  end
+
+  defp handle_in_flight_down(reason, %{in_flight: inflight} = state) do
     Logging.server_event(
       "request_task_crashed",
       %{request_id: inflight.request_id, method: inflight.method, reason: inspect(reason)},
@@ -454,14 +520,6 @@ defmodule Anubis.Server.Session do
     GenServer.reply(inflight.from, reply)
 
     finalize_after_task(state)
-  end
-
-  def handle_info(event, %{in_flight: f} = state) when not is_nil(f) do
-    {:noreply, defer_callback(state, {:info, event})}
-  end
-
-  def handle_info(event, state) do
-    process_user_info(event, state)
   end
 
   @impl GenServer
@@ -489,7 +547,10 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  defp reply_to_pending_callers(%{in_flight: in_flight, request_queue: q, task_supervisor: task_supervisor}, reason) do
+  defp reply_to_pending_callers(
+         %{in_flight: in_flight, request_queue: q, task_supervisor: task_supervisor, tasks: tasks},
+         reason
+       ) do
     error =
       Error.protocol(:internal_error, %{
         message: "Session terminating",
@@ -508,6 +569,12 @@ defmodule Anubis.Server.Session do
     Enum.each(:queue.to_list(q), fn {%{"id" => request_id}, _ctx, from} ->
       reply = {:ok, encode_reply(Error.build_json_rpc(error, request_id))}
       GenServer.reply(from, reply)
+    end)
+
+    Enum.each(tasks, fn {_task_id, %{worker_pid: pid, worker_ref: ref} = runtime} ->
+      if pid, do: Task.Supervisor.terminate_child(task_supervisor, pid)
+      if ref, do: Process.demonitor(ref, [:flush])
+      release_waiters(runtime, error)
     end)
   end
 
@@ -636,6 +703,18 @@ defmodule Anubis.Server.Session do
     level = request["params"]["level"]
     state = %{state | log_level: level}
     {:reply, {:ok, encode_reply(Message.build_response(%{}, request_id))}, state}
+  end
+
+  defp handle_request(%{"method" => "tasks/" <> _} = request, ctx, from, state) do
+    dispatch_tasks_request(request, ctx, from, state)
+  end
+
+  defp handle_request(%{"method" => "tools/call"} = request, ctx, from, state) do
+    if task_augmented_tools_call?(request) do
+      create_task_for_tools_call(request, ctx, from, state)
+    else
+      enqueue_or_dispatch(request, ctx, from, state)
+    end
   end
 
   defp handle_request(%{"id" => _, "method" => _} = request, transport_context, from, state) do
@@ -1547,4 +1626,464 @@ defmodule Anubis.Server.Session do
 
   defp maybe_put_instructions(result, instructions) when is_binary(instructions),
     do: Map.put(result, "instructions", instructions)
+
+  # Tasks (MCP spec 2025-11-25)
+
+  defp build_task_store(nil), do: nil
+
+  defp build_task_store(opts) when is_list(opts) do
+    %{adapter: Keyword.fetch!(opts, :adapter), name: Keyword.fetch!(opts, :name)}
+  end
+
+  defp tasks_supported_for_tools_call?(state) do
+    case state.capabilities do
+      %{"tasks" => %{"requests" => %{"tools" => %{"call" => _}}}} -> not is_nil(state.task_store)
+      _ -> false
+    end
+  end
+
+  defp tasks_cancel_supported?(state) do
+    case state.capabilities do
+      %{"tasks" => %{"cancel" => _}} -> not is_nil(state.task_store)
+      _ -> false
+    end
+  end
+
+  defp clamp_task_ttl(nil), do: @default_task_ttl
+
+  defp clamp_task_ttl(ttl) when is_integer(ttl) do
+    ttl |> max(@min_task_ttl) |> min(@max_task_ttl)
+  end
+
+  defp lookup_tool(server_module, frame, tool_name) do
+    server_module
+    |> Handlers.get_server_tools(frame)
+    |> Enum.find(&(&1.name == tool_name))
+  end
+
+  defp task_augmented_tools_call?(%{"method" => "tools/call", "params" => %{"task" => _}}), do: true
+  defp task_augmented_tools_call?(_), do: false
+
+  defp dispatch_tasks_request(%{"method" => "tasks/get", "id" => req_id} = request, _ctx, _from, state) do
+    if is_nil(state.task_store) do
+      tasks_unsupported_reply(req_id, "tasks/get", state)
+    else
+      frame = prepare_frame(state)
+
+      {result, frame} =
+        request
+        |> TasksHandler.handle_get(frame, %{
+          task_store_adapter: state.task_store.adapter,
+          task_store_name: state.task_store.name,
+          session_id: state.session_id
+        })
+        |> reply_to_handler_result(req_id)
+
+      {:reply, result, %{state | frame: frame}}
+    end
+  end
+
+  defp dispatch_tasks_request(
+         %{"method" => "tasks/result", "id" => req_id, "params" => %{"taskId" => task_id}},
+         _ctx,
+         from,
+         state
+       ) do
+    if is_nil(state.task_store) do
+      tasks_unsupported_reply(req_id, "tasks/result", state)
+    else
+      handle_tasks_result(task_id, req_id, from, state)
+    end
+  end
+
+  defp dispatch_tasks_request(%{"method" => "tasks/cancel", "id" => req_id} = request, _ctx, _from, state) do
+    if tasks_cancel_supported?(state) do
+      handle_tasks_cancel(request, state)
+    else
+      tasks_unsupported_reply(req_id, "tasks/cancel", state)
+    end
+  end
+
+  defp dispatch_tasks_request(%{"method" => "tasks/list", "id" => req_id}, _ctx, _from, state) do
+    frame = prepare_frame(state)
+    {:error, error, frame} = TasksHandler.handle_list_unsupported(frame)
+    {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, %{state | frame: frame}}
+  end
+
+  defp tasks_unsupported_reply(req_id, method, state) do
+    error = Error.protocol(:method_not_found, %{message: "#{method} not supported by this server"})
+    {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
+  end
+
+  defp handle_tasks_result(task_id, req_id, from, state) do
+    case task_store_get(state, task_id) do
+      {:ok, %McpTask{} = task} ->
+        if McpTask.terminal?(task) do
+          payload = build_tasks_result_payload(task, req_id)
+          {:reply, {:ok, encode_reply(payload)}, state}
+        else
+          {:noreply, register_result_waiter(state, task_id, from, req_id)}
+        end
+
+      {:error, :not_found} ->
+        error = TasksHandler.task_not_found(task_id)
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
+    end
+  end
+
+  defp handle_tasks_cancel(%{"id" => req_id} = request, state) do
+    frame = prepare_frame(state)
+    %{"params" => %{"taskId" => task_id}} = request
+
+    case cancel_task(state, task_id) do
+      {:ok, %McpTask{} = task, new_state} ->
+        payload = McpTask.to_protocol(task)
+        {:reply, {:ok, encode_reply(Message.build_response(payload, req_id))}, %{new_state | frame: frame}}
+
+      {:error, :not_found} ->
+        error = TasksHandler.task_not_found(task_id)
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, %{state | frame: frame}}
+
+      {:error, {:already_terminal, status}} ->
+        error =
+          Error.protocol(:invalid_params, %{
+            message: "Cannot cancel task: already in terminal status '#{status}'"
+          })
+
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, %{state | frame: frame}}
+    end
+  end
+
+  defp reply_to_handler_result({:reply, payload, frame}, req_id) do
+    {{:ok, encode_reply(Message.build_response(payload, req_id))}, frame}
+  end
+
+  defp reply_to_handler_result({:error, %Error{} = error, frame}, req_id) do
+    {{:ok, encode_reply(Error.build_json_rpc(error, req_id))}, frame}
+  end
+
+  defp register_result_waiter(state, task_id, from, req_id) do
+    case Map.fetch(state.tasks, task_id) do
+      {:ok, %{waiters: waiters} = runtime} ->
+        %{state | tasks: Map.put(state.tasks, task_id, %{runtime | waiters: [{from, req_id} | waiters]})}
+
+      :error ->
+        error = TasksHandler.task_not_found(task_id)
+        GenServer.reply(from, {:ok, encode_reply(Error.build_json_rpc(error, req_id))})
+        state
+    end
+  end
+
+  defp build_tasks_result_payload(%McpTask{result: result, error: nil} = task, req_id) when not is_nil(result) do
+    Message.build_response(inject_related_task(result, task.id), req_id)
+  end
+
+  defp build_tasks_result_payload(%McpTask{error: %Error{} = error, status: :failed}, req_id) do
+    Error.build_json_rpc(error, req_id)
+  end
+
+  defp build_tasks_result_payload(%McpTask{error: %Error{} = error, status: :cancelled}, req_id) do
+    Error.build_json_rpc(error, req_id)
+  end
+
+  defp build_tasks_result_payload(%McpTask{status: :cancelled} = task, req_id) do
+    error =
+      Error.execution("Task cancelled", %{taskId: task.id})
+
+    Error.build_json_rpc(error, req_id)
+  end
+
+  defp build_tasks_result_payload(%McpTask{status: :failed} = task, req_id) do
+    error =
+      Error.execution("Task failed", %{taskId: task.id})
+
+    Error.build_json_rpc(error, req_id)
+  end
+
+  defp build_tasks_result_payload(%McpTask{} = task, req_id) do
+    Message.build_response(inject_related_task(%{}, task.id), req_id)
+  end
+
+  defp inject_related_task(%{} = result, task_id) do
+    meta = Map.get(result, "_meta", %{})
+    related = Map.put(meta, "io.modelcontextprotocol/related-task", %{"taskId" => task_id})
+    Map.put(result, "_meta", related)
+  end
+
+  defp task_store_get(%{task_store: nil}, _id), do: {:error, :not_found}
+
+  defp task_store_get(%{task_store: %{adapter: adapter, name: name}, session_id: session_id}, task_id) do
+    adapter.get(name, session_id, task_id)
+  end
+
+  defp task_store_put(%{task_store: %{adapter: adapter, name: name}, session_id: session_id} = state, %McpTask{} = task) do
+    :ok = adapter.put(name, session_id, task)
+    state
+  end
+
+  defp task_store_update(%{task_store: %{adapter: adapter, name: name}, session_id: session_id}, task_id, fun) do
+    adapter.update(name, session_id, task_id, fun)
+  end
+
+  defp task_store_delete(%{task_store: %{adapter: adapter, name: name}, session_id: session_id}, task_id) do
+    adapter.delete(name, session_id, task_id)
+  end
+
+  defp create_task_for_tools_call(%{"id" => req_id, "params" => params} = request, _ctx, from, state) do
+    if tasks_supported_for_tools_call?(state) do
+      do_create_task_for_tools_call(request, params, req_id, from, state)
+    else
+      error = Error.protocol(:method_not_found, %{message: "Server does not support task-augmented tools/call"})
+      {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
+    end
+  end
+
+  defp do_create_task_for_tools_call(request, params, req_id, _from, state) do
+    tool_name = params["name"]
+    frame = prepare_frame(state)
+    tool = lookup_tool(state.server_module, frame, tool_name)
+
+    cond do
+      is_nil(tool) ->
+        error = Error.protocol(:invalid_params, %{message: "Tool not found: #{tool_name}"})
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
+
+      tool.task_support == :forbidden ->
+        error =
+          Error.protocol(:method_not_found, %{
+            message: "Tool does not support task augmentation (execution.taskSupport == \"forbidden\")"
+          })
+
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
+
+      true ->
+        spawn_task_worker(request, tool, params, req_id, state)
+    end
+  end
+
+  defp spawn_task_worker(request, _tool, params, req_id, state) do
+    requested_ttl = get_in(params, ["task", "ttl"])
+    ttl = clamp_task_ttl(requested_ttl)
+
+    task =
+      McpTask.new(
+        session_id: state.session_id,
+        method: "tools/call",
+        request_id: req_id,
+        ttl: ttl,
+        poll_interval: @default_task_poll_interval,
+        original_params: Map.delete(params, "task")
+      )
+
+    state = task_store_put(state, task)
+
+    frame = state |> prepare_frame() |> Map.put(:task_id, task.id)
+
+    request = %{request | "params" => Map.delete(params, "task")}
+
+    server_module = state.server_module
+
+    worker =
+      Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+        Handlers.handle(request, server_module, frame)
+      end)
+
+    ttl_timer = Process.send_after(self(), {:task_expired, task.id}, ttl)
+
+    runtime = %{
+      worker_ref: worker.ref,
+      worker_pid: worker.pid,
+      ttl_timer: ttl_timer,
+      waiters: [],
+      request_id: req_id
+    }
+
+    state = %{
+      state
+      | tasks: Map.put(state.tasks, task.id, runtime),
+        task_refs: Map.put(state.task_refs, worker.ref, task.id)
+    }
+
+    create_task_result = McpTask.to_create_result(task)
+    response = Message.build_response(inject_related_task(create_task_result, task.id), req_id)
+
+    {:reply, {:ok, encode_reply(response)}, state}
+  end
+
+  defp handle_task_worker_completion(task_id, callback_result, state) do
+    {status, attrs} = derive_finalize_attrs(callback_result)
+    {_task, state} = finalize_task_runtime(task_id, status, attrs, state)
+    {:noreply, state}
+  end
+
+  defp handle_task_worker_down(task_id, reason, state) do
+    error = Error.protocol(:internal_error, %{message: "Task worker crashed", reason: inspect(reason)})
+    {_task, state} = finalize_task_runtime(task_id, :failed, [error: error, status_message: error.message], state)
+    {:noreply, state}
+  end
+
+  defp handle_task_expired(task_id, state) do
+    case Map.pop(state.tasks, task_id) do
+      {nil, _} ->
+        # No live runtime — task was already finalized (the timer fired late
+        # or the message raced with worker completion). Don't blow away a
+        # terminal record from the store on a stale expiry.
+        {:noreply, state}
+
+      {%{worker_pid: pid, worker_ref: ref, waiters: waiters}, tasks} ->
+        if pid && Process.alive?(pid) do
+          _ = Task.Supervisor.terminate_child(state.task_supervisor, pid)
+        end
+
+        if ref, do: Process.demonitor(ref, [:flush])
+
+        release_waiters(%{waiters: waiters}, TasksHandler.task_expired(task_id))
+
+        task_store_delete(state, task_id)
+
+        state = %{
+          state
+          | tasks: tasks,
+            task_refs: if(ref, do: Map.delete(state.task_refs, ref), else: state.task_refs)
+        }
+
+        {:noreply, state}
+    end
+  end
+
+  defp finalize_task_runtime(task_id, status, attrs, state) do
+    {runtime, state} = pop_task_runtime(state, task_id)
+
+    case task_store_update(state, task_id, fn task -> McpTask.transition(task, status, attrs) end) do
+      {:ok, %McpTask{} = task} ->
+        release_waiters(runtime, task)
+        {task, state}
+
+      {:error, :not_found} ->
+        release_waiters(runtime, TasksHandler.task_not_found(task_id))
+        {nil, state}
+    end
+  end
+
+  defp derive_finalize_attrs({:reply, payload, _frame}) when is_map(payload) do
+    {status, attrs} = classify_tool_call_payload(payload)
+    {status, attrs}
+  end
+
+  defp derive_finalize_attrs({:noreply, _frame}) do
+    {:completed, [result: %{"content" => [], "isError" => false}, status_message: nil]}
+  end
+
+  defp derive_finalize_attrs({:error, %Error{} = error, _frame}) do
+    {:failed, [error: error, status_message: error.message]}
+  end
+
+  defp derive_finalize_attrs(other) do
+    err = Error.protocol(:internal_error, %{message: "Invalid task worker return", returned: inspect(other)})
+    {:failed, [error: err, status_message: err.message]}
+  end
+
+  defp classify_tool_call_payload(%{"isError" => true} = payload) do
+    {:failed, [result: payload, status_message: "Tool returned isError: true"]}
+  end
+
+  defp classify_tool_call_payload(payload) do
+    {:completed, [result: payload, status_message: nil]}
+  end
+
+  defp pop_task_runtime(state, task_id) do
+    case Map.pop(state.tasks, task_id) do
+      {nil, tasks} ->
+        {nil, %{state | tasks: tasks}}
+
+      {%{worker_ref: ref} = runtime, tasks} ->
+        if ref, do: Process.demonitor(ref, [:flush])
+        if runtime.ttl_timer, do: cancel_ttl_timer(runtime.ttl_timer, task_id)
+        task_refs = if ref, do: Map.delete(state.task_refs, ref), else: state.task_refs
+        {runtime, %{state | tasks: tasks, task_refs: task_refs}}
+    end
+  end
+
+  # `Process.cancel_timer/1` does not flush an already-delivered message, so
+  # if the timer fires in the same scheduling slice as worker completion the
+  # `{:task_expired, ^task_id}` message would still be in the mailbox and could
+  # later wipe the terminal task from the store.
+  defp cancel_ttl_timer(timer_ref, task_id) do
+    Process.cancel_timer(timer_ref)
+
+    receive do
+      {:task_expired, ^task_id} -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  defp release_waiters(nil, _result), do: :ok
+
+  defp release_waiters(%{waiters: waiters}, %McpTask{} = task) do
+    Enum.each(waiters, fn {from, req_id} ->
+      reply = build_tasks_result_payload(task, req_id)
+      GenServer.reply(from, {:ok, encode_reply(reply)})
+    end)
+  end
+
+  defp release_waiters(%{waiters: waiters}, %Error{} = error) do
+    Enum.each(waiters, fn {from, req_id} ->
+      GenServer.reply(from, {:ok, encode_reply(Error.build_json_rpc(error, req_id))})
+    end)
+  end
+
+  # Cancel a task on demand. Terminates the worker if alive, flips status to
+  # :cancelled, releases waiters with a cancellation error, and returns the
+  # final task projection alongside the new state.
+  defp cancel_task(state, task_id) do
+    case task_store_get(state, task_id) do
+      {:ok, %McpTask{} = task} ->
+        if McpTask.terminal?(task) do
+          {:error, {:already_terminal, task.status}}
+        else
+          do_cancel_task(state, task)
+        end
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
+  end
+
+  defp do_cancel_task(state, %McpTask{id: task_id}) do
+    {runtime, state} = pop_task_runtime(state, task_id)
+
+    if runtime && runtime.worker_pid && Process.alive?(runtime.worker_pid) do
+      _ = Task.Supervisor.terminate_child(state.task_supervisor, runtime.worker_pid)
+    end
+
+    error = Error.execution("The task was cancelled by request.", %{taskId: task_id})
+
+    case task_store_update(state, task_id, fn task ->
+           McpTask.transition(task, :cancelled, error: error, status_message: "The task was cancelled by request.")
+         end) do
+      {:ok, cancelled} ->
+        release_waiters(runtime, cancelled)
+        {:ok, cancelled, state}
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
+  end
+
+  defp task_id_for_ref(state, ref), do: Map.get(state.task_refs, ref)
+
+  defp emit_task_status_notification(state, task_id) do
+    case task_store_get(state, task_id) do
+      {:ok, %McpTask{} = task} ->
+        params = McpTask.to_protocol(task)
+
+        with {:ok, notification} <- encode_notification("notifications/tasks/status", params) do
+          send_to_transport(state.transport, notification, timeout: state.timeout)
+        end
+
+      _ ->
+        :ok
+    end
+  end
 end

@@ -7,11 +7,11 @@ defmodule Anubis.Protocol.Registry do
 
   ## Usage
 
-      iex> Anubis.Protocol.Registry.get("2025-06-18")
-      {:ok, Anubis.Protocol.V2025_06_18}
+      iex> Anubis.Protocol.Registry.get("2025-11-25")
+      {:ok, Anubis.Protocol.V2025_11_25}
 
       iex> Anubis.Protocol.Registry.supported_versions()
-      ["2025-06-18", "2025-03-26", "2024-11-05"]
+      ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 
       iex> Anubis.Protocol.Registry.negotiate("2025-03-26")
       {:ok, "2025-03-26", Anubis.Protocol.V2025_03_26}
@@ -20,10 +20,11 @@ defmodule Anubis.Protocol.Registry do
   @versions %{
     "2024-11-05" => Anubis.Protocol.V2024_11_05,
     "2025-03-26" => Anubis.Protocol.V2025_03_26,
-    "2025-06-18" => Anubis.Protocol.V2025_06_18
+    "2025-06-18" => Anubis.Protocol.V2025_06_18,
+    "2025-11-25" => Anubis.Protocol.V2025_11_25
   }
 
-  @latest_version "2025-06-18"
+  @latest_version "2025-11-25"
   @fallback_version "2025-03-26"
 
   @type version :: String.t()
@@ -83,11 +84,11 @@ defmodule Anubis.Protocol.Registry do
 
   ## Examples
 
-      iex> Anubis.Protocol.Registry.negotiate("2025-06-18")
-      {:ok, "2025-06-18", Anubis.Protocol.V2025_06_18}
+      iex> Anubis.Protocol.Registry.negotiate("2025-11-25")
+      {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
 
       iex> Anubis.Protocol.Registry.negotiate("9999-01-01")
-      {:error, :unsupported_version, ["2025-06-18", "2025-03-26", "2024-11-05"]}
+      {:error, :unsupported_version, ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]}
   """
   @spec negotiate(version()) :: {:ok, version(), module()} | {:error, :unsupported_version, [version()]}
   def negotiate(client_version) do
@@ -106,11 +107,11 @@ defmodule Anubis.Protocol.Registry do
 
   ## Examples
 
-      iex> Anubis.Protocol.Registry.negotiate("2025-03-26", ["2025-06-18", "2025-03-26"])
+      iex> Anubis.Protocol.Registry.negotiate("2025-03-26", ["2025-11-25", "2025-03-26"])
       {:ok, "2025-03-26", Anubis.Protocol.V2025_03_26}
 
-      iex> Anubis.Protocol.Registry.negotiate("2024-11-05", ["2025-06-18", "2025-03-26"])
-      {:ok, "2025-06-18", Anubis.Protocol.V2025_06_18}
+      iex> Anubis.Protocol.Registry.negotiate("2024-11-05", ["2025-11-25", "2025-03-26"])
+      {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
   """
   @spec negotiate(version(), [version()]) :: {:ok, version(), module()} | :error
   def negotiate(client_version, [latest | _] = server_versions) do

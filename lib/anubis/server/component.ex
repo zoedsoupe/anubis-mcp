@@ -44,6 +44,12 @@ defmodule Anubis.Server.Component do
     annotations = Keyword.get(opts, :annotations)
     meta = Keyword.get(opts, :meta)
     scopes = Keyword.get(opts, :scopes, [])
+    task_support = Keyword.get(opts, :task_support)
+
+    if type == :tool and task_support not in [nil, :forbidden, :optional, :required] do
+      raise ArgumentError,
+            "Invalid :task_support value #{inspect(task_support)} — must be one of :forbidden, :optional, :required"
+    end
 
     quote do
       @behaviour unquote(behaviour_module)
@@ -92,6 +98,11 @@ defmodule Anubis.Server.Component do
         if unquote(meta) != nil do
           @impl true
           def meta, do: unquote(meta)
+        end
+
+        if unquote(task_support) != nil do
+          @impl true
+          def task_support, do: unquote(task_support)
         end
       end
 

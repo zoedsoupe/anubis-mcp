@@ -383,7 +383,8 @@ if Code.ensure_loaded?(Plug) do
         transport: session_config.transport,
         session_idle_timeout: session_config.session_idle_timeout || 1_800_000,
         timeout: opts.timeout,
-        task_supervisor: session_config.task_supervisor
+        task_supervisor: session_config.task_supervisor,
+        task_store: Map.get(session_config, :task_store)
       ]
 
       case ServerSupervisor.start_session(server, session_opts) do
