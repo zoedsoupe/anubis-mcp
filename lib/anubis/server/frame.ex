@@ -294,6 +294,92 @@ defmodule Anubis.Server.Frame do
     Map.values(frame.resources) ++ Map.values(frame.resource_templates)
   end
 
+  @doc """
+  Returns the OAuth 2.1 claims from the current request context, or `nil` if
+  no authorization is configured or the transport is STDIO.
+
+  ## Examples
+
+      case Frame.authorization(frame) do
+        nil -> # no auth configured
+        claims -> claims.sub
+      end
+  """
+  @spec authorization(t()) :: Context.auth_claims() | nil
+  def authorization(%__MODULE__{context: %Context{auth: auth}}), do: auth
+
+  @doc """
+  Returns the `sub` (subject) claim from the bearer token, or `nil`.
+
+  ## Examples
+
+      Frame.subject(frame)
+      # => "user-id-123"
+  """
+  @spec subject(t()) :: String.t() | nil
+  def subject(%__MODULE__{} = frame) do
+    case authorization(frame) do
+      %{sub: sub} -> sub
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Returns the list of granted scopes from the bearer token.
+
+  Returns an empty list when no authorization is present.
+
+  ## Examples
+
+      Frame.scopes(frame)
+      # => ["tools:read", "tools:write"]
+  """
+  @spec scopes(t()) :: [String.t()]
+  def scopes(%__MODULE__{} = frame) do
+    case authorization(frame) do
+      %{scopes: scopes} when is_list(scopes) -> scopes
+      _ -> []
+    end
+  end
+
+  @doc """
+  Returns `true` if the bearer token grants the given scope.
+
+  ## Examples
+
+      Frame.has_scope?(frame, "tools:read")
+      # => true
+  """
+  @spec has_scope?(t(), String.t()) :: boolean()
+  def has_scope?(%__MODULE__{} = frame, scope) when is_binary(scope) do
+    scope in scopes(frame)
+  end
+
+  @doc """
+  Returns `true` if the bearer token grants **all** of the given scopes.
+
+  ## Examples
+
+      Frame.has_all_scopes?(frame, ["tools:read", "tools:write"])
+      # => true
+  """
+  @spec has_all_scopes?(t(), [String.t()]) :: boolean()
+  def has_all_scopes?(%__MODULE__{} = frame, required) when is_list(required) do
+    granted = scopes(frame)
+    Enum.all?(required, &(&1 in granted))
+  end
+
+  @doc """
+  Returns `true` if the request carries validated OAuth 2.1 claims.
+
+  ## Examples
+
+      Frame.authenticated?(frame)
+      # => true
+  """
+  @spec authenticated?(t()) :: boolean()
+  def authenticated?(%__MODULE__{} = frame), do: not is_nil(authorization(frame))
+
   @doc false
   @spec get_component(t(), name :: String.t()) :: server_component_t() | nil
   def get_component(%__MODULE__{} = frame, name) do

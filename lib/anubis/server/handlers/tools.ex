@@ -28,7 +28,8 @@ defmodule Anubis.Server.Handlers.Tools do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with {:ok, params} <- validate_params(params, tool, frame),
+      with :ok <- check_scopes(tool, frame),
+           {:ok, params} <- validate_params(params, tool, frame),
            do: forward_to(server, tool, params, frame)
     else
       payload = %{message: "Tool not found: #{tool_name}"}
@@ -40,7 +41,8 @@ defmodule Anubis.Server.Handlers.Tools do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with {:ok, params} <- validate_params(%{}, tool, frame),
+      with :ok <- check_scopes(tool, frame),
+           {:ok, params} <- validate_params(%{}, tool, frame),
            do: forward_to(server, tool, params, frame)
     else
       payload = %{message: "Tool not found: #{tool_name}"}
@@ -49,6 +51,19 @@ defmodule Anubis.Server.Handlers.Tools do
   end
 
   # Private functions
+
+  defp check_scopes(%Tool{scopes: []}, _frame), do: :ok
+
+  defp check_scopes(%Tool{scopes: required}, frame) do
+    granted = Frame.scopes(frame)
+    missing = Enum.reject(required, &(&1 in granted))
+
+    if missing == [] do
+      :ok
+    else
+      {:error, Error.execution("insufficient_scope", %{required: required, granted: granted}), frame}
+    end
+  end
 
   defp find_tool_module(tools, name), do: Enum.find(tools, &(&1.name == name))
 

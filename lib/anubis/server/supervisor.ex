@@ -4,6 +4,7 @@ defmodule Anubis.Server.Supervisor do
   use Supervisor, restart: :permanent
   use Anubis.Logging
 
+  alias Anubis.Server.Authorization
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.Transport.SSE
@@ -22,6 +23,7 @@ defmodule Anubis.Server.Supervisor do
           | {:supervisor, {module(), keyword()}}
           | {:session_idle_timeout, pos_integer() | nil}
           | {:request_timeout, pos_integer() | nil}
+          | {:authorization, keyword() | nil}
 
   @doc """
   Starts the server supervisor.
@@ -82,6 +84,8 @@ defmodule Anubis.Server.Supervisor do
       request_timeout = Keyword.get(opts, :request_timeout, to_timeout(second: 30))
       task_supervisor = Registry.task_supervisor_name(server)
 
+      maybe_store_authorization_config(server, transport, opts)
+
       {registry_mod, registry_opts} = resolve_registry(opts, transport, server)
       {sup_mod, _sup_opts} = resolve_session_supervisor(opts)
 
@@ -131,6 +135,36 @@ defmodule Anubis.Server.Supervisor do
   @doc false
   def get_session_supervisor_mod(server) do
     :persistent_term.get({__MODULE__, server, :session_supervisor_mod}, DynamicSupervisor)
+  end
+
+  @doc """
+  Returns the parsed authorization config for the given server module, or `nil`
+  if no authorization is configured.
+  """
+  @spec get_authorization_config(module()) :: map() | nil
+  def get_authorization_config(server) do
+    :persistent_term.get({__MODULE__, server, :authorization_config}, nil)
+  end
+
+  defp maybe_store_authorization_config(server, transport, opts) do
+    case Keyword.get(opts, :authorization) do
+      nil ->
+        :ok
+
+      auth_opts when is_list(auth_opts) ->
+        case transport do
+          :stdio ->
+            Logging.log(
+              :warning,
+              "Authorization config is ignored for STDIO transport on server #{inspect(server)}",
+              []
+            )
+
+          _ ->
+            parsed = Authorization.parse_config!(auth_opts)
+            :persistent_term.put({__MODULE__, server, :authorization_config}, parsed)
+        end
+    end
   end
 
   defp resolve_session_supervisor(opts) do

@@ -43,6 +43,7 @@ defmodule Anubis.Server.Component do
     mime_type = Keyword.get(opts, :mime_type, "text/plain")
     annotations = Keyword.get(opts, :annotations)
     meta = Keyword.get(opts, :meta)
+    scopes = Keyword.get(opts, :scopes, [])
 
     quote do
       @behaviour unquote(behaviour_module)
@@ -66,6 +67,9 @@ defmodule Anubis.Server.Component do
 
       @doc false
       def __description__, do: @moduledoc
+
+      @doc false
+      def __scopes__, do: unquote(scopes)
 
       if unquote(type) == :tool do
         if title = unquote(title) do

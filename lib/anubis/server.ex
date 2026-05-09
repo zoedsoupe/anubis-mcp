@@ -296,7 +296,20 @@ defmodule Anubis.Server do
       @before_compile Anubis.Server
       @after_compile Anubis.Server
 
+      @__authorization_config__ unquote(Keyword.get(opts, :authorization))
+
+      def __authorization__, do: @__authorization_config__
+
       def child_spec(opts) do
+        auth_config = @__authorization_config__
+
+        opts =
+          if auth_config && not Keyword.has_key?(opts, :authorization) do
+            Keyword.put(opts, :authorization, auth_config)
+          else
+            opts
+          end
+
         %{
           id: __MODULE__,
           start: {Anubis.Server.Supervisor, :start_link, [__MODULE__, opts]},
@@ -385,6 +398,7 @@ defmodule Anubis.Server do
     output_schema = if Anubis.exported?(mod, :output_schema, 0), do: mod.output_schema()
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
     title = determine_tool_title(annotations, title)
+    scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
     validate_output =
       if output_schema do
@@ -413,7 +427,8 @@ defmodule Anubis.Server do
           meta: meta,
           handler: mod,
           validate_input: validate_input,
-          validate_output: validate_output
+          validate_output: validate_output,
+          scopes: scopes
         }
       ]
     else
@@ -423,6 +438,7 @@ defmodule Anubis.Server do
 
   def parse_components({:prompt, name, mod}) do
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+    scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
     if Anubis.exported?(mod, :arguments, 0) do
       validate_input = fn params ->
@@ -438,7 +454,8 @@ defmodule Anubis.Server do
           description: Component.get_description(mod),
           arguments: mod.arguments(),
           handler: mod,
-          validate_input: validate_input
+          validate_input: validate_input,
+          scopes: scopes
         }
       ]
     else
@@ -450,6 +467,7 @@ defmodule Anubis.Server do
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
     has_uri = Anubis.exported?(mod, :uri, 0)
     has_uri_template = Anubis.exported?(mod, :uri_template, 0)
+    scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
     cond do
       has_uri ->
@@ -460,7 +478,8 @@ defmodule Anubis.Server do
             title: title,
             description: Component.get_description(mod),
             mime_type: mod.mime_type(),
-            handler: mod
+            handler: mod,
+            scopes: scopes
           }
         ]
 
@@ -472,7 +491,8 @@ defmodule Anubis.Server do
             title: title,
             description: Component.get_description(mod),
             mime_type: mod.mime_type(),
-            handler: mod
+            handler: mod,
+            scopes: scopes
           }
         ]
 

@@ -44,7 +44,9 @@ defmodule Anubis.Server.Handlers.Resources do
 
     case find_static_resource(resources, uri) do
       %Resource{} = resource ->
-        read_single_resource(server, resource, uri, frame)
+        with :ok <- check_scopes(resource, frame) do
+          read_single_resource(server, resource, uri, frame)
+        end
 
       nil ->
         try_resource_templates(templates, server, uri, frame)
@@ -73,6 +75,19 @@ defmodule Anubis.Server.Handlers.Resources do
 
   # Private functions
 
+  defp check_scopes(%Resource{scopes: []}, _frame), do: :ok
+
+  defp check_scopes(%Resource{scopes: required}, frame) do
+    granted = Frame.scopes(frame)
+    missing = Enum.reject(required, &(&1 in granted))
+
+    if missing == [] do
+      :ok
+    else
+      {:error, Error.execution("insufficient_scope", %{required: required, granted: granted}), frame}
+    end
+  end
+
   defp subscribe_enabled?(server) do
     get_in(server.server_capabilities(), ["resources", :subscribe]) == true
   end
@@ -88,13 +103,10 @@ defmodule Anubis.Server.Handlers.Resources do
   defp try_resource_templates([template | rest], server, uri, frame) do
     case URITemplate.match(template.uri_template, uri) do
       {:ok, vars} ->
-        case read_single_resource(server, template, uri, frame, vars) do
-          {:error, %Error{code: -32_002}, _frame} ->
-            try_resource_templates(rest, server, uri, frame)
-
-          result ->
-            result
-        end
+        with :ok <- check_scopes(template, frame),
+             {:error, %Error{reason: :resource_not_found}, _frame} <-
+               read_single_resource(server, template, uri, frame, vars),
+             do: try_resource_templates(rest, server, uri, frame)
 
       :error ->
         try_resource_templates(rest, server, uri, frame)

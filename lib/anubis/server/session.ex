@@ -984,11 +984,18 @@ defmodule Anubis.Server.Session do
         _ -> nil
       end
 
+    auth =
+      case transport_context do
+        %{auth: claims} -> claims
+        _ -> nil
+      end
+
     context = %Context{
       session_id: state.session_id,
       client_info: state.client_info,
       headers: headers,
-      remote_ip: remote_ip
+      remote_ip: remote_ip,
+      auth: auth
     }
 
     %{state.frame | context: context}

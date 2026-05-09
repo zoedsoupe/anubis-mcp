@@ -37,11 +37,13 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Error
     alias Anubis.MCP.ID
     alias Anubis.MCP.Message
+    alias Anubis.Server.Authorization
     alias Anubis.Server.Registry
     alias Anubis.Server.Session
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.StreamableHTTP
     alias Anubis.SSE.Streaming
+    alias Anubis.Telemetry
     alias Plug.Conn.Unfetched
 
     require Message
@@ -68,6 +70,22 @@ if Code.ensure_loaded?(Plug) do
     def call(conn, opts) do
       opts = resolve_runtime_config(opts)
 
+      if conn.request_path == "/.well-known/oauth-protected-resource" do
+        handle_well_known(conn, opts)
+      else
+        case authorize(conn, opts) do
+          {:ok, conn, claims} ->
+            opts
+            |> Map.put(:auth_claims, claims)
+            |> then(&handle_request(conn, &1))
+
+          {:halt, conn} ->
+            conn
+        end
+      end
+    end
+
+    defp handle_request(conn, opts) do
       case conn.method do
         "GET" -> handle_get(conn, opts)
         "POST" -> handle_post(conn, opts)
@@ -78,11 +96,13 @@ if Code.ensure_loaded?(Plug) do
 
     defp resolve_runtime_config(%{server: server} = opts) do
       session_config = ServerSupervisor.get_session_config(server)
+      auth_config = ServerSupervisor.get_authorization_config(server)
 
       Map.merge(opts, %{
         registry_mod: session_config.registry_mod,
         registry_name: Registry.registry_name(server),
-        transport: Registry.transport_name(server, :streamable_http)
+        transport: Registry.transport_name(server, :streamable_http),
+        authorization: auth_config
       })
     end
 
@@ -113,7 +133,7 @@ if Code.ensure_loaded?(Plug) do
            {:ok, body, conn} <- maybe_read_request_body(conn, opts),
            {:ok, [message]} <- maybe_parse_messages(body) do
         session_id = determine_session_id(conn, session_header, message)
-        context = build_request_context(conn)
+        context = build_request_context(conn, Map.get(opts, :auth_claims))
 
         Logging.transport_event("parsed_messages", %{
           message: message,
@@ -509,7 +529,7 @@ if Code.ensure_loaded?(Plug) do
     defp extract_request_id(%{"id" => request_id}), do: request_id
     defp extract_request_id(_), do: nil
 
-    defp build_request_context(conn) do
+    defp build_request_context(conn, auth_claims) do
       %{
         assigns: conn.assigns,
         type: :http,
@@ -519,8 +539,95 @@ if Code.ensure_loaded?(Plug) do
         scheme: conn.scheme,
         host: conn.host,
         port: conn.port,
-        request_path: conn.request_path
+        request_path: conn.request_path,
+        auth: auth_claims
       }
+    end
+
+    defp handle_well_known(conn, %{authorization: nil}) do
+      send_error(conn, 404, "Not found")
+    end
+
+    defp handle_well_known(conn, %{authorization: auth_config}) do
+      metadata = Authorization.build_resource_metadata(auth_config)
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(200, JSON.encode!(metadata))
+    end
+
+    defp authorize(conn, %{authorization: nil}), do: {:ok, conn, nil}
+
+    defp authorize(conn, %{authorization: auth_config}) do
+      case extract_bearer_token(conn) do
+        {:ok, token} ->
+          validate_bearer_token(conn, token, auth_config)
+
+        {:error, :missing_token} ->
+          www_auth = Authorization.build_www_authenticate(auth_config, :unauthorized)
+
+          conn =
+            conn
+            |> put_resp_header("www-authenticate", www_auth)
+            |> put_resp_content_type("application/json")
+            |> send_resp(401, JSON.encode!(%{"error" => "unauthorized"}))
+            |> halt()
+
+          {:halt, conn}
+      end
+    end
+
+    defp validate_bearer_token(conn, token, auth_config) do
+      {validator_mod, validator_opts} = auth_config.validator
+      _ = validator_opts
+
+      Telemetry.execute(
+        [:server, :authorization, :validate],
+        %{system_time: System.system_time()},
+        %{validator: validator_mod}
+      )
+
+      case validator_mod.validate_token(token, auth_config) do
+        {:ok, raw_claims} ->
+          claims = Authorization.normalize_claims(raw_claims)
+
+          with :ok <- Authorization.validate_expiry(claims),
+               :ok <- Authorization.validate_audience(claims, auth_config) do
+            {:ok, conn, claims}
+          else
+            {:error, :token_expired} ->
+              send_auth_error(conn, auth_config, 401, :unauthorized)
+
+            {:error, :invalid_audience} ->
+              send_auth_error(conn, auth_config, 401, :unauthorized)
+          end
+
+        {:error, _reason} ->
+          send_auth_error(conn, auth_config, 401, :unauthorized)
+      end
+    end
+
+    defp send_auth_error(conn, auth_config, 401, :unauthorized) do
+      www_auth = Authorization.build_www_authenticate(auth_config, :unauthorized)
+
+      conn =
+        conn
+        |> put_resp_header("www-authenticate", www_auth)
+        |> put_resp_content_type("application/json")
+        |> send_resp(401, JSON.encode!(%{"error" => "unauthorized"}))
+        |> halt()
+
+      {:halt, conn}
+    end
+
+    defp extract_bearer_token(conn) do
+      case get_req_header(conn, "authorization") do
+        ["Bearer " <> token | _] when token != "" ->
+          {:ok, String.trim(token)}
+
+        _ ->
+          {:error, :missing_token}
+      end
     end
 
     defp fetch_query_params_safe(conn) do
