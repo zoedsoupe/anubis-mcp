@@ -168,13 +168,15 @@ defmodule Anubis.Server.Authorization do
       Authorization.validate_expiry(%{exp: future_timestamp})
       # => :ok
   """
-  @spec validate_expiry(claims()) :: :ok | {:error, :token_expired}
+  @spec validate_expiry(claims()) :: :ok | {:error, :token_expired | :invalid_expiry}
   def validate_expiry(%{exp: nil}), do: :ok
 
-  def validate_expiry(%{exp: exp}) when is_integer(exp) do
+  def validate_expiry(%{exp: exp}) when is_integer(exp) and exp >= 0 do
     now = System.os_time(:second)
     if exp > now, do: :ok, else: {:error, :token_expired}
   end
+
+  def validate_expiry(%{exp: _}), do: {:error, :invalid_expiry}
 
   def validate_expiry(_), do: :ok
 

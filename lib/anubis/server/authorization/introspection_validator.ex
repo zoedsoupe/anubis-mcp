@@ -24,25 +24,25 @@ defmodule Anubis.Server.Authorization.IntrospectionValidator do
 
   use Anubis.Logging
 
+  @http_receive_timeout 5_000
+  @http_pool_timeout 1_000
+
+  @spec validate_token(String.t(), map()) :: {:ok, map()} | {:error, term()}
   @impl true
-  def validate_token(token, config) when is_binary(token) do
-    opts = elem(config.validator, 1)
+  def validate_token(token, %{validator: {_mod, opts}}) when is_binary(token) and is_list(opts) do
     endpoint = Keyword.fetch!(opts, :introspection_endpoint)
 
     headers = build_headers(opts)
-    body = URI.encode_query(%{"token" => token})
+    request_body = URI.encode_query(%{"token" => token, "token_type_hint" => "access_token"})
 
-    request =
-      Finch.build(
-        :post,
-        endpoint,
-        headers,
-        body
-      )
+    request = Finch.build(:post, endpoint, headers, request_body)
 
-    case Finch.request(request, Anubis.Finch) do
-      {:ok, %Finch.Response{status: 200, body: body}} ->
-        parse_introspection_response(body)
+    case Finch.request(request, Anubis.Finch,
+           receive_timeout: @http_receive_timeout,
+           pool_timeout: @http_pool_timeout
+         ) do
+      {:ok, %Finch.Response{status: 200, body: resp_body}} ->
+        parse_introspection_response(resp_body)
 
       {:ok, %Finch.Response{status: status}} ->
         Logging.server_event("introspection_http_error", %{status: status}, level: :warning)
@@ -59,7 +59,7 @@ defmodule Anubis.Server.Authorization.IntrospectionValidator do
 
     case {Keyword.get(opts, :client_id), Keyword.get(opts, :client_secret)} do
       {id, secret} when is_binary(id) and is_binary(secret) ->
-        credentials = Base.encode64("#{id}:#{secret}")
+        credentials = Base.encode64("#{URI.encode_www_form(id)}:#{URI.encode_www_form(secret)}")
         [{"authorization", "Basic #{credentials}"} | base_headers]
 
       _ ->

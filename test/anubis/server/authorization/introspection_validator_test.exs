@@ -45,7 +45,9 @@ defmodule Anubis.Server.Authorization.IntrospectionValidatorTest do
       IntrospectionValidator.validate_token("my-special-token", config)
 
       assert_receive {:body, body}
-      assert body == "token=my-special-token"
+      params = URI.decode_query(body)
+      assert params["token"] == "my-special-token"
+      assert params["token_type_hint"] == "access_token"
     end
   end
 

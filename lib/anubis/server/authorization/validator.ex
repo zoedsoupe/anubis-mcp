@@ -24,9 +24,9 @@ defmodule Anubis.Server.Authorization.Validator do
   """
 
   @type token :: String.t()
-  @type config :: map()
+  @type config :: Anubis.Server.Authorization.config()
   @type claims :: map()
-  @type reason :: atom() | String.t()
+  @type reason :: atom() | String.t() | {atom(), term()}
 
   @doc """
   Validates a bearer token and returns normalized raw claims on success.

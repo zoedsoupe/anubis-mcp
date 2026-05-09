@@ -5,7 +5,12 @@ if Code.ensure_loaded?(JOSE) do
 
     Fetches the JWKS from the configured URI, caches the key set in
     `:persistent_term` with a 5-minute TTL, then verifies the token
-    signature and validates standard claims (`iss`, `aud`, `exp`).
+    signature against the matching key.
+
+    Issuer validation is performed here when `:issuer` is configured.
+    `aud` and `exp` are validated by the authorization plug layer
+    (`Anubis.Server.Authorization.validate_audience/2` and
+    `validate_expiry/1`) after the validator returns claims.
 
     ## Configuration
 
@@ -32,10 +37,12 @@ if Code.ensure_loaded?(JOSE) do
     use Anubis.Logging
 
     @jwks_ttl_seconds 300
+    @http_receive_timeout 5_000
+    @http_pool_timeout 1_000
 
+    @spec validate_token(String.t(), map()) :: {:ok, map()} | {:error, term()}
     @impl true
-    def validate_token(token, config) when is_binary(token) do
-      opts = elem(config.validator, 1)
+    def validate_token(token, %{validator: {_mod, opts}}) when is_binary(token) and is_list(opts) do
       jwks_uri = Keyword.fetch!(opts, :jwks_uri)
 
       with {:ok, jwks} <- fetch_jwks(jwks_uri),
@@ -53,7 +60,6 @@ if Code.ensure_loaded?(JOSE) do
           if System.os_time(:second) - cached_at < @jwks_ttl_seconds do
             {:ok, jwks}
           else
-            :persistent_term.erase(cache_key)
             do_fetch_jwks(jwks_uri, cache_key)
           end
 
@@ -65,7 +71,10 @@ if Code.ensure_loaded?(JOSE) do
     defp do_fetch_jwks(jwks_uri, cache_key) do
       request = Finch.build(:get, jwks_uri, [{"accept", "application/json"}])
 
-      case Finch.request(request, Anubis.Finch) do
+      case Finch.request(request, Anubis.Finch,
+             receive_timeout: @http_receive_timeout,
+             pool_timeout: @http_pool_timeout
+           ) do
         {:ok, %Finch.Response{status: 200, body: body}} ->
           case JSON.decode(body) do
             {:ok, jwks} ->

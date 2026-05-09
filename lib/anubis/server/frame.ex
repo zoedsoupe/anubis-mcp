@@ -134,6 +134,7 @@ defmodule Anubis.Server.Frame do
                | {:title, String.t() | nil}
                | {:annotations, map() | nil}
                | {:task_support, Tool.task_support()}
+               | {:scopes, [String.t()]}
   def register_tool(%__MODULE__{} = frame, name, opts) when is_binary(name) do
     input_schema = opts[:input_schema] || %{}
     raw_schema = Component.__clean_schema_for_peri__(input_schema)
@@ -150,6 +151,7 @@ defmodule Anubis.Server.Frame do
     annotations = opts[:annotations]
     title = annotations[:title] || annotations["title"] || opts[:title] || name
     task_support = Keyword.get(opts, :task_support, :forbidden)
+    scopes = validate_scopes_opt!(Keyword.get(opts, :scopes, []))
 
     if task_support not in [:forbidden, :optional, :required] do
       raise ArgumentError,
@@ -166,6 +168,7 @@ defmodule Anubis.Server.Frame do
       meta: opts[:meta],
       title: title,
       task_support: task_support,
+      scopes: scopes,
       validate_input: validate_input,
       validate_output: validate_output
     }
@@ -177,18 +180,24 @@ defmodule Anubis.Server.Frame do
   Registers a prompt definition at runtime.
   """
   @spec register_prompt(t(), String.t(), list(prompt_opt)) :: t()
-        when prompt_opt: {:description, String.t() | nil} | {:arguments, map() | nil} | {:title, String.t() | nil}
+        when prompt_opt:
+               {:description, String.t() | nil}
+               | {:arguments, map() | nil}
+               | {:title, String.t() | nil}
+               | {:scopes, [String.t()]}
   def register_prompt(%__MODULE__{} = frame, name, opts) when is_binary(name) do
     arguments = opts[:arguments] || %{}
     raw_schema = Component.__clean_schema_for_peri__(arguments)
     validate_input = fn params -> Peri.validate(raw_schema, params) end
     title = opts[:title] || name
+    scopes = validate_scopes_opt!(Keyword.get(opts, :scopes, []))
 
     prompt = %Prompt{
       name: name,
       title: title,
       description: opts[:description],
       arguments: Schema.to_prompt_arguments(arguments),
+      scopes: scopes,
       validate_input: validate_input
     }
 
@@ -206,15 +215,18 @@ defmodule Anubis.Server.Frame do
                | {:name, String.t() | nil}
                | {:description, String.t() | nil}
                | {:mime_type, String.t() | nil}
+               | {:scopes, [String.t()]}
   def register_resource(%__MODULE__{} = frame, uri, opts) when is_binary(uri) do
     name = opts[:name] || Path.basename(uri)
+    scopes = validate_scopes_opt!(Keyword.get(opts, :scopes, []))
 
     resource = %Resource{
       uri: uri,
       title: opts[:title] || name,
       name: name,
       description: opts[:description],
-      mime_type: opts[:mime_type] || "text/plain"
+      mime_type: opts[:mime_type] || "text/plain",
+      scopes: scopes
     }
 
     %{frame | resources: Map.put(frame.resources, uri, resource)}
@@ -237,18 +249,30 @@ defmodule Anubis.Server.Frame do
                | {:name, String.t()}
                | {:description, String.t() | nil}
                | {:mime_type, String.t() | nil}
+               | {:scopes, [String.t()]}
   def register_resource_template(%__MODULE__{} = frame, uri_template, opts) when is_binary(uri_template) do
     name = Keyword.fetch!(opts, :name)
+    scopes = validate_scopes_opt!(Keyword.get(opts, :scopes, []))
 
     resource = %Resource{
       uri_template: uri_template,
       title: opts[:title] || name,
       name: name,
       description: opts[:description],
-      mime_type: opts[:mime_type] || "text/plain"
+      mime_type: opts[:mime_type] || "text/plain",
+      scopes: scopes
     }
 
     %{frame | resource_templates: Map.put(frame.resource_templates, name, resource)}
+  end
+
+  defp validate_scopes_opt!(scopes) do
+    if is_list(scopes) and Enum.all?(scopes, &is_binary/1) do
+      scopes
+    else
+      raise ArgumentError,
+            "Component :scopes must be a list of strings, got: #{inspect(scopes)}"
+    end
   end
 
   @doc """

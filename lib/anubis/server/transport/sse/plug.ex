@@ -448,14 +448,27 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp extract_bearer_token(conn) do
-      case get_req_header(conn, "authorization") do
-        ["Bearer " <> token | _] when token != "" ->
-          {:ok, String.trim(token)}
+      conn
+      |> get_req_header("authorization")
+      |> List.first()
+      |> parse_bearer_header()
+    end
+
+    defp parse_bearer_header(header) when is_binary(header) do
+      case String.split(header, ~r/\s+/, parts: 2) do
+        [scheme, token] ->
+          if String.downcase(scheme) == "bearer" and token != "" do
+            {:ok, String.trim(token)}
+          else
+            {:error, :missing_token}
+          end
 
         _ ->
           {:error, :missing_token}
       end
     end
+
+    defp parse_bearer_header(_), do: {:error, :missing_token}
 
     defp fetch_query_params_safe(conn) do
       case conn.query_params do
