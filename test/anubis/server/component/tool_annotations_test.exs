@@ -9,9 +9,9 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
 
   describe "tool annotations" do
     test "annotations callback is optional" do
-      assert function_exported?(ToolWithAnnotations, :annotations, 0)
+      assert is_map(ToolWithAnnotations.annotations())
       refute function_exported?(ToolWithoutAnnotations, :annotations, 0)
-      assert function_exported?(ToolWithCustomAnnotations, :annotations, 0)
+      assert is_map(ToolWithCustomAnnotations.annotations())
     end
   end
 
