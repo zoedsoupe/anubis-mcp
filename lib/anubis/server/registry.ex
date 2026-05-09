@@ -64,6 +64,14 @@ defmodule Anubis.Server.Registry do
   @spec task_supervisor_name(module()) :: atom()
   def task_supervisor_name(server), do: :"Anubis.#{server}.task_supervisor"
 
+  @doc """
+  Default atom name for a server's `Anubis.Server.TaskStore` process. Adapters
+  may override via the optional `resolve_name/2` callback to return a `:via`
+  tuple for distributed deployments.
+  """
+  @spec task_store_name(module()) :: atom()
+  def task_store_name(server), do: :"Anubis.#{server}.task_store"
+
   @spec session_supervisor_name(module()) :: atom()
   def session_supervisor_name(server), do: :"Anubis.#{server}.session_supervisor"
 

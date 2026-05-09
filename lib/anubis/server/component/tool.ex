@@ -62,6 +62,8 @@ defmodule Anubis.Server.Component.Tool do
   @type schema :: map()
   @type annotations :: map() | nil
 
+  @type task_support :: :forbidden | :optional | :required
+
   @type t :: %__MODULE__{
           name: String.t(),
           title: String.t() | nil,
@@ -70,6 +72,7 @@ defmodule Anubis.Server.Component.Tool do
           output_schema: map | nil,
           annotations: map | nil,
           meta: map | nil,
+          task_support: task_support(),
           handler: module | nil,
           validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
           validate_output: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
@@ -83,6 +86,7 @@ defmodule Anubis.Server.Component.Tool do
     output_schema: nil,
     annotations: nil,
     meta: nil,
+    task_support: :forbidden,
     handler: nil,
     validate_input: nil,
     validate_output: nil
@@ -163,6 +167,21 @@ defmodule Anubis.Server.Component.Tool do
   @callback meta() :: map()
 
   @doc """
+  Returns the task-augmentation policy for this tool.
+
+  See the MCP Tasks specification (2025-11-25) — `execution.taskSupport`.
+
+  - `:forbidden` (default) — clients MUST NOT invoke this tool as a task
+  - `:optional` — clients MAY invoke this tool as a task or normally
+  - `:required` — clients MUST invoke this tool as a task
+
+  Only honoured when the server declares the `tasks.requests.tools.call`
+  capability; otherwise the value is ignored and the tool is treated as
+  `:forbidden`.
+  """
+  @callback task_support() :: task_support()
+
+  @doc """
   Executes the tool with the given parameters.
 
   ## Parameters
@@ -198,7 +217,7 @@ defmodule Anubis.Server.Component.Tool do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0, meta: 0
+  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0, meta: 0, task_support: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Tool
@@ -213,7 +232,14 @@ defmodule Anubis.Server.Component.Tool do
       |> then(&if os = tool.output_schema, do: Map.put(&1, "outputSchema", os), else: &1)
       |> then(&if a = tool.annotations, do: Map.put(&1, "annotations", a), else: &1)
       |> then(&if m = tool.meta, do: Map.put(&1, "_meta", m), else: &1)
+      |> maybe_put_execution(tool)
       |> JSON.encode!()
     end
+
+    defp maybe_put_execution(map, %Tool{task_support: support}) when support in [:optional, :required] do
+      Map.put(map, "execution", %{"taskSupport" => Atom.to_string(support)})
+    end
+
+    defp maybe_put_execution(map, _), do: map
   end
 end

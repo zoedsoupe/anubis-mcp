@@ -24,11 +24,12 @@ defmodule Anubis.Server.Handlers.Tools do
 
   @spec handle_call(map(), Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
-  def handle_call(%{"params" => %{"name" => tool_name, "arguments" => params}}, frame, server) do
+  def handle_call(%{"params" => %{"name" => tool_name, "arguments" => params}} = request, frame, server) do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with {:ok, params} <- validate_params(params, tool, frame),
+      with :ok <- check_task_policy(tool, request, frame),
+           {:ok, params} <- validate_params(params, tool, frame),
            do: forward_to(server, tool, params, frame)
     else
       payload = %{message: "Tool not found: #{tool_name}"}
@@ -36,11 +37,12 @@ defmodule Anubis.Server.Handlers.Tools do
     end
   end
 
-  def handle_call(%{"params" => %{"name" => tool_name}}, frame, server) do
+  def handle_call(%{"params" => %{"name" => tool_name}} = request, frame, server) do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with {:ok, params} <- validate_params(%{}, tool, frame),
+      with :ok <- check_task_policy(tool, request, frame),
+           {:ok, params} <- validate_params(%{}, tool, frame),
            do: forward_to(server, tool, params, frame)
     else
       payload = %{message: "Tool not found: #{tool_name}"}
@@ -51,6 +53,26 @@ defmodule Anubis.Server.Handlers.Tools do
   # Private functions
 
   defp find_tool_module(tools, name), do: Enum.find(tools, &(&1.name == name))
+
+  # Spec 2025-11-25: tool with execution.taskSupport == "required" MUST be
+  # invoked as a task. Direct (non-augmented) calls return -32601. Augmented
+  # calls reach this handler only via the task worker path, where
+  # `Frame.task_id` is set, so we use that as the discriminator.
+  defp check_task_policy(%Tool{task_support: :required}, _request, %Frame{task_id: nil} = frame) do
+    {:error,
+     Error.protocol(:method_not_found, %{
+       message: "Tool requires task augmentation (execution.taskSupport == \"required\")"
+     }), frame}
+  end
+
+  defp check_task_policy(%Tool{task_support: :forbidden}, %{"params" => %{"task" => _}}, frame) do
+    {:error,
+     Error.protocol(:method_not_found, %{
+       message: "Tool does not support task augmentation (execution.taskSupport == \"forbidden\")"
+     }), frame}
+  end
+
+  defp check_task_policy(_tool, _request, _frame), do: :ok
 
   defp validate_params(_, %Tool{validate_input: nil}, _), do: {:ok, %{}}
 

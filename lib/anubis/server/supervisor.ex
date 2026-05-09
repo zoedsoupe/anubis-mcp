@@ -6,6 +6,7 @@ defmodule Anubis.Server.Supervisor do
 
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
+  alias Anubis.Server.TaskStore
   alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.STDIO
   alias Anubis.Server.Transport.StreamableHTTP
@@ -20,6 +21,7 @@ defmodule Anubis.Server.Supervisor do
           | {:name, Supervisor.name()}
           | {:registry, {module(), keyword()}}
           | {:supervisor, {module(), keyword()}}
+          | {:task_store, {module(), keyword()}}
           | {:session_idle_timeout, pos_integer() | nil}
           | {:request_timeout, pos_integer() | nil}
 
@@ -84,6 +86,7 @@ defmodule Anubis.Server.Supervisor do
 
       {registry_mod, registry_opts} = resolve_registry(opts, transport, server)
       {sup_mod, _sup_opts} = resolve_session_supervisor(opts)
+      {task_store_mod, task_store_opts} = resolve_task_store(opts, server)
 
       :persistent_term.put({__MODULE__, server, :session_supervisor_mod}, sup_mod)
 
@@ -91,13 +94,16 @@ defmodule Anubis.Server.Supervisor do
 
       transport_name = transport_opts[:name]
 
+      task_store_name = TaskStore.resolve_name(task_store_mod, server, task_store_opts)
+
       session_config = %{
         server_module: server,
         registry_mod: registry_mod,
         transport: [layer: layer, name: transport_name],
         session_idle_timeout: session_idle_timeout,
         timeout: request_timeout,
-        task_supervisor: task_supervisor
+        task_supervisor: task_supervisor,
+        task_store: [adapter: task_store_mod, name: task_store_name]
       }
 
       :persistent_term.put({__MODULE__, server, :session_config}, session_config)
@@ -108,13 +114,24 @@ defmodule Anubis.Server.Supervisor do
           task_supervisor: task_supervisor
         )
 
+      task_store_child = task_store_child_spec(task_store_mod, task_store_opts, task_store_name)
+
       children =
         case transport do
           :stdio ->
-            build_stdio_children(server, layer, transport_opts, task_supervisor, session_config)
+            build_stdio_children(server, layer, transport_opts, task_supervisor, session_config, task_store_child)
 
           _ ->
-            build_http_children(server, registry_mod, registry_opts, sup_mod, layer, transport_opts, task_supervisor)
+            build_http_children(
+              server,
+              registry_mod,
+              registry_opts,
+              sup_mod,
+              layer,
+              transport_opts,
+              task_supervisor,
+              task_store_child
+            )
         end
 
       Supervisor.init(children, strategy: :one_for_all)
@@ -140,6 +157,20 @@ defmodule Anubis.Server.Supervisor do
     end
   end
 
+  defp resolve_task_store(opts, _server) do
+    case Keyword.get(opts, :task_store) do
+      {mod, store_opts} when is_atom(mod) -> {mod, store_opts}
+      nil -> {Anubis.Server.TaskStore.Local, []}
+    end
+  end
+
+  defp task_store_child_spec(adapter, store_opts, store_name) do
+    case adapter.child_spec(Keyword.put_new(store_opts, :name, store_name)) do
+      :ignore -> nil
+      spec -> spec
+    end
+  end
+
   # Auto-select registry: STDIO -> None, HTTP -> Local
   defp resolve_registry(opts, transport, server) do
     case Keyword.get(opts, :registry) do
@@ -159,7 +190,7 @@ defmodule Anubis.Server.Supervisor do
   end
 
   # For STDIO: single session, no DynamicSupervisor, no registry
-  defp build_stdio_children(server, layer, transport_opts, task_supervisor, session_config) do
+  defp build_stdio_children(server, layer, transport_opts, task_supervisor, session_config, task_store_child) do
     session_name = Registry.stdio_session_name(server)
 
     session_opts = [
@@ -169,18 +200,30 @@ defmodule Anubis.Server.Supervisor do
       transport: session_config.transport,
       session_idle_timeout: session_config.session_idle_timeout || to_timeout(minute: 30),
       timeout: session_config.timeout,
-      task_supervisor: task_supervisor
+      task_supervisor: task_supervisor,
+      task_store: session_config.task_store
     ]
 
-    [
+    base = [
       {Task.Supervisor, name: task_supervisor},
       {Session, session_opts},
       {layer, transport_opts}
     ]
+
+    if task_store_child, do: [task_store_child | base], else: base
   end
 
   # For HTTP transports: session supervisor (DynamicSupervisor or pluggable) + registry
-  defp build_http_children(server, registry_mod, registry_opts, sup_mod, layer, transport_opts, task_supervisor) do
+  defp build_http_children(
+         server,
+         registry_mod,
+         registry_opts,
+         sup_mod,
+         layer,
+         transport_opts,
+         task_supervisor,
+         task_store_child
+       ) do
     session_sup_name = Registry.session_supervisor_name(server)
 
     registry_child =
@@ -189,17 +232,14 @@ defmodule Anubis.Server.Supervisor do
         spec -> spec
       end
 
-    children = [
+    base = [
       {Task.Supervisor, name: task_supervisor},
       {sup_mod, name: session_sup_name, strategy: :one_for_one},
       {layer, transport_opts}
     ]
 
-    if registry_child do
-      [registry_child | children]
-    else
-      children
-    end
+    base = if registry_child, do: [registry_child | base], else: base
+    if task_store_child, do: [task_store_child | base], else: base
   end
 
   defp normalize_transport(t) when t in [:stdio, StubTransport], do: t
