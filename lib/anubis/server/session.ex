@@ -101,7 +101,8 @@ defmodule Anubis.Server.Session do
     {:session_idle_timeout, {{:integer, {:gte, 1}}, {:default, @default_session_idle_timeout}}},
     {:timeout, {:integer, {:default, to_timeout(second: 30)}}},
     {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
-    {:task_store, {{:list, :any}, {:default, nil}}}
+    {:task_store,
+     {[adapter: {:required, :atom}, name: {:required, {:custom, &Anubis.genserver_name/1}}], {:default, nil}}}
   ])
 
   @doc """
