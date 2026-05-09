@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.4.0...v1.5.0) (2026-05-09)
+
+
+### Features
+
+* MCP Tasks (2025-11-25) — server-receiver for tools/call ([#98](https://github.com/zoedsoupe/anubis-mcp/issues/98)) ([#155](https://github.com/zoedsoupe/anubis-mcp/issues/155)) ([51348f1](https://github.com/zoedsoupe/anubis-mcp/commit/51348f1a6e2b069fbe91c1cd50ce4610303de393))
+
+
+### Bug Fixes
+
+* drop compile-connected deps from component/1 macro ([#154](https://github.com/zoedsoupe/anubis-mcp/issues/154)) ([1e368b9](https://github.com/zoedsoupe/anubis-mcp/commit/1e368b906092b863362737a90f83ae5a35fd078f))
+
+
+### Continuous Integration
+
+* fix flaky test ([939fd76](https://github.com/zoedsoupe/anubis-mcp/commit/939fd769813a85170e3b59153a4b8e7f5804150e))
+
 ## [1.4.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.3.1...v1.4.0) (2026-05-08)
 
 
