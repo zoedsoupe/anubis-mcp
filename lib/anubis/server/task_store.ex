@@ -51,10 +51,14 @@ defmodule Anubis.Server.TaskStore do
   @doc """
   Resolves the configured task store name for a server, asking the adapter if
   it implements `resolve_name/2` and falling back to the default atom naming.
+
+  Uses `Code.ensure_loaded?/1` first because in releases the adapter beam may
+  exist on disk but not yet be loaded into the VM, in which case
+  `function_exported?/3` silently returns false and we'd skip the override.
   """
   @spec resolve_name(module(), module(), keyword()) :: name()
   def resolve_name(adapter, server, opts) do
-    if function_exported?(adapter, :resolve_name, 2) do
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :resolve_name, 2) do
       adapter.resolve_name(server, opts)
     else
       Anubis.Server.Registry.task_store_name(server)

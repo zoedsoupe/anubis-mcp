@@ -39,7 +39,7 @@ defmodule Anubis.Protocol.V2025_11_25 do
     "statusMessage" => :string,
     "createdAt" => :string,
     "lastUpdatedAt" => :string,
-    "ttl" => {:either, {:integer, :atom}},
+    "ttl" => {:integer, {:gte, 0}},
     "pollInterval" => :integer
   }
 

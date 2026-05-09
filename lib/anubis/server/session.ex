@@ -1664,18 +1664,22 @@ defmodule Anubis.Server.Session do
 
   # Public-ish entry point for the tasks/* request branch. Wired by handle_request/5 below.
   defp dispatch_tasks_request(%{"method" => "tasks/get", "id" => req_id} = request, _ctx, _from, state) do
-    frame = prepare_frame(state)
+    if is_nil(state.task_store) do
+      tasks_unsupported_reply(req_id, "tasks/get", state)
+    else
+      frame = prepare_frame(state)
 
-    {result, frame} =
-      request
-      |> TasksHandler.handle_get(frame, %{
-        task_store_adapter: state.task_store.adapter,
-        task_store_name: state.task_store.name,
-        session_id: state.session_id
-      })
-      |> reply_to_handler_result(req_id)
+      {result, frame} =
+        request
+        |> TasksHandler.handle_get(frame, %{
+          task_store_adapter: state.task_store.adapter,
+          task_store_name: state.task_store.name,
+          session_id: state.session_id
+        })
+        |> reply_to_handler_result(req_id)
 
-    {:reply, result, %{state | frame: frame}}
+      {:reply, result, %{state | frame: frame}}
+    end
   end
 
   defp dispatch_tasks_request(
@@ -1684,6 +1688,33 @@ defmodule Anubis.Server.Session do
          from,
          state
        ) do
+    if is_nil(state.task_store) do
+      tasks_unsupported_reply(req_id, "tasks/result", state)
+    else
+      handle_tasks_result(task_id, req_id, from, state)
+    end
+  end
+
+  defp dispatch_tasks_request(%{"method" => "tasks/cancel", "id" => req_id} = request, _ctx, _from, state) do
+    if tasks_cancel_supported?(state) do
+      handle_tasks_cancel(request, state)
+    else
+      tasks_unsupported_reply(req_id, "tasks/cancel", state)
+    end
+  end
+
+  defp dispatch_tasks_request(%{"method" => "tasks/list", "id" => req_id}, _ctx, _from, state) do
+    frame = prepare_frame(state)
+    {:error, error, frame} = TasksHandler.handle_list_unsupported(frame)
+    {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, %{state | frame: frame}}
+  end
+
+  defp tasks_unsupported_reply(req_id, method, state) do
+    error = Error.protocol(:method_not_found, %{message: "#{method} not supported by this server"})
+    {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
+  end
+
+  defp handle_tasks_result(task_id, req_id, from, state) do
     case task_store_get(state, task_id) do
       {:ok, %McpTask{} = task} ->
         if McpTask.terminal?(task) do
@@ -1699,27 +1730,7 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  defp dispatch_tasks_request(%{"method" => "tasks/cancel", "id" => req_id} = request, _ctx, _from, state) do
-    if tasks_cancel_supported?(state) do
-      handle_tasks_cancel(request, state)
-    else
-      error = Error.protocol(:method_not_found, %{message: "tasks/cancel not supported by this server"})
-      {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
-    end
-  end
-
-  defp dispatch_tasks_request(%{"method" => "tasks/list", "id" => req_id}, _ctx, _from, state) do
-    frame = prepare_frame(state)
-    {:error, error, frame} = TasksHandler.handle_list_unsupported(frame)
-    {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, %{state | frame: frame}}
-  end
-
   defp handle_tasks_cancel(%{"id" => req_id} = request, state) do
-    # Cancellation mutates state (removes runtime entry, updates store, releases
-    # waiters). We thread a ref through the closure via the process dictionary
-    # of the captured state, then re-fetch via :sys terms... simplest path: do
-    # the side effects inline here and only use the handler module for the
-    # response shape.
     frame = prepare_frame(state)
     %{"params" => %{"taskId" => task_id}} = request
 
@@ -1750,14 +1761,20 @@ defmodule Anubis.Server.Session do
     {{:ok, encode_reply(Error.build_json_rpc(error, req_id))}, frame}
   end
 
+  # Only register a waiter when there is a live runtime entry that will eventually
+  # release it. If the task is in the store but has no runtime (e.g. a stale
+  # entry from a previous session), the caller would otherwise block forever.
   defp register_result_waiter(state, task_id, from, req_id) do
-    update_in(state.tasks[task_id], fn
-      nil ->
-        %{worker_ref: nil, worker_pid: nil, ttl_timer: nil, waiters: [{from, req_id}], request_id: nil}
+    case Map.fetch(state.tasks, task_id) do
+      {:ok, %{waiters: waiters} = runtime} ->
+        %{state | tasks: Map.put(state.tasks, task_id, %{runtime | waiters: [{from, req_id} | waiters]})}
 
-      %{waiters: waiters} = runtime ->
-        %{runtime | waiters: [{from, req_id} | waiters]}
-    end)
+      :error ->
+        # No live worker. Reply with task_not_found so the caller doesn't hang.
+        error = TasksHandler.task_not_found(task_id)
+        GenServer.reply(from, {:ok, encode_reply(Error.build_json_rpc(error, req_id))})
+        state
+    end
   end
 
   defp build_tasks_result_payload(%McpTask{result: result, error: nil} = task, req_id) when not is_nil(result) do
@@ -1917,7 +1934,9 @@ defmodule Anubis.Server.Session do
   defp handle_task_expired(task_id, state) do
     case Map.pop(state.tasks, task_id) do
       {nil, _} ->
-        task_store_delete(state, task_id)
+        # No live runtime — task was already finalized (the timer fired late
+        # or the message raced with worker completion). Don't blow away a
+        # terminal record from the store on a stale expiry.
         {:noreply, state}
 
       {%{worker_pid: pid, worker_ref: ref, waiters: waiters}, tasks} ->
@@ -1992,9 +2011,23 @@ defmodule Anubis.Server.Session do
 
       {%{worker_ref: ref} = runtime, tasks} ->
         if ref, do: Process.demonitor(ref, [:flush])
-        if runtime.ttl_timer, do: Process.cancel_timer(runtime.ttl_timer)
+        if runtime.ttl_timer, do: cancel_ttl_timer(runtime.ttl_timer, task_id)
         task_refs = if ref, do: Map.delete(state.task_refs, ref), else: state.task_refs
         {runtime, %{state | tasks: tasks, task_refs: task_refs}}
+    end
+  end
+
+  # `Process.cancel_timer/1` does not flush an already-delivered message, so
+  # if the timer fires in the same scheduling slice as worker completion the
+  # `{:task_expired, ^task_id}` message would still be in the mailbox and could
+  # later wipe the terminal task from the store.
+  defp cancel_ttl_timer(timer_ref, task_id) do
+    Process.cancel_timer(timer_ref)
+
+    receive do
+      {:task_expired, ^task_id} -> :ok
+    after
+      0 -> :ok
     end
   end
 
@@ -2033,14 +2066,16 @@ defmodule Anubis.Server.Session do
 
     error = Error.execution("The task was cancelled by request.", %{taskId: task_id})
 
-    {:ok, cancelled} =
-      task_store_update(state, task_id, fn task ->
-        McpTask.transition(task, :cancelled, error: error, status_message: "The task was cancelled by request.")
-      end)
+    case task_store_update(state, task_id, fn task ->
+           McpTask.transition(task, :cancelled, error: error, status_message: "The task was cancelled by request.")
+         end) do
+      {:ok, cancelled} ->
+        release_waiters(runtime, cancelled)
+        {:ok, cancelled, state}
 
-    release_waiters(runtime, cancelled)
-
-    {:ok, cancelled, state}
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
   end
 
   # Look up the task id associated with a worker monitor reference, if any.

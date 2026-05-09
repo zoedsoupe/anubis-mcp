@@ -20,32 +20,6 @@ defmodule Anubis.Server.Handlers.Tasks do
     end
   end
 
-  @doc """
-  Cancels a task. The caller (Session) supplies a `cancel` closure that
-  performs the side effects (worker termination, store update, waiter release)
-  and returns either the resulting cancelled task or an error tuple.
-  """
-  @type cancel_ctx :: %{
-          required(:cancel) => (String.t() -> {:ok, Task.t()} | {:error, term()})
-        }
-  @spec handle_cancel(map(), Frame.t(), cancel_ctx()) ::
-          {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
-  def handle_cancel(%{"params" => %{"taskId" => task_id}}, frame, %{cancel: cancel}) when is_function(cancel, 1) do
-    case cancel.(task_id) do
-      {:ok, %Task{} = task} ->
-        {:reply, Task.to_protocol(task), frame}
-
-      {:error, :not_found} ->
-        {:error, task_not_found(task_id), frame}
-
-      {:error, {:already_terminal, status}} ->
-        {:error,
-         Error.protocol(:invalid_params, %{
-           message: "Cannot cancel task: already in terminal status '#{status}'"
-         }), frame}
-    end
-  end
-
   @spec handle_list_unsupported(Frame.t()) :: {:error, Error.t(), Frame.t()}
   def handle_list_unsupported(frame) do
     {:error,

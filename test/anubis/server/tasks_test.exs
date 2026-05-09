@@ -224,6 +224,22 @@ defmodule Anubis.Server.TasksTest do
     end
   end
 
+  describe "tasks/* against a session with no task_store configured" do
+    test "tasks/get returns -32601 instead of crashing" do
+      session = start_no_task_store_session()
+      response = call_session(session, build_request("tasks/get", %{"taskId" => "x"}, "get-1"))
+      assert response["error"]["code"] == -32_601
+      assert Process.alive?(session)
+    end
+
+    test "tasks/result returns -32601 instead of crashing" do
+      session = start_no_task_store_session()
+      response = call_session(session, build_request("tasks/result", %{"taskId" => "x"}, "result-1"))
+      assert response["error"]["code"] == -32_601
+      assert Process.alive?(session)
+    end
+  end
+
   describe "tools/list rendering" do
     test "renders execution.taskSupport for opt-in tools", %{session: session} do
       response = call_session(session, build_request("tools/list", %{}, "list-1"))
@@ -327,6 +343,33 @@ defmodule Anubis.Server.TasksTest do
       session_id: session_id,
       task_store: %{adapter: TaskStoreLocal, name: task_store_name}
     }
+  end
+
+  defp start_no_task_store_session do
+    session_id = "no-store-#{System.unique_integer([:positive])}"
+    transport_name = Registry.transport_name(TasksStubServer, StubTransport)
+    task_sup = Registry.task_supervisor_name(TasksStubServer)
+    session_name = Registry.session_name(TasksStubServer, session_id)
+
+    session =
+      start_supervised!(
+        {Session,
+         session_id: session_id,
+         server_module: TasksStubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         task_supervisor: task_sup},
+        id: {:no_store_session, session_id}
+      )
+
+    request = init_request("2025-11-25", %{"name" => "TestClient", "version" => "1.0.0"})
+    {:ok, _} = GenServer.call(session, {:mcp_request, request, with_test_pid()})
+
+    init_notification = build_notification("notifications/initialized", %{})
+    :ok = GenServer.cast(session, {:mcp_notification, init_notification, with_test_pid()})
+
+    SyncHelpers.await_state(session, & &1.initialized)
+    session
   end
 
   defp with_test_pid, do: %{assigns: %{test_pid: self()}}
