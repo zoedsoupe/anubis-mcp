@@ -260,7 +260,7 @@ defmodule Anubis.Server.TasksTest do
         create_task_call(session, "wait_signal_add", %{"a" => 1, "b" => 2, "signal" => "theta"}, "req-1")
 
       task_id = create["result"]["task"]["taskId"]
-      assert_receive {:tool_running, worker, :theta}, 500
+      assert_receive {:tool_running, _worker, :theta}, 500
 
       # Trigger expiry directly instead of waiting for a timer to fire.
       send(session, {:task_expired, task_id})
@@ -271,9 +271,6 @@ defmodule Anubis.Server.TasksTest do
 
       response = call_session(session, build_request("tasks/get", %{"taskId" => task_id}, "get-1"))
       assert response["error"]["code"] == -32_602
-
-      # Release the worker so it doesn't linger.
-      send(worker, {:proceed, :theta})
     end
   end
 

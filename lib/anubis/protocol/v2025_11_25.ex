@@ -4,7 +4,7 @@ defmodule Anubis.Protocol.V2025_11_25 do
   Protocol implementation for MCP specification version 2025-11-25.
 
   Builds on 2025-06-18, adding:
-  - Tasks (experimental) — durable state machines for long-running requests:
+  - Tasks — durable state machines for long-running requests:
     `tasks/get`, `tasks/result`, `tasks/list`, `tasks/cancel`, and the
     `notifications/tasks/status` notification.
   """
@@ -37,8 +37,8 @@ defmodule Anubis.Protocol.V2025_11_25 do
     "taskId" => {:required, :string},
     "status" => {:required, {:enum, ~w(working input_required completed failed cancelled)}},
     "statusMessage" => :string,
-    "createdAt" => :string,
-    "lastUpdatedAt" => :string,
+    "createdAt" => {:required, :string},
+    "lastUpdatedAt" => {:required, :string},
     "ttl" => {:integer, {:gte, 0}},
     "pollInterval" => :integer
   }

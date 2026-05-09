@@ -219,8 +219,8 @@ defmodule Anubis.MCP.Message do
     "taskId" => {:required, :string},
     "status" => {:required, {:enum, ~w(working input_required completed failed cancelled)}},
     "statusMessage" => :string,
-    "createdAt" => :string,
-    "lastUpdatedAt" => :string,
+    "createdAt" => {:required, :string},
+    "lastUpdatedAt" => {:required, :string},
     "ttl" => {:integer, {:gte, 0}},
     "pollInterval" => :integer
   }

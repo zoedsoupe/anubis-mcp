@@ -570,14 +570,10 @@ defmodule Anubis.Server.Session do
       GenServer.reply(from, reply)
     end)
 
-    Enum.each(tasks, fn {_task_id, %{worker_pid: pid, worker_ref: ref, waiters: waiters}} ->
+    Enum.each(tasks, fn {_task_id, %{worker_pid: pid, worker_ref: ref} = runtime} ->
       if pid, do: Task.Supervisor.terminate_child(task_supervisor, pid)
       if ref, do: Process.demonitor(ref, [:flush])
-
-      Enum.each(waiters, fn {from, req_id} ->
-        reply = {:ok, encode_reply(Error.build_json_rpc(error, req_id))}
-        GenServer.reply(from, reply)
-      end)
+      release_waiters(runtime, error)
     end)
   end
 
@@ -1657,12 +1653,9 @@ defmodule Anubis.Server.Session do
     |> Enum.find(&(&1.name == tool_name))
   end
 
-  # Detects an augmented `tools/call` request — i.e. one that carries a `task`
-  # parameter and should be executed via the Tasks lifecycle.
   defp task_augmented_tools_call?(%{"method" => "tools/call", "params" => %{"task" => _}}), do: true
   defp task_augmented_tools_call?(_), do: false
 
-  # Public-ish entry point for the tasks/* request branch. Wired by handle_request/5 below.
   defp dispatch_tasks_request(%{"method" => "tasks/get", "id" => req_id} = request, _ctx, _from, state) do
     if is_nil(state.task_store) do
       tasks_unsupported_reply(req_id, "tasks/get", state)
@@ -1761,16 +1754,12 @@ defmodule Anubis.Server.Session do
     {{:ok, encode_reply(Error.build_json_rpc(error, req_id))}, frame}
   end
 
-  # Only register a waiter when there is a live runtime entry that will eventually
-  # release it. If the task is in the store but has no runtime (e.g. a stale
-  # entry from a previous session), the caller would otherwise block forever.
   defp register_result_waiter(state, task_id, from, req_id) do
     case Map.fetch(state.tasks, task_id) do
       {:ok, %{waiters: waiters} = runtime} ->
         %{state | tasks: Map.put(state.tasks, task_id, %{runtime | waiters: [{from, req_id} | waiters]})}
 
       :error ->
-        # No live worker. Reply with task_not_found so the caller doesn't hang.
         error = TasksHandler.task_not_found(task_id)
         GenServer.reply(from, {:ok, encode_reply(Error.build_json_rpc(error, req_id))})
         state
@@ -1832,10 +1821,6 @@ defmodule Anubis.Server.Session do
     adapter.delete(name, session_id, task_id)
   end
 
-  # Augmented tools/call entry point — called from the request dispatch branch
-  # in handle_request/5. Validates capability + tool task_support, persists a
-  # working Task, spawns the worker, and returns CreateTaskResult to the
-  # requestor.
   defp create_task_for_tools_call(%{"id" => req_id, "params" => params} = request, _ctx, from, state) do
     if tasks_supported_for_tools_call?(state) do
       do_create_task_for_tools_call(request, params, req_id, from, state)
@@ -1917,8 +1902,6 @@ defmodule Anubis.Server.Session do
     {:reply, {:ok, encode_reply(response)}, state}
   end
 
-  # Worker completion paths — called from handle_info({ref, _}, ...) and the
-  # corresponding {:DOWN, ...} clause when the worker crashes.
   defp handle_task_worker_completion(task_id, callback_result, state) do
     {status, attrs} = derive_finalize_attrs(callback_result)
     {_task, state} = finalize_task_runtime(task_id, status, attrs, state)
@@ -1946,10 +1929,7 @@ defmodule Anubis.Server.Session do
 
         if ref, do: Process.demonitor(ref, [:flush])
 
-        Enum.each(waiters, fn {from, req_id} ->
-          err = TasksHandler.task_expired(task_id)
-          GenServer.reply(from, {:ok, encode_reply(Error.build_json_rpc(err, req_id))})
-        end)
+        release_waiters(%{waiters: waiters}, TasksHandler.task_expired(task_id))
 
         task_store_delete(state, task_id)
 
@@ -1972,6 +1952,7 @@ defmodule Anubis.Server.Session do
         {task, state}
 
       {:error, :not_found} ->
+        release_waiters(runtime, TasksHandler.task_not_found(task_id))
         {nil, state}
     end
   end
@@ -1994,8 +1975,6 @@ defmodule Anubis.Server.Session do
     {:failed, [error: err, status_message: err.message]}
   end
 
-  # The tools/call result is a `CallToolResult` map. If `isError == true`, spec
-  # 2025-11-25 says the task transitions to `:failed`.
   defp classify_tool_call_payload(%{"isError" => true} = payload) do
     {:failed, [result: payload, status_message: "Tool returned isError: true"]}
   end
@@ -2031,12 +2010,18 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  defp release_waiters(nil, _task), do: :ok
+  defp release_waiters(nil, _result), do: :ok
 
   defp release_waiters(%{waiters: waiters}, %McpTask{} = task) do
     Enum.each(waiters, fn {from, req_id} ->
       reply = build_tasks_result_payload(task, req_id)
       GenServer.reply(from, {:ok, encode_reply(reply)})
+    end)
+  end
+
+  defp release_waiters(%{waiters: waiters}, %Error{} = error) do
+    Enum.each(waiters, fn {from, req_id} ->
+      GenServer.reply(from, {:ok, encode_reply(Error.build_json_rpc(error, req_id))})
     end)
   end
 
@@ -2078,11 +2063,8 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  # Look up the task id associated with a worker monitor reference, if any.
   defp task_id_for_ref(state, ref), do: Map.get(state.task_refs, ref)
 
-  # Build the wire-format `notifications/tasks/status` notification body for a
-  # task and emit it via the transport.
   defp emit_task_status_notification(state, task_id) do
     case task_store_get(state, task_id) do
       {:ok, %McpTask{} = task} ->
