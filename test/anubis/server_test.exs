@@ -71,4 +71,46 @@ defmodule Anubis.ServerTest do
       assert is_nil(resource.uri_template)
     end
   end
+
+  describe "parse_components/1 with raw {module, opts} tuples" do
+    defmodule RawTuplePromptComponent do
+      @moduledoc "Prompt for raw-tuple parsing"
+
+      use Component, type: :prompt
+
+      alias Anubis.Server.Response
+
+      schema do
+        field(:topic, :string, required: true)
+      end
+
+      @impl true
+      def get_messages(_params, frame) do
+        {:reply, Response.text(Response.prompt(), "ok"), frame}
+      end
+    end
+
+    test "normalizes {module, opts} by deriving type and default name" do
+      [prompt] = Server.parse_components({RawTuplePromptComponent, []})
+
+      assert prompt.handler == RawTuplePromptComponent
+      assert prompt.name == "raw_tuple_prompt_component"
+    end
+
+    test "honors opts[:name] override" do
+      [prompt] = Server.parse_components({RawTuplePromptComponent, name: "custom"})
+
+      assert prompt.name == "custom"
+    end
+
+    test "raises ArgumentError on non-component module" do
+      defmodule NotAComponent do
+        @moduledoc false
+      end
+
+      assert_raise ArgumentError, ~r/is not a valid component/, fn ->
+        Server.parse_components({NotAComponent, []})
+      end
+    end
+  end
 end
