@@ -42,6 +42,7 @@ defmodule Anubis.Server.Frame do
           resource_templates: %{optional(String.t()) => Resource.t()},
           resource_subscriptions: MapSet.t(String.t()),
           pagination_limit: non_neg_integer() | nil,
+          task_id: String.t() | nil,
           context: Context.t()
         }
 
@@ -52,6 +53,7 @@ defmodule Anubis.Server.Frame do
             resource_templates: %{},
             resource_subscriptions: MapSet.new(),
             pagination_limit: nil,
+            task_id: nil,
             context: %Context{}
 
   @doc """
@@ -131,6 +133,7 @@ defmodule Anubis.Server.Frame do
                | {:output_schema, map() | nil}
                | {:title, String.t() | nil}
                | {:annotations, map() | nil}
+               | {:task_support, Tool.task_support()}
   def register_tool(%__MODULE__{} = frame, name, opts) when is_binary(name) do
     input_schema = opts[:input_schema] || %{}
     raw_schema = Component.__clean_schema_for_peri__(input_schema)
@@ -146,6 +149,12 @@ defmodule Anubis.Server.Frame do
 
     annotations = opts[:annotations]
     title = annotations[:title] || annotations["title"] || opts[:title] || name
+    task_support = Keyword.get(opts, :task_support, :forbidden)
+
+    if task_support not in [:forbidden, :optional, :required] do
+      raise ArgumentError,
+            "Invalid :task_support value #{inspect(task_support)} — must be one of :forbidden, :optional, :required"
+    end
 
     tool = %Tool{
       name: name,
@@ -156,6 +165,7 @@ defmodule Anubis.Server.Frame do
       annotations: annotations,
       meta: opts[:meta],
       title: title,
+      task_support: task_support,
       validate_input: validate_input,
       validate_output: validate_output
     }

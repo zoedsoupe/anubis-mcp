@@ -5,12 +5,14 @@ defmodule Anubis.Protocol.RegistryTest do
   alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
+  alias Anubis.Protocol.V2025_11_25
 
   describe "get/1" do
     test "returns module for known version" do
       assert {:ok, V2024_11_05} = Registry.get("2024-11-05")
       assert {:ok, V2025_03_26} = Registry.get("2025-03-26")
       assert {:ok, V2025_06_18} = Registry.get("2025-06-18")
+      assert {:ok, V2025_11_25} = Registry.get("2025-11-25")
     end
 
     test "returns :error for unknown version" do
@@ -23,8 +25,9 @@ defmodule Anubis.Protocol.RegistryTest do
     test "returns all versions newest first" do
       versions = Registry.supported_versions()
       assert is_list(versions)
-      assert length(versions) == 3
-      assert hd(versions) == "2025-06-18"
+      assert length(versions) == 4
+      assert hd(versions) == "2025-11-25"
+      assert "2025-06-18" in versions
       assert "2025-03-26" in versions
       assert "2024-11-05" in versions
     end
@@ -32,7 +35,7 @@ defmodule Anubis.Protocol.RegistryTest do
 
   describe "latest_version/0" do
     test "returns the latest version" do
-      assert "2025-06-18" = Registry.latest_version()
+      assert "2025-11-25" = Registry.latest_version()
     end
   end
 
@@ -44,7 +47,7 @@ defmodule Anubis.Protocol.RegistryTest do
 
   describe "latest_module/0" do
     test "returns the module for the latest version" do
-      assert V2025_06_18 = Registry.latest_module()
+      assert V2025_11_25 = Registry.latest_module()
     end
   end
 
@@ -53,6 +56,7 @@ defmodule Anubis.Protocol.RegistryTest do
       assert Registry.supported?("2024-11-05")
       assert Registry.supported?("2025-03-26")
       assert Registry.supported?("2025-06-18")
+      assert Registry.supported?("2025-11-25")
     end
 
     test "returns false for unsupported versions" do
@@ -63,6 +67,7 @@ defmodule Anubis.Protocol.RegistryTest do
 
   describe "negotiate/1" do
     test "returns module for supported client version" do
+      assert {:ok, "2025-11-25", V2025_11_25} = Registry.negotiate("2025-11-25")
       assert {:ok, "2025-06-18", V2025_06_18} = Registry.negotiate("2025-06-18")
       assert {:ok, "2025-03-26", V2025_03_26} = Registry.negotiate("2025-03-26")
       assert {:ok, "2024-11-05", V2024_11_05} = Registry.negotiate("2024-11-05")
@@ -71,7 +76,7 @@ defmodule Anubis.Protocol.RegistryTest do
     test "returns error for unsupported client version" do
       assert {:error, :unsupported_version, versions} = Registry.negotiate("9999-01-01")
       assert is_list(versions)
-      assert length(versions) == 3
+      assert length(versions) == 4
     end
   end
 
