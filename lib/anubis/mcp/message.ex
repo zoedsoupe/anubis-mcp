@@ -49,9 +49,30 @@ defmodule Anubis.MCP.Message do
     "cursor" => :string
   }
 
+  @task_augmentation_schema %{
+    "ttl" => {:integer, {:gte, 0}}
+  }
+
   @tools_call_params_schema %{
     "name" => {:required, :string},
-    "arguments" => :map
+    "arguments" => :map,
+    "task" => @task_augmentation_schema
+  }
+
+  @tasks_get_params_schema %{
+    "taskId" => {:required, :string}
+  }
+
+  @tasks_result_params_schema %{
+    "taskId" => {:required, :string}
+  }
+
+  @tasks_cancel_params_schema %{
+    "taskId" => {:required, :string}
+  }
+
+  @tasks_list_params_schema %{
+    "cursor" => :string
   }
 
   @log_levels ~w(debug info notice warning error critical alert emergency)
@@ -139,6 +160,10 @@ defmodule Anubis.MCP.Message do
     "prompts/get" => Map.merge(@prompts_get_params_schema, @progress_params),
     "tools/list" => Map.merge(@tools_list_params_schema, @progress_params),
     "tools/call" => Map.merge(@tools_call_params_schema, @progress_params),
+    "tasks/get" => @tasks_get_params_schema,
+    "tasks/result" => @tasks_result_params_schema,
+    "tasks/cancel" => @tasks_cancel_params_schema,
+    "tasks/list" => @tasks_list_params_schema,
     "logging/setLevel" => Map.merge(@set_log_level_params_schema, @progress_params),
     "completion/complete" => Map.merge(@completion_complete_params_schema, @progress_params),
     "sampling/createMessage" => Map.merge(@sampling_create_params, @progress_params),
@@ -190,6 +215,16 @@ defmodule Anubis.MCP.Message do
     "uri" => {:required, :string}
   }
 
+  @task_status_notif_params_schema %{
+    "taskId" => {:required, :string},
+    "status" => {:required, {:enum, ~w(working input_required completed failed cancelled)}},
+    "statusMessage" => :string,
+    "createdAt" => {:required, :string},
+    "lastUpdatedAt" => {:required, :string},
+    "ttl" => {:integer, {:gte, 0}},
+    "pollInterval" => :integer
+  }
+
   @notification_branch_specs %{
     "notifications/initialized" => @init_noti_params_schema,
     "notifications/cancelled" => @cancel_noti_params_schema,
@@ -200,7 +235,8 @@ defmodule Anubis.MCP.Message do
     "notifications/tools/list_changed" => :map,
     "notifications/prompts/list_changed" => :map,
     "notifications/resources/list_changed" => :map,
-    "notifications/resources/updated" => @resource_updated_notif_params_schema
+    "notifications/resources/updated" => @resource_updated_notif_params_schema,
+    "notifications/tasks/status" => @task_status_notif_params_schema
   }
 
   @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->

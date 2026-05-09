@@ -10,10 +10,11 @@ defmodule Anubis.ProtocolTest do
       assert "2024-11-05" in versions
       assert "2025-03-26" in versions
       assert "2025-06-18" in versions
+      assert "2025-11-25" in versions
     end
 
     test "latest_version/0 returns latest" do
-      assert "2025-06-18" = Protocol.latest_version()
+      assert "2025-11-25" = Protocol.latest_version()
     end
 
     test "fallback_version/0 returns fallback" do
