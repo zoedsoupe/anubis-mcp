@@ -85,8 +85,7 @@ defmodule Anubis.Server.Registry.PG do
   when it exits.
   """
   @impl Anubis.Server.Registry
-  @spec register_session(name :: term(), Anubis.Server.Registry.session_id(), pid()) ::
-          :ok | {:error, term()}
+  @spec register_session(name :: term(), Anubis.Server.Registry.session_id(), pid()) :: :ok
   def register_session(name, session_id, pid) do
     :pg.join(pg_scope(name), session_id, pid)
     :ok
@@ -109,7 +108,7 @@ defmodule Anubis.Server.Registry.PG do
       [] -> {:error, :not_found}
     end
   rescue
-    _error -> {:error, :not_found}
+    _e in [ArgumentError] -> {:error, :not_found}
   end
 
   @doc """
@@ -130,7 +129,7 @@ defmodule Anubis.Server.Registry.PG do
 
     :ok
   rescue
-    _error -> :ok
+    _e in [ArgumentError] -> :ok
   end
 
   # Derive a deterministic `:pg` scope atom from the registry name.

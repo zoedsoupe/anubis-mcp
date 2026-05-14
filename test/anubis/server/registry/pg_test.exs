@@ -57,6 +57,11 @@ defmodule Anubis.Server.Registry.PGTest do
       pid_a = spawn(fn -> Process.sleep(:infinity) end)
       pid_b = spawn(fn -> Process.sleep(:infinity) end)
 
+      on_exit(fn ->
+        Process.exit(pid_a, :kill)
+        Process.exit(pid_b, :kill)
+      end)
+
       :ok = PG.register_session(name, session_a, pid_a)
       :ok = PG.register_session(name, session_b, pid_b)
 
