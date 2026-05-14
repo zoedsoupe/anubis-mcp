@@ -96,10 +96,21 @@ defmodule Anubis.Server.Registry.PGTest do
       assert {:ok, ^pid} = PG.lookup_session(name, session_id)
 
       Process.exit(pid, :kill)
-      # Allow :pg to process the DOWN message before asserting
-      Process.sleep(50)
 
-      assert {:error, :not_found} = PG.lookup_session(name, session_id)
+      assert eventually(fn -> PG.lookup_session(name, session_id) == {:error, :not_found} end)
     end
+  end
+
+  # Retries `fun` up to 5 times with a linear backoff (10ms, 20ms, 30ms, 40ms, 50ms).
+  # Returns true as soon as `fun` returns true, raises if all attempts fail.
+  defp eventually(fun) do
+    Enum.reduce_while(1..5, nil, fn attempt, _acc ->
+      if fun.() do
+        {:halt, true}
+      else
+        Process.sleep(attempt * 10)
+        {:cont, nil}
+      end
+    end) || raise "condition never became true after 5 attempts"
   end
 end
