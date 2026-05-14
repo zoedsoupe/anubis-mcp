@@ -56,13 +56,6 @@ defmodule Anubis.Server.Registry.PG do
 
   @behaviour Anubis.Server.Registry
 
-  @doc """
-  Returns a child spec that starts the `:pg` scope for this registry.
-
-  The scope is derived deterministically from `opts[:name]`, which Anubis
-  injects automatically. Multiple independent servers on the same node each
-  get their own isolated scope.
-  """
   @impl Anubis.Server.Registry
   def child_spec(opts) do
     name = Keyword.fetch!(opts, :name)
@@ -76,27 +69,12 @@ defmodule Anubis.Server.Registry.PG do
     }
   end
 
-  @doc """
-  Registers `pid` under `session_id` in the cluster-wide `:pg` scope.
-
-  Any node in the cluster can subsequently look up this PID via
-  `lookup_session/2`. `:pg` monitors the process and removes it automatically
-  when it exits.
-  """
   @impl Anubis.Server.Registry
   def register_session(name, session_id, pid) do
     :pg.join(pg_scope(name), session_id, pid)
     :ok
   end
 
-  @doc """
-  Looks up the PID for `session_id` across the entire cluster.
-
-  Returns `{:ok, pid}` if a live session process is registered on any node in
-  the cluster, or `{:error, :not_found}` otherwise. When the PID belongs to a
-  remote node, subsequent `GenServer.call/3` invocations are transparently
-  routed there by the Erlang runtime.
-  """
   @impl Anubis.Server.Registry
   def lookup_session(name, session_id) do
     case :pg.get_members(pg_scope(name), session_id) do
@@ -107,13 +85,6 @@ defmodule Anubis.Server.Registry.PG do
     _e in [ArgumentError] -> {:error, :not_found}
   end
 
-  @doc """
-  Removes `session_id` from the cluster-wide `:pg` scope.
-
-  Called by Anubis when a session is explicitly stopped. Note that `:pg` also
-  removes entries automatically when the session process exits, so this is
-  primarily for intentional teardown.
-  """
   @impl Anubis.Server.Registry
   def unregister_session(name, session_id) do
     scope = pg_scope(name)
