@@ -64,7 +64,6 @@ defmodule Anubis.Server.Registry.PG do
   get their own isolated scope.
   """
   @impl Anubis.Server.Registry
-  @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
     name = Keyword.fetch!(opts, :name)
     scope = pg_scope(name)
@@ -85,7 +84,6 @@ defmodule Anubis.Server.Registry.PG do
   when it exits.
   """
   @impl Anubis.Server.Registry
-  @spec register_session(name :: term(), Anubis.Server.Registry.session_id(), pid()) :: :ok
   def register_session(name, session_id, pid) do
     :pg.join(pg_scope(name), session_id, pid)
     :ok
@@ -100,8 +98,6 @@ defmodule Anubis.Server.Registry.PG do
   routed there by the Erlang runtime.
   """
   @impl Anubis.Server.Registry
-  @spec lookup_session(name :: term(), Anubis.Server.Registry.session_id()) ::
-          {:ok, pid()} | {:error, :not_found}
   def lookup_session(name, session_id) do
     case :pg.get_members(pg_scope(name), session_id) do
       [pid | _rest] -> {:ok, pid}
@@ -119,7 +115,6 @@ defmodule Anubis.Server.Registry.PG do
   primarily for intentional teardown.
   """
   @impl Anubis.Server.Registry
-  @spec unregister_session(name :: term(), Anubis.Server.Registry.session_id()) :: :ok
   def unregister_session(name, session_id) do
     scope = pg_scope(name)
 
