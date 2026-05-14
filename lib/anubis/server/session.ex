@@ -43,6 +43,7 @@ defmodule Anubis.Server.Session do
           supported_versions: list(String.t()),
           transport: %{layer: module(), name: GenServer.name()},
           registry: module(),
+          registry_name: GenServer.name() | nil,
           session_idle_timeout: pos_integer(),
           expiry_timer: reference() | nil,
           pending_requests: %{
@@ -64,6 +65,7 @@ defmodule Anubis.Server.Session do
     {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:transport, {:required, {:custom, &Anubis.server_transport/1}}},
     {:registry, {:atom, {:default, Anubis.Server.Registry}}},
+    {:registry_name, {{:custom, &Anubis.genserver_name/1}, {:default, nil}}},
     {:session_idle_timeout, {{:integer, {:gte, 1}}, {:default, @default_session_idle_timeout}}},
     {:timeout, {:integer, {:default, to_timeout(second: 30)}}},
     {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}}
@@ -80,6 +82,9 @@ defmodule Anubis.Server.Session do
     * `:transport` — transport configuration `[layer: module, name: name]` (required)
     * `:task_supervisor` — name of the `Task.Supervisor` for async work (required)
     * `:registry` — session registry module (default: `Anubis.Server.Registry`)
+    * `:registry_name` — name of the registry process; when set the Session
+      registers itself on init so DynamicSupervisor-driven restarts stay
+      reachable from the registry (default: `nil`)
     * `:session_idle_timeout` — idle timeout in ms before session expires (default: 30 min)
     * `:timeout` — request timeout in ms (default: 30s)
   """
@@ -115,6 +120,7 @@ defmodule Anubis.Server.Session do
       supported_versions: protocol_versions,
       transport: Map.new(opts.transport),
       registry: opts.registry,
+      registry_name: opts[:registry_name],
       session_idle_timeout: opts.session_idle_timeout,
       expiry_timer: nil,
       pending_requests: %{},
@@ -123,12 +129,18 @@ defmodule Anubis.Server.Session do
       task_supervisor: opts.task_supervisor
     }
 
-    state = schedule_session_expiry(state)
+    state =
+      state
+      |> maybe_restore_from_store()
+      |> schedule_session_expiry()
+
+    register_with_registry(state)
 
     Logging.server_event("session_starting", %{
       session_id: opts.session_id,
       module: module,
-      server_info: server_info
+      server_info: server_info,
+      restored: state.initialized
     })
 
     Telemetry.execute(
@@ -143,6 +155,26 @@ defmodule Anubis.Server.Session do
     )
 
     {:ok, state, :hibernate}
+  end
+
+  defp register_with_registry(%{registry: registry, registry_name: name, session_id: id})
+       when not is_nil(name) do
+    registry.register_session(name, id, self())
+  end
+
+  defp register_with_registry(_state), do: :ok
+
+  defp maybe_restore_from_store(%{session_id: id} = state) do
+    with store when not is_nil(store) <- Anubis.get_session_store_adapter(),
+         {:ok, persisted} when is_map(persisted) <- store.load(id, []) do
+      restored = from_serializable(persisted)
+
+      Logging.log(:debug, "Restoring session #{inspect(id)} from store", initialized: restored.initialized)
+
+      Map.merge(state, Map.delete(restored, :session_id))
+    else
+      _ -> state
+    end
   end
 
   # Request/Response handling

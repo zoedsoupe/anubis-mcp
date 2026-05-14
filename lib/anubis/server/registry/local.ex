@@ -83,13 +83,17 @@ defmodule Anubis.Server.Registry.Local do
   end
 
   @impl GenServer
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+  def handle_info({:DOWN, ref, :process, dead_pid, _reason}, state) do
     case Map.pop(state.monitors, ref) do
       {nil, monitors} ->
         {:noreply, %{state | monitors: monitors}}
 
       {session_id, monitors} ->
-        :ets.delete(state.table, session_id)
+        case :ets.lookup(state.table, session_id) do
+          [{^session_id, ^dead_pid}] -> :ets.delete(state.table, session_id)
+          _ -> :ok
+        end
+
         {:noreply, %{state | monitors: monitors}}
     end
   end

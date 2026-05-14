@@ -343,7 +343,21 @@ if Code.ensure_loaded?(Plug) do
           start_new_session(opts, session_id)
 
         {:error, :not_found} ->
-          {:error, :no_session}
+          if session_in_store?(session_id) do
+            start_new_session(opts, session_id)
+          else
+            {:error, :no_session}
+          end
+      end
+    end
+
+    defp session_in_store?(session_id) do
+      case Anubis.get_session_store_adapter() do
+        nil ->
+          false
+
+        store ->
+          match?({:ok, _}, store.load(session_id, []))
       end
     end
 
@@ -358,12 +372,13 @@ if Code.ensure_loaded?(Plug) do
         transport: session_config.transport,
         session_idle_timeout: session_config.session_idle_timeout || 1_800_000,
         timeout: opts.timeout,
-        task_supervisor: session_config.task_supervisor
+        task_supervisor: session_config.task_supervisor,
+        registry: registry_mod,
+        registry_name: registry_name
       ]
 
       case ServerSupervisor.start_session(server, session_opts) do
         {:ok, pid} ->
-          registry_mod.register_session(registry_name, session_id, pid)
           {:ok, pid}
 
         {:error, {:already_started, pid}} ->
