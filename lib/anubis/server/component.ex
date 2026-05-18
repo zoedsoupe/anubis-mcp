@@ -43,6 +43,13 @@ defmodule Anubis.Server.Component do
     mime_type = Keyword.get(opts, :mime_type, "text/plain")
     annotations = Keyword.get(opts, :annotations)
     meta = Keyword.get(opts, :meta)
+    scopes = Keyword.get(opts, :scopes, [])
+
+    if not (is_list(scopes) and Enum.all?(scopes, &is_binary/1)) do
+      raise ArgumentError,
+            "Component :scopes must be a list of strings, got: #{inspect(scopes)}"
+    end
+
     task_support = Keyword.get(opts, :task_support)
 
     if type == :tool and task_support not in [nil, :forbidden, :optional, :required] do
@@ -72,6 +79,9 @@ defmodule Anubis.Server.Component do
 
       @doc false
       def __description__, do: @moduledoc
+
+      @doc false
+      def __scopes__, do: unquote(scopes)
 
       if unquote(type) == :tool do
         if title = unquote(title) do

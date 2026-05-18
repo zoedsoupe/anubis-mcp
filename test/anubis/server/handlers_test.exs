@@ -488,6 +488,80 @@ defmodule Anubis.Server.HandlersTest do
       assert [content] = response["contents"]
       assert content["text"] == "DB: users/456"
     end
+
+    defmodule FallbackServer do
+      @moduledoc false
+      def __components__(:resource) do
+        [
+          %Resource{
+            uri_template: "shared:///{id}",
+            name: "scoped_first",
+            mime_type: "text/plain",
+            scopes: ["resources:admin"],
+            handler: __MODULE__.ScopedHandler
+          },
+          %Resource{
+            uri_template: "shared:///{id}",
+            name: "public_second",
+            mime_type: "text/plain",
+            scopes: [],
+            handler: __MODULE__.PublicHandler
+          }
+        ]
+      end
+
+      def server_capabilities, do: %{}
+
+      defmodule ScopedHandler do
+        @moduledoc false
+        alias Anubis.Server.Response
+
+        def read(_params, frame) do
+          {:reply, Response.text(Response.resource(), "SCOPED"), frame}
+        end
+      end
+
+      defmodule PublicHandler do
+        @moduledoc false
+        alias Anubis.Server.Response
+
+        def read(_params, frame) do
+          {:reply, Response.text(Response.resource(), "PUBLIC"), frame}
+        end
+      end
+    end
+
+    test "falls back to later matching template when earlier one fails scope check" do
+      request = %{"method" => "resources/read", "params" => %{"uri" => "shared:///42"}}
+
+      assert {:reply, response, _frame} = Handlers.handle(request, FallbackServer, Frame.new())
+      assert [content] = response["contents"]
+      assert content["text"] == "PUBLIC"
+    end
+
+    test "returns insufficient_scope when no later template matches" do
+      defmodule OnlyScopedServer do
+        @moduledoc false
+        def __components__(:resource) do
+          [
+            %Resource{
+              uri_template: "scoped:///{id}",
+              name: "only_scoped",
+              mime_type: "text/plain",
+              scopes: ["resources:admin"],
+              handler: FallbackServer.ScopedHandler
+            }
+          ]
+        end
+
+        def server_capabilities, do: %{}
+      end
+
+      request = %{"method" => "resources/read", "params" => %{"uri" => "scoped:///42"}}
+
+      assert {:error, error, _frame} = Handlers.handle(request, OnlyScopedServer, Frame.new())
+      assert error.message == "insufficient_scope" or error.reason == :insufficient_scope
+    end
   end
 
   describe "edge cases" do
@@ -610,6 +684,190 @@ defmodule Anubis.Server.HandlersTest do
 
       assert {:error, error, _frame} = Handlers.handle(request, MockServer, Frame.new())
       assert error.code == -32_601
+    end
+  end
+
+  describe "list operations filter by scopes" do
+    defmodule ScopedServer do
+      @moduledoc false
+      def __components__(:tool) do
+        [
+          %Tool{name: "public_tool", scopes: []},
+          %Tool{name: "read_tool", scopes: ["tools:read"]},
+          %Tool{name: "admin_tool", scopes: ["tools:admin"]}
+        ]
+      end
+
+      def __components__(:prompt) do
+        [
+          %Prompt{name: "public_prompt", scopes: []},
+          %Prompt{name: "scoped_prompt", scopes: ["prompts:read"]}
+        ]
+      end
+
+      def __components__(:resource) do
+        [
+          %Resource{uri: "res://public", name: "public_res", mime_type: "text/plain", scopes: []},
+          %Resource{uri: "res://secret", name: "secret_res", mime_type: "text/plain", scopes: ["resources:read"]},
+          %Resource{
+            uri_template: "tpl://{id}",
+            name: "public_tpl",
+            mime_type: "text/plain",
+            scopes: []
+          },
+          %Resource{
+            uri_template: "secret_tpl://{id}",
+            name: "secret_tpl",
+            mime_type: "text/plain",
+            scopes: ["resources:admin"]
+          }
+        ]
+      end
+
+      def server_capabilities, do: %{"resources" => %{}}
+    end
+
+    defp frame_with_scopes(scopes) do
+      %{Frame.new() | context: %Anubis.Server.Context{auth: %{scopes: scopes}}}
+    end
+
+    test "tools/list hides tools whose scopes are not granted" do
+      frame = frame_with_scopes(["tools:read"])
+      request = %{"method" => "tools/list", "params" => %{}}
+
+      assert {:reply, %{"tools" => tools}, _} = Handlers.handle(request, ScopedServer, frame)
+      names = Enum.map(tools, & &1.name)
+      assert "public_tool" in names
+      assert "read_tool" in names
+      refute "admin_tool" in names
+    end
+
+    test "tools/list with no granted scopes returns only public tools" do
+      request = %{"method" => "tools/list", "params" => %{}}
+
+      assert {:reply, %{"tools" => tools}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(tools, & &1.name) == ["public_tool"]
+    end
+
+    test "prompts/list hides scoped prompts" do
+      request = %{"method" => "prompts/list", "params" => %{}}
+
+      assert {:reply, %{"prompts" => prompts}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(prompts, & &1.name) == ["public_prompt"]
+    end
+
+    test "resources/list hides scoped resources" do
+      request = %{"method" => "resources/list", "params" => %{}}
+
+      assert {:reply, %{"resources" => resources}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(resources, & &1.name) == ["public_res"]
+    end
+
+    test "resources/templates/list hides scoped templates" do
+      request = %{"method" => "resources/templates/list", "params" => %{}}
+
+      assert {:reply, %{"resourceTemplates" => templates}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(templates, & &1.name) == ["public_tpl"]
+    end
+
+    test "tools/list reveals tools when scopes are granted" do
+      frame = frame_with_scopes(["tools:read", "tools:admin"])
+      request = %{"method" => "tools/list", "params" => %{}}
+
+      assert {:reply, %{"tools" => tools}, _} = Handlers.handle(request, ScopedServer, frame)
+      assert Enum.sort(Enum.map(tools, & &1.name)) == ["admin_tool", "public_tool", "read_tool"]
+    end
+
+    test "prompts/list reveals scoped prompts when granted" do
+      frame = frame_with_scopes(["prompts:read"])
+      request = %{"method" => "prompts/list", "params" => %{}}
+
+      assert {:reply, %{"prompts" => prompts}, _} = Handlers.handle(request, ScopedServer, frame)
+      assert Enum.sort(Enum.map(prompts, & &1.name)) == ["public_prompt", "scoped_prompt"]
+    end
+
+    test "resources/list reveals scoped resources when granted" do
+      frame = frame_with_scopes(["resources:read"])
+      request = %{"method" => "resources/list", "params" => %{}}
+
+      assert {:reply, %{"resources" => resources}, _} = Handlers.handle(request, ScopedServer, frame)
+      assert Enum.sort(Enum.map(resources, & &1.name)) == ["public_res", "secret_res"]
+    end
+
+    test "resources/templates/list reveals scoped templates when granted" do
+      frame = frame_with_scopes(["resources:admin"])
+      request = %{"method" => "resources/templates/list", "params" => %{}}
+
+      assert {:reply, %{"resourceTemplates" => templates}, _} = Handlers.handle(request, ScopedServer, frame)
+      assert Enum.sort(Enum.map(templates, & &1.name)) == ["public_tpl", "secret_tpl"]
+    end
+  end
+
+  describe "resources/subscribe scope enforcement" do
+    defmodule ScopedSubscribingServer do
+      @moduledoc false
+      def __components__(:resource) do
+        [
+          %Resource{
+            uri: "res://public",
+            name: "public_res",
+            mime_type: "text/plain",
+            scopes: []
+          },
+          %Resource{
+            uri: "res://secret",
+            name: "secret_res",
+            mime_type: "text/plain",
+            scopes: ["resources:read"]
+          },
+          %Resource{
+            uri_template: "secret_tpl://{id}",
+            name: "secret_tpl",
+            mime_type: "text/plain",
+            scopes: ["resources:admin"]
+          }
+        ]
+      end
+
+      def server_capabilities, do: %{"resources" => %{subscribe: true}}
+    end
+
+    test "rejects subscribe to a scoped static resource without grant" do
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "res://secret"}}
+
+      assert {:error, error, frame} = Handlers.handle(request, ScopedSubscribingServer, Frame.new())
+      assert error.reason == :insufficient_scope or error.message == "insufficient_scope"
+      refute Frame.resource_subscribed?(frame, "res://secret")
+    end
+
+    test "allows subscribe to scoped static resource when granted" do
+      frame = frame_with_scopes(["resources:read"])
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "res://secret"}}
+
+      assert {:reply, %{}, frame} = Handlers.handle(request, ScopedSubscribingServer, frame)
+      assert Frame.resource_subscribed?(frame, "res://secret")
+    end
+
+    test "rejects subscribe to scoped template match without grant" do
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "secret_tpl://42"}}
+
+      assert {:error, error, frame} = Handlers.handle(request, ScopedSubscribingServer, Frame.new())
+      assert error.message == "insufficient_scope" or error.reason == :insufficient_scope
+      refute Frame.resource_subscribed?(frame, "secret_tpl://42")
+    end
+
+    test "allows subscribe to unknown URI (future resource)" do
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "ghost:///unknown"}}
+
+      assert {:reply, %{}, frame} = Handlers.handle(request, ScopedSubscribingServer, Frame.new())
+      assert Frame.resource_subscribed?(frame, "ghost:///unknown")
+    end
+
+    test "allows subscribe to public resource without grant" do
+      request = %{"method" => "resources/subscribe", "params" => %{"uri" => "res://public"}}
+
+      assert {:reply, %{}, frame} = Handlers.handle(request, ScopedSubscribingServer, Frame.new())
+      assert Frame.resource_subscribed?(frame, "res://public")
     end
   end
 end

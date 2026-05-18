@@ -96,7 +96,8 @@ defmodule Anubis.Server.Component.Prompt do
           description: String.t() | nil,
           arguments: map | nil,
           handler: module | nil,
-          validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
+          validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
+          scopes: [String.t()]
         }
 
   defstruct [
@@ -105,7 +106,8 @@ defmodule Anubis.Server.Component.Prompt do
     description: nil,
     arguments: nil,
     handler: nil,
-    validate_input: nil
+    validate_input: nil,
+    scopes: []
   ]
 
   @doc """
