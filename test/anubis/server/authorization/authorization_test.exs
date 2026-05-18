@@ -189,6 +189,15 @@ defmodule Anubis.Server.AuthorizationTest do
     test "returns :ok when exp is absent" do
       assert :ok == Authorization.validate_expiry(%{})
     end
+
+    test "returns error for non-integer exp" do
+      assert {:error, :invalid_expiry} == Authorization.validate_expiry(%{exp: "2024-01-01"})
+      assert {:error, :invalid_expiry} == Authorization.validate_expiry(%{exp: 1.5})
+    end
+
+    test "returns error for negative exp" do
+      assert {:error, :invalid_expiry} == Authorization.validate_expiry(%{exp: -1})
+    end
   end
 
   describe "validate_scopes/2" do
