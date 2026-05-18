@@ -42,7 +42,7 @@ defmodule Anubis.Server.Authorization.IntrospectionValidatorTest do
       end)
 
       config = build_config(bypass)
-      IntrospectionValidator.validate_token("my-special-token", config)
+      assert {:ok, _claims} = IntrospectionValidator.validate_token("my-special-token", config)
 
       assert_receive {:body, body}
       params = URI.decode_query(body)
@@ -92,7 +92,7 @@ defmodule Anubis.Server.Authorization.IntrospectionValidatorTest do
       end)
 
       config = build_config(bypass, client_id: "my-client", client_secret: "my-secret")
-      IntrospectionValidator.validate_token("token", config)
+      assert {:ok, _claims} = IntrospectionValidator.validate_token("token", config)
 
       assert_receive {:auth, [auth_value]}
       assert auth_value =~ "Basic "
@@ -113,7 +113,7 @@ defmodule Anubis.Server.Authorization.IntrospectionValidatorTest do
       client_id = "my:client"
       client_secret = "my secret"
       config = build_config(bypass, client_id: client_id, client_secret: client_secret)
-      IntrospectionValidator.validate_token("token", config)
+      assert {:ok, _claims} = IntrospectionValidator.validate_token("token", config)
 
       assert_receive {:auth, [auth_value]}
 
@@ -134,7 +134,7 @@ defmodule Anubis.Server.Authorization.IntrospectionValidatorTest do
       end)
 
       config = build_config(bypass)
-      IntrospectionValidator.validate_token("token", config)
+      assert {:ok, _claims} = IntrospectionValidator.validate_token("token", config)
 
       assert_receive {:auth, []}
     end
