@@ -41,27 +41,27 @@ defmodule Anubis.Server.Authorization.PlugIntegrationTest do
     )
   end
 
+  defp setup_auth_config(_context) do
+    :persistent_term.put({Anubis.Server.Supervisor, FakeServer, :authorization_config}, auth_config())
+
+    :persistent_term.put(
+      {Anubis.Server.Supervisor, FakeServer, :session_config},
+      %{
+        registry_mod: Local,
+        task_supervisor: nil
+      }
+    )
+
+    on_exit(fn ->
+      :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :authorization_config})
+      :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :session_config})
+    end)
+
+    :ok
+  end
+
   describe "well-known endpoint" do
-    setup do
-      # Put auth config in persistent term so the plug can read it
-      config = auth_config()
-      :persistent_term.put({Anubis.Server.Supervisor, FakeServer, :authorization_config}, config)
-
-      :persistent_term.put(
-        {Anubis.Server.Supervisor, FakeServer, :session_config},
-        %{
-          registry_mod: Local,
-          task_supervisor: nil
-        }
-      )
-
-      on_exit(fn ->
-        :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :authorization_config})
-        :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :session_config})
-      end)
-
-      :ok
-    end
+    setup :setup_auth_config
 
     test "responds 200 with JSON metadata at /.well-known/oauth-protected-resource" do
       conn =
@@ -82,25 +82,7 @@ defmodule Anubis.Server.Authorization.PlugIntegrationTest do
   end
 
   describe "authorization enforcement" do
-    setup do
-      config = auth_config()
-      :persistent_term.put({Anubis.Server.Supervisor, FakeServer, :authorization_config}, config)
-
-      :persistent_term.put(
-        {Anubis.Server.Supervisor, FakeServer, :session_config},
-        %{
-          registry_mod: Local,
-          task_supervisor: nil
-        }
-      )
-
-      on_exit(fn ->
-        :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :authorization_config})
-        :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :session_config})
-      end)
-
-      :ok
-    end
+    setup :setup_auth_config
 
     test "returns 401 when Authorization header is missing" do
       conn = build_conn("POST", "/mcp", [{"accept", "application/json"}])
