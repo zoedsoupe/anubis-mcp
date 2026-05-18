@@ -166,11 +166,14 @@ defmodule Anubis.Server.Supervisor do
   defp maybe_store_authorization_config(server, transport, opts) do
     case Keyword.get(opts, :authorization) do
       nil ->
+        :persistent_term.erase({__MODULE__, server, :authorization_config})
         :ok
 
       auth_opts when is_list(auth_opts) ->
         case transport do
           :stdio ->
+            :persistent_term.erase({__MODULE__, server, :authorization_config})
+
             Logging.log(
               :warning,
               "Authorization config is ignored for STDIO transport on server #{inspect(server)}",
