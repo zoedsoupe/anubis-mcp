@@ -20,7 +20,7 @@ end
 
 Every request to the server must include a valid bearer token:
 
-```
+```http
 Authorization: Bearer <token>
 ```
 
@@ -117,9 +117,9 @@ end
 
 ## Protected Resource Metadata
 
-The server automatically serves the RFC 9728 metadata document at:
+The server serves the RFC 9728 metadata document at:
 
-```
+```http
 GET /.well-known/oauth-protected-resource
 ```
 
@@ -134,7 +134,24 @@ Response:
 }
 ```
 
-You can also mount `Anubis.Server.Authorization.WellKnown` directly in a Phoenix router if you prefer to handle the route at the application level.
+The SSE and Streamable HTTP plugs handle this path inline when they are mounted at the root of the host. If you mount the MCP plug under a sub-path (e.g. `/sse`, `/mcp`), requests to `/.well-known/oauth-protected-resource` never reach the plug. In that case mount `Anubis.Server.Transport.WellKnown` as a sibling route:
+
+```elixir
+# Plug.Router
+forward "/.well-known/oauth-protected-resource",
+  to: Anubis.Server.Transport.WellKnown,
+  init_opts: [server: MyApp.MCPServer]
+
+forward "/sse", to: Anubis.Server.Transport.SSE.Plug,
+  init_opts: [server: MyApp.MCPServer, mode: :sse]
+```
+
+```elixir
+# Phoenix
+forward "/.well-known/oauth-protected-resource",
+  Anubis.Server.Transport.WellKnown,
+  server: MyApp.MCPServer
+```
 
 ## Standards
 

@@ -174,4 +174,42 @@ defmodule Anubis.Server.Authorization.PlugIntegrationTest do
       assert conn.status == 404
     end
   end
+
+  describe "Anubis.Server.Transport.WellKnown plug" do
+    alias Anubis.Server.Transport.WellKnown
+
+    setup do
+      config = auth_config()
+      :persistent_term.put({Anubis.Server.Supervisor, FakeServer, :authorization_config}, config)
+
+      on_exit(fn ->
+        :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :authorization_config})
+      end)
+
+      :ok
+    end
+
+    test "serves metadata even when invoked outside the SSE/StreamableHTTP mount" do
+      conn = build_conn("GET", "/")
+      opts = WellKnown.init(server: FakeServer)
+      conn = WellKnown.call(conn, opts)
+
+      assert conn.status == 200
+      assert conn |> get_resp_header("content-type") |> hd() =~ "application/json"
+
+      {:ok, body} = JSON.decode(conn.resp_body)
+      assert body["resource"] == "https://api.example.com"
+      assert body["authorization_servers"] == ["https://auth.example.com"]
+    end
+
+    test "returns 404 when authorization config is absent" do
+      :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :authorization_config})
+
+      conn = build_conn("GET", "/")
+      opts = WellKnown.init(server: FakeServer)
+      conn = WellKnown.call(conn, opts)
+
+      assert conn.status == 404
+    end
+  end
 end
