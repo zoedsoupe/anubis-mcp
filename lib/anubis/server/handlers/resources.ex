@@ -144,23 +144,28 @@ defmodule Anubis.Server.Handlers.Resources do
 
   defp try_resource_templates([template | rest], server, uri, frame, pending_scope_error) do
     case URITemplate.match(template.uri_template, uri) do
-      {:ok, vars} ->
-        case check_scopes(template, frame) do
-          :ok ->
-            case read_single_resource(server, template, uri, frame, vars) do
-              {:error, %Error{reason: :resource_not_found}, _frame} ->
-                try_resource_templates(rest, server, uri, frame, pending_scope_error)
+      {:ok, vars} -> try_matching_template(template, vars, rest, server, uri, frame, pending_scope_error)
+      :error -> try_resource_templates(rest, server, uri, frame, pending_scope_error)
+    end
+  end
 
-              other ->
-                other
-            end
+  defp try_matching_template(template, vars, rest, server, uri, frame, pending_scope_error) do
+    case check_scopes(template, frame) do
+      :ok ->
+        try_read_with_fallback(template, vars, rest, server, uri, frame, pending_scope_error)
 
-          {:error, _, _} = scope_error ->
-            try_resource_templates(rest, server, uri, frame, pending_scope_error || scope_error)
-        end
+      {:error, _, _} = scope_error ->
+        try_resource_templates(rest, server, uri, frame, pending_scope_error || scope_error)
+    end
+  end
 
-      :error ->
+  defp try_read_with_fallback(template, vars, rest, server, uri, frame, pending_scope_error) do
+    case read_single_resource(server, template, uri, frame, vars) do
+      {:error, %Error{reason: :resource_not_found}, _frame} ->
         try_resource_templates(rest, server, uri, frame, pending_scope_error)
+
+      other ->
+        other
     end
   end
 
