@@ -11,7 +11,11 @@ defmodule Anubis.Server.Handlers.Prompts do
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_list(request, frame, server_module) do
-    prompts = Handlers.get_server_prompts(server_module, frame)
+    prompts =
+      server_module
+      |> Handlers.get_server_prompts(frame)
+      |> Enum.filter(&visible?(&1, frame))
+
     limit = frame.pagination_limit
     {prompts, cursor} = Handlers.maybe_paginate(request, prompts, limit)
 
@@ -28,7 +32,8 @@ defmodule Anubis.Server.Handlers.Prompts do
     registered_prompts = Handlers.get_server_prompts(server, frame)
 
     if prompt = find_prompt_module(registered_prompts, prompt_name) do
-      with {:ok, params} <- validate_params(params, prompt, frame),
+      with :ok <- check_scopes(prompt, frame),
+           {:ok, params} <- validate_params(params, prompt, frame),
            do: forward_to(server, prompt, params, frame)
     else
       payload = %{message: "Prompt not found: #{prompt_name}"}
@@ -40,7 +45,8 @@ defmodule Anubis.Server.Handlers.Prompts do
     registered_prompts = Handlers.get_server_prompts(server, frame)
 
     if prompt = find_prompt_module(registered_prompts, prompt_name) do
-      with {:ok, params} <- validate_params(%{}, prompt, frame),
+      with :ok <- check_scopes(prompt, frame),
+           {:ok, params} <- validate_params(%{}, prompt, frame),
            do: forward_to(server, prompt, params, frame)
     else
       payload = %{message: "Prompt not found: #{prompt_name}"}
@@ -49,6 +55,22 @@ defmodule Anubis.Server.Handlers.Prompts do
   end
 
   # Private functions
+
+  defp check_scopes(%Prompt{scopes: []}, _frame), do: :ok
+
+  defp check_scopes(%Prompt{scopes: required}, frame) do
+    granted = Frame.scopes(frame)
+    missing = Enum.reject(required, &(&1 in granted))
+
+    if missing == [] do
+      :ok
+    else
+      {:error, Error.execution("insufficient_scope", %{required: required, granted: granted}), frame}
+    end
+  end
+
+  defp visible?(%Prompt{scopes: []}, _frame), do: true
+  defp visible?(%Prompt{scopes: required}, frame), do: Frame.has_all_scopes?(frame, required)
 
   defp find_prompt_module(prompts, name), do: Enum.find(prompts, &(&1.name == name))
 

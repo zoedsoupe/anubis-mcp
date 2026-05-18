@@ -4,6 +4,7 @@ defmodule Anubis.Server.Supervisor do
   use Supervisor, restart: :permanent
   use Anubis.Logging
 
+  alias Anubis.Server.Authorization
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.TaskStore
@@ -24,6 +25,7 @@ defmodule Anubis.Server.Supervisor do
           | {:task_store, {module(), keyword()}}
           | {:session_idle_timeout, pos_integer() | nil}
           | {:request_timeout, pos_integer() | nil}
+          | {:authorization, keyword() | nil}
 
   @doc """
   Starts the server supervisor.
@@ -78,6 +80,8 @@ defmodule Anubis.Server.Supervisor do
   def init(opts) do
     server = Keyword.fetch!(opts, :module)
     transport = normalize_transport(Keyword.fetch!(opts, :transport))
+
+    maybe_store_authorization_config(server, transport, opts)
 
     if should_start?(transport) do
       session_idle_timeout = Keyword.get(opts, :session_idle_timeout)
@@ -155,6 +159,39 @@ defmodule Anubis.Server.Supervisor do
   @doc false
   def get_session_supervisor_mod(server) do
     :persistent_term.get({__MODULE__, server, :session_supervisor_mod}, DynamicSupervisor)
+  end
+
+  @doc """
+  Returns the parsed authorization config for the given server module, or `nil`
+  if no authorization is configured.
+  """
+  @spec get_authorization_config(module()) :: map() | nil
+  def get_authorization_config(server) do
+    :persistent_term.get({__MODULE__, server, :authorization_config}, nil)
+  end
+
+  defp maybe_store_authorization_config(server, transport, opts) do
+    case Keyword.get(opts, :authorization) do
+      nil ->
+        :persistent_term.erase({__MODULE__, server, :authorization_config})
+        :ok
+
+      auth_opts when is_list(auth_opts) ->
+        case transport do
+          :stdio ->
+            :persistent_term.erase({__MODULE__, server, :authorization_config})
+
+            Logging.log(
+              :warning,
+              "Authorization config is ignored for STDIO transport on server #{inspect(server)}",
+              []
+            )
+
+          _ ->
+            parsed = Authorization.parse_config!(auth_opts)
+            :persistent_term.put({__MODULE__, server, :authorization_config}, parsed)
+        end
+    end
   end
 
   defp resolve_session_supervisor(opts) do

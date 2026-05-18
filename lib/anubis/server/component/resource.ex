@@ -111,7 +111,8 @@ defmodule Anubis.Server.Component.Resource do
           description: String.t() | nil,
           mime_type: String.t(),
           handler: module | nil,
-          title: String.t() | nil
+          title: String.t() | nil,
+          scopes: [String.t()]
         }
 
   defstruct [
@@ -121,7 +122,8 @@ defmodule Anubis.Server.Component.Resource do
     description: nil,
     mime_type: "text/plain",
     handler: nil,
-    title: nil
+    title: nil,
+    scopes: []
   ]
 
   @doc """

@@ -75,7 +75,8 @@ defmodule Anubis.Server.Component.Tool do
           task_support: task_support(),
           handler: module | nil,
           validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
-          validate_output: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
+          validate_output: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
+          scopes: [String.t()]
         }
 
   defstruct [
@@ -89,7 +90,8 @@ defmodule Anubis.Server.Component.Tool do
     task_support: :forbidden,
     handler: nil,
     validate_input: nil,
-    validate_output: nil
+    validate_output: nil,
+    scopes: []
   ]
 
   @doc """

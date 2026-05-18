@@ -11,7 +11,11 @@ defmodule Anubis.Server.Handlers.Resources do
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_list(request, frame, server_module) do
-    resources = Handlers.get_server_resources(server_module, frame)
+    resources =
+      server_module
+      |> Handlers.get_server_resources(frame)
+      |> Enum.filter(&visible?(&1, frame))
+
     limit = frame.pagination_limit
     {resources, cursor} = Handlers.maybe_paginate(request, resources, limit)
 
@@ -25,7 +29,11 @@ defmodule Anubis.Server.Handlers.Resources do
   @spec handle_templates_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_templates_list(request, frame, server_module) do
-    templates = Handlers.get_server_resource_templates(server_module, frame)
+    templates =
+      server_module
+      |> Handlers.get_server_resource_templates(frame)
+      |> Enum.filter(&visible?(&1, frame))
+
     limit = frame.pagination_limit
     {templates, cursor} = Handlers.maybe_paginate(request, templates, limit)
 
@@ -44,7 +52,9 @@ defmodule Anubis.Server.Handlers.Resources do
 
     case find_static_resource(resources, uri) do
       %Resource{} = resource ->
-        read_single_resource(server, resource, uri, frame)
+        with :ok <- check_scopes(resource, frame) do
+          read_single_resource(server, resource, uri, frame)
+        end
 
       nil ->
         try_resource_templates(templates, server, uri, frame)
@@ -55,7 +65,9 @@ defmodule Anubis.Server.Handlers.Resources do
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_subscribe(%{"params" => %{"uri" => uri}}, frame, server) when is_binary(uri) do
     if subscribe_enabled?(server) do
-      {:reply, %{}, Frame.subscribe_resource(frame, uri)}
+      with :ok <- check_scopes_for_uri(server, uri, frame) do
+        {:reply, %{}, Frame.subscribe_resource(frame, uri)}
+      end
     else
       {:error, Error.protocol(:method_not_found, %{method: "resources/subscribe"}), frame}
     end
@@ -73,31 +85,87 @@ defmodule Anubis.Server.Handlers.Resources do
 
   # Private functions
 
+  defp check_scopes(%Resource{scopes: []}, _frame), do: :ok
+
+  defp check_scopes(%Resource{scopes: required}, frame) do
+    granted = Frame.scopes(frame)
+    missing = Enum.reject(required, &(&1 in granted))
+
+    if missing == [] do
+      :ok
+    else
+      {:error, Error.execution("insufficient_scope", %{required: required, granted: granted}), frame}
+    end
+  end
+
+  defp visible?(%Resource{scopes: []}, _frame), do: true
+  defp visible?(%Resource{scopes: required}, frame), do: Frame.has_all_scopes?(frame, required)
+
+  defp check_scopes_for_uri(server, uri, frame) do
+    resources = Handlers.get_server_resources(server, frame)
+
+    case find_static_resource(resources, uri) do
+      %Resource{} = resource ->
+        check_scopes(resource, frame)
+
+      nil ->
+        templates = Handlers.get_server_resource_templates(server, frame)
+
+        case find_matching_template(templates, uri) do
+          %Resource{} = template -> check_scopes(template, frame)
+          nil -> :ok
+        end
+    end
+  end
+
+  defp find_matching_template(templates, uri) do
+    Enum.find(templates, fn template ->
+      match?({:ok, _}, URITemplate.match(template.uri_template, uri))
+    end)
+  end
+
   defp subscribe_enabled?(server) do
     get_in(server.server_capabilities(), ["resources", :subscribe]) == true
   end
 
   defp find_static_resource(resources, uri), do: Enum.find(resources, &(&1.uri == uri))
 
-  defp try_resource_templates([], _server, uri, frame) do
+  defp try_resource_templates(templates, server, uri, frame, pending_scope_error \\ nil)
+
+  defp try_resource_templates([], _server, _uri, _frame, {:error, %Error{}, _} = pending) do
+    pending
+  end
+
+  defp try_resource_templates([], _server, uri, frame, nil) do
     payload = %{message: "Resource not found: #{uri}"}
     error = Error.resource(:not_found, payload)
     {:error, error, frame}
   end
 
-  defp try_resource_templates([template | rest], server, uri, frame) do
+  defp try_resource_templates([template | rest], server, uri, frame, pending_scope_error) do
     case URITemplate.match(template.uri_template, uri) do
-      {:ok, vars} ->
-        case read_single_resource(server, template, uri, frame, vars) do
-          {:error, %Error{code: -32_002}, _frame} ->
-            try_resource_templates(rest, server, uri, frame)
+      {:ok, vars} -> try_matching_template(template, vars, rest, server, uri, frame, pending_scope_error)
+      :error -> try_resource_templates(rest, server, uri, frame, pending_scope_error)
+    end
+  end
 
-          result ->
-            result
-        end
+  defp try_matching_template(template, vars, rest, server, uri, frame, pending_scope_error) do
+    case check_scopes(template, frame) do
+      :ok ->
+        try_read_with_fallback(template, vars, rest, server, uri, frame, pending_scope_error)
 
-      :error ->
-        try_resource_templates(rest, server, uri, frame)
+      {:error, _, _} = scope_error ->
+        try_resource_templates(rest, server, uri, frame, pending_scope_error || scope_error)
+    end
+  end
+
+  defp try_read_with_fallback(template, vars, rest, server, uri, frame, pending_scope_error) do
+    case read_single_resource(server, template, uri, frame, vars) do
+      {:error, %Error{reason: :resource_not_found}, _frame} ->
+        try_resource_templates(rest, server, uri, frame, pending_scope_error)
+
+      other ->
+        other
     end
   end
 
