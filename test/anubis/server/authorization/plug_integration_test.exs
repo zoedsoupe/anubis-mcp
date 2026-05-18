@@ -1,5 +1,5 @@
 defmodule Anubis.Server.Authorization.PlugIntegrationTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import Plug.Conn
 
