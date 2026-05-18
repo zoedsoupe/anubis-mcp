@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.5.0...v1.6.0) (2026-05-18)
+
+
+### Features
+
+* add OAuth 2.1 authorization for MCP servers ([#158](https://github.com/zoedsoupe/anubis-mcp/issues/158)) ([a12a8f6](https://github.com/zoedsoupe/anubis-mcp/commit/a12a8f6ba9db8498a212f566898b66c99631993e))
+* add Registry.PG for distributed session tracking via :pg ([#160](https://github.com/zoedsoupe/anubis-mcp/issues/160)) ([512e103](https://github.com/zoedsoupe/anubis-mcp/commit/512e1033aa6f868b33658395e6fe1f0e28c8faf8))
+
 ## [1.5.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.4.0...v1.5.0) (2026-05-09)
 
 
