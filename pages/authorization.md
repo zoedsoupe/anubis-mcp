@@ -95,7 +95,7 @@ defmodule MyApp.WriteFileTool do
 end
 ```
 
-Callers missing required scopes receive a `403 Forbidden` MCP error and a `WWW-Authenticate: Bearer error="insufficient_scope"` header.
+Callers missing required scopes receive an MCP execution error indicating `insufficient_scope` with the required and granted scopes in the error payload.
 
 ## Accessing Claims in Handlers
 
