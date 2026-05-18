@@ -11,7 +11,11 @@ defmodule Anubis.Server.Handlers.Tools do
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_list(request, frame, server_module) do
-    tools = Handlers.get_server_tools(server_module, frame)
+    tools =
+      server_module
+      |> Handlers.get_server_tools(frame)
+      |> Enum.filter(&visible?(&1, frame))
+
     limit = frame.pagination_limit
     {tools, cursor} = Handlers.maybe_paginate(request, tools, limit)
 
@@ -66,6 +70,9 @@ defmodule Anubis.Server.Handlers.Tools do
       {:error, Error.execution("insufficient_scope", %{required: required, granted: granted}), frame}
     end
   end
+
+  defp visible?(%Tool{scopes: []}, _frame), do: true
+  defp visible?(%Tool{scopes: required}, frame), do: Frame.has_all_scopes?(frame, required)
 
   defp find_tool_module(tools, name), do: Enum.find(tools, &(&1.name == name))
 

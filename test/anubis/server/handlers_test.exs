@@ -612,4 +612,88 @@ defmodule Anubis.Server.HandlersTest do
       assert error.code == -32_601
     end
   end
+
+  describe "list operations filter by scopes" do
+    defmodule ScopedServer do
+      @moduledoc false
+      def __components__(:tool) do
+        [
+          %Tool{name: "public_tool", scopes: []},
+          %Tool{name: "read_tool", scopes: ["tools:read"]},
+          %Tool{name: "admin_tool", scopes: ["tools:admin"]}
+        ]
+      end
+
+      def __components__(:prompt) do
+        [
+          %Prompt{name: "public_prompt", scopes: []},
+          %Prompt{name: "scoped_prompt", scopes: ["prompts:read"]}
+        ]
+      end
+
+      def __components__(:resource) do
+        [
+          %Resource{uri: "res://public", name: "public_res", mime_type: "text/plain", scopes: []},
+          %Resource{uri: "res://secret", name: "secret_res", mime_type: "text/plain", scopes: ["resources:read"]},
+          %Resource{
+            uri_template: "tpl://{id}",
+            name: "public_tpl",
+            mime_type: "text/plain",
+            scopes: []
+          },
+          %Resource{
+            uri_template: "secret_tpl://{id}",
+            name: "secret_tpl",
+            mime_type: "text/plain",
+            scopes: ["resources:admin"]
+          }
+        ]
+      end
+
+      def server_capabilities, do: %{"resources" => %{}}
+    end
+
+    defp frame_with_scopes(scopes) do
+      %{Frame.new() | context: %Anubis.Server.Context{auth: %{scopes: scopes}}}
+    end
+
+    test "tools/list hides tools whose scopes are not granted" do
+      frame = frame_with_scopes(["tools:read"])
+      request = %{"method" => "tools/list", "params" => %{}}
+
+      assert {:reply, %{"tools" => tools}, _} = Handlers.handle(request, ScopedServer, frame)
+      names = Enum.map(tools, & &1.name)
+      assert "public_tool" in names
+      assert "read_tool" in names
+      refute "admin_tool" in names
+    end
+
+    test "tools/list with no granted scopes returns only public tools" do
+      request = %{"method" => "tools/list", "params" => %{}}
+
+      assert {:reply, %{"tools" => tools}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(tools, & &1.name) == ["public_tool"]
+    end
+
+    test "prompts/list hides scoped prompts" do
+      request = %{"method" => "prompts/list", "params" => %{}}
+
+      assert {:reply, %{"prompts" => prompts}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(prompts, & &1.name) == ["public_prompt"]
+    end
+
+    test "resources/list hides scoped resources" do
+      request = %{"method" => "resources/list", "params" => %{}}
+
+      assert {:reply, %{"resources" => resources}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(resources, & &1.name) == ["public_res"]
+    end
+
+    test "resources/templates/list hides scoped templates" do
+      request = %{"method" => "resources/templates/list", "params" => %{}}
+
+      assert {:reply, %{"resourceTemplates" => templates}, _} = Handlers.handle(request, ScopedServer, Frame.new())
+      assert Enum.map(templates, & &1.name) == ["public_tpl"]
+    end
+  end
 end

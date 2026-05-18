@@ -11,7 +11,11 @@ defmodule Anubis.Server.Handlers.Resources do
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_list(request, frame, server_module) do
-    resources = Handlers.get_server_resources(server_module, frame)
+    resources =
+      server_module
+      |> Handlers.get_server_resources(frame)
+      |> Enum.filter(&visible?(&1, frame))
+
     limit = frame.pagination_limit
     {resources, cursor} = Handlers.maybe_paginate(request, resources, limit)
 
@@ -25,7 +29,11 @@ defmodule Anubis.Server.Handlers.Resources do
   @spec handle_templates_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_templates_list(request, frame, server_module) do
-    templates = Handlers.get_server_resource_templates(server_module, frame)
+    templates =
+      server_module
+      |> Handlers.get_server_resource_templates(frame)
+      |> Enum.filter(&visible?(&1, frame))
+
     limit = frame.pagination_limit
     {templates, cursor} = Handlers.maybe_paginate(request, templates, limit)
 
@@ -87,6 +95,9 @@ defmodule Anubis.Server.Handlers.Resources do
       {:error, Error.execution("insufficient_scope", %{required: required, granted: granted}), frame}
     end
   end
+
+  defp visible?(%Resource{scopes: []}, _frame), do: true
+  defp visible?(%Resource{scopes: required}, frame), do: Frame.has_all_scopes?(frame, required)
 
   defp subscribe_enabled?(server) do
     get_in(server.server_capabilities(), ["resources", :subscribe]) == true
