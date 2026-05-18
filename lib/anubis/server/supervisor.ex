@@ -123,7 +123,14 @@ defmodule Anubis.Server.Supervisor do
       children =
         case transport do
           :stdio ->
-            build_stdio_children(server, layer, transport_opts, task_supervisor, session_config, task_store_child)
+            build_stdio_children(
+              server,
+              layer,
+              transport_opts,
+              task_supervisor,
+              session_config,
+              task_store_child
+            )
 
           _ ->
             build_http_children(
@@ -210,9 +217,11 @@ defmodule Anubis.Server.Supervisor do
 
   # Auto-select registry: STDIO -> None, HTTP -> Local
   defp resolve_registry(opts, transport, server) do
+    name = Registry.registry_name(server)
+
     case Keyword.get(opts, :registry) do
       {mod, registry_opts} ->
-        {mod, registry_opts}
+        {mod, Keyword.put_new(registry_opts, :name, name)}
 
       nil ->
         case transport do
@@ -220,7 +229,6 @@ defmodule Anubis.Server.Supervisor do
             {Registry.None, []}
 
           _ ->
-            name = Registry.registry_name(server)
             {Registry.Local, [name: name]}
         end
     end
