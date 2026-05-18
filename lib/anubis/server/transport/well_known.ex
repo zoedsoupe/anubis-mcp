@@ -36,13 +36,17 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.Server.Authorization
     alias Anubis.Server.Supervisor, as: ServerSupervisor
 
+    @type opts :: %{server: module()}
+
     @impl Plug
+    @spec init(keyword()) :: opts()
     def init(opts) do
       server = Keyword.fetch!(opts, :server)
       %{server: server}
     end
 
     @impl Plug
+    @spec call(Plug.Conn.t(), opts()) :: Plug.Conn.t()
     def call(conn, %{server: server}) do
       case ServerSupervisor.get_authorization_config(server) do
         nil ->
