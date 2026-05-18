@@ -225,11 +225,20 @@ defmodule Anubis.Server.Authorization do
   Normalizes raw claims (string-keyed map) into the canonical claims shape.
 
   Parses the `scope` string into a `scopes` list for convenient membership checks.
+  If the raw claims already contain a `scopes` list (string- or atom-keyed), it is
+  preserved as-is so custom validators that emit pre-normalized data are honored.
   """
   @spec normalize_claims(map()) :: claims()
   def normalize_claims(raw) when is_map(raw) do
     scope = raw["scope"] || raw[:scope]
-    scopes = if is_binary(scope), do: String.split(scope, " ", trim: true), else: []
+
+    scopes =
+      cond do
+        is_list(raw["scopes"]) -> raw["scopes"]
+        is_list(raw[:scopes]) -> raw[:scopes]
+        is_binary(scope) -> String.split(scope, " ", trim: true)
+        true -> []
+      end
 
     %{
       sub: raw["sub"] || raw[:sub],

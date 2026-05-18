@@ -264,5 +264,25 @@ defmodule Anubis.Server.AuthorizationTest do
       assert claims.scopes == []
       assert is_nil(claims.exp)
     end
+
+    test "preserves pre-normalized scopes list with string keys" do
+      claims = Authorization.normalize_claims(%{"sub" => "u1", "scopes" => ["tools:read", "tools:write"]})
+
+      assert claims.scopes == ["tools:read", "tools:write"]
+      assert is_nil(claims.scope)
+    end
+
+    test "preserves pre-normalized scopes list with atom keys" do
+      claims = Authorization.normalize_claims(%{sub: "u1", scopes: ["tools:read"]})
+
+      assert claims.scopes == ["tools:read"]
+    end
+
+    test "prefers pre-normalized scopes over scope string" do
+      claims = Authorization.normalize_claims(%{"scope" => "ignored", "scopes" => ["kept"]})
+
+      assert claims.scopes == ["kept"]
+      assert claims.scope == "ignored"
+    end
   end
 end
