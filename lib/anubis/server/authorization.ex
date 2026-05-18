@@ -232,23 +232,24 @@ defmodule Anubis.Server.Authorization do
   def normalize_claims(raw) when is_map(raw) do
     scope = raw["scope"] || raw[:scope]
 
-    scopes =
-      cond do
-        is_list(raw["scopes"]) -> raw["scopes"]
-        is_list(raw[:scopes]) -> raw[:scopes]
-        is_binary(scope) -> String.split(scope, " ", trim: true)
-        true -> []
-      end
-
     %{
       sub: raw["sub"] || raw[:sub],
       aud: raw["aud"] || raw[:aud],
       scope: scope,
-      scopes: scopes,
+      scopes: extract_scopes(raw, scope),
       exp: raw["exp"] || raw[:exp],
       iat: raw["iat"] || raw[:iat],
       client_id: raw["client_id"] || raw[:client_id],
       raw_claims: raw
     }
+  end
+
+  defp extract_scopes(raw, scope) do
+    cond do
+      is_list(raw["scopes"]) -> raw["scopes"]
+      is_list(raw[:scopes]) -> raw[:scopes]
+      is_binary(scope) -> String.split(scope, " ", trim: true)
+      true -> []
+    end
   end
 end
