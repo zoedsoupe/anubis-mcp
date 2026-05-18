@@ -101,6 +101,29 @@ defmodule Anubis.Server.Authorization.IntrospectionValidatorTest do
       assert auth_value == "Basic #{expected}"
     end
 
+    test "URL-encodes credentials containing reserved characters per RFC 6749 §2.3.1", %{bypass: bypass} do
+      test_pid = self()
+
+      Bypass.expect_once(bypass, "POST", "/introspect", fn conn ->
+        auth_header = Plug.Conn.get_req_header(conn, "authorization")
+        send(test_pid, {:auth, auth_header})
+        Plug.Conn.send_resp(conn, 200, OAuthTestHelper.active_introspection_response())
+      end)
+
+      client_id = "my:client"
+      client_secret = "my secret"
+      config = build_config(bypass, client_id: client_id, client_secret: client_secret)
+      IntrospectionValidator.validate_token("token", config)
+
+      assert_receive {:auth, [auth_value]}
+
+      expected =
+        Base.encode64("#{URI.encode_www_form(client_id)}:#{URI.encode_www_form(client_secret)}")
+
+      assert auth_value == "Basic #{expected}"
+      refute auth_value == "Basic #{Base.encode64("#{client_id}:#{client_secret}")}"
+    end
+
     test "sends no Authorization header when no credentials", %{bypass: bypass} do
       test_pid = self()
 
