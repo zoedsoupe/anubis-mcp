@@ -81,12 +81,12 @@ defmodule Anubis.Server.Supervisor do
     server = Keyword.fetch!(opts, :module)
     transport = normalize_transport(Keyword.fetch!(opts, :transport))
 
+    maybe_store_authorization_config(server, transport, opts)
+
     if should_start?(transport) do
       session_idle_timeout = Keyword.get(opts, :session_idle_timeout)
       request_timeout = Keyword.get(opts, :request_timeout, to_timeout(second: 30))
       task_supervisor = Registry.task_supervisor_name(server)
-
-      maybe_store_authorization_config(server, transport, opts)
 
       {registry_mod, registry_opts} = resolve_registry(opts, transport, server)
       {sup_mod, _sup_opts} = resolve_session_supervisor(opts)
