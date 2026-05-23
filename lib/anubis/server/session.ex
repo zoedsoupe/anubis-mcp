@@ -618,7 +618,7 @@ defmodule Anubis.Server.Session do
         handle_server_ping(decoded, state)
 
       not is_server_initialized(decoded, state) ->
-        handle_server_not_initialized(state)
+        handle_server_not_initialized(decoded, state)
 
       Message.is_request(decoded) ->
         handle_request(decoded, transport_context, from, state)
@@ -632,7 +632,7 @@ defmodule Anubis.Server.Session do
     {:reply, {:ok, encode_reply(Message.build_response(%{}, request_id))}, state}
   end
 
-  defp handle_server_not_initialized(state) do
+  defp handle_server_not_initialized(decoded, state) do
     error = Error.protocol(:invalid_request, %{message: "Server not initialized"})
 
     Logging.server_event(
@@ -641,7 +641,7 @@ defmodule Anubis.Server.Session do
       level: :warning
     )
 
-    {:reply, {:ok, encode_reply(Error.build_json_rpc(error))}, state}
+    {:reply, {:ok, encode_reply(Error.build_json_rpc(error, decoded["id"]))}, state}
   end
 
   defp handle_invalid_request(state) do
