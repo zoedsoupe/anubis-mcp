@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.0...v1.6.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* Echo request id in "Server not initialized" error ([#168](https://github.com/zoedsoupe/anubis-mcp/issues/168)) ([226b71e](https://github.com/zoedsoupe/anubis-mcp/commit/226b71ef92bd90216d79cd4998636b147763bf4b))
+
 ## [1.6.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.5.0...v1.6.0) (2026-05-18)
 
 
