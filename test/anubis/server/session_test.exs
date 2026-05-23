@@ -51,10 +51,15 @@ defmodule Anubis.Server.SessionTest do
           id: :uninit_session
         )
 
-      request = build_request("tools/list", 123)
+      request = build_request("tools/list", %{}, 123)
 
-      assert {:ok, _} =
+      assert {:ok, encoded} =
                GenServer.call(session, {:mcp_request, request, %{}})
+
+      assert {:ok, [decoded]} = Message.decode(encoded)
+      # error must echo the request id, else the client can't correlate the reply
+      assert decoded["id"] == 123
+      assert decoded["error"]["data"]["message"] == "Server not initialized"
     end
 
     test "accept ping requests when not initialized" do
