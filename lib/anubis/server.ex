@@ -280,7 +280,7 @@ defmodule Anubis.Server do
 
   @doc false
   defmacro __using__(opts) do
-    quote do
+    quote generated: true do
       @behaviour Anubis.Server
 
       import Anubis.Server
@@ -351,7 +351,7 @@ defmodule Anubis.Server do
     components = Module.get_attribute(env.module, :components, [])
     opts = get_server_opts(env.module)
 
-    quote do
+    quote generated: true do
       def __components__, do: Anubis.Server.parse_components(unquote(Macro.escape(components)))
       def __components__(:tool), do: Enum.filter(__components__(), &match?(%Tool{}, &1))
       def __components__(:prompt), do: Enum.filter(__components__(), &match?(%Prompt{}, &1))
@@ -518,7 +518,7 @@ defmodule Anubis.Server do
   defp maybe_define_server_info(module, name, version) do
     if not Module.defines?(module, {:server_info, 0}) or is_nil(name) or
          is_nil(version) do
-      quote do
+      quote generated: true do
         @impl Anubis.Server
         def server_info,
           do: %{"name" => unquote(name), "version" => unquote(version)}
@@ -530,7 +530,7 @@ defmodule Anubis.Server do
     if not Module.defines?(module, {:server_capabilities, 0}) do
       capabilities = Enum.reduce(capabilities_config || [], %{}, &parse_capability/2)
 
-      quote do
+      quote generated: true do
         @impl Anubis.Server
         def server_capabilities, do: unquote(Macro.escape(capabilities))
       end
@@ -541,7 +541,7 @@ defmodule Anubis.Server do
     if not Module.defines?(module, {:supported_protocol_versions, 0}) do
       versions = protocol_versions || @protocol_versions
 
-      quote do
+      quote generated: true do
         @impl Anubis.Server
         def supported_protocol_versions, do: unquote(versions)
       end
@@ -551,7 +551,7 @@ defmodule Anubis.Server do
   @doc false
   defp maybe_define_server_instructions(module, instructions) do
     if not Module.defines?(module, {:server_instructions, 0}) do
-      quote do
+      quote generated: true do
         @impl Anubis.Server
         def server_instructions, do: unquote(instructions)
       end
