@@ -188,7 +188,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_notification_message(conn, message, session_id, context, opts) do
-      case find_session(opts, session_id) do
+      case find_or_restore_session(opts, session_id) do
         {:ok, session_pid} ->
           GenServer.cast(session_pid, {:mcp_notification, message, context})
 
@@ -202,7 +202,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_response_message(conn, message, session_id, context, opts) do
-      case find_session(opts, session_id) do
+      case find_or_restore_session(opts, session_id) do
         {:ok, session_pid} ->
           GenServer.cast(session_pid, {:mcp_response, message, context})
 
@@ -397,6 +397,44 @@ if Code.ensure_loaded?(Plug) do
 
         {:error, reason} ->
           {:error, reason}
+      end
+    end
+
+    defp find_or_restore_session(opts, session_id) do
+      local_lookup = find_session(opts, session_id)
+      store = Anubis.get_session_store_adapter()
+
+      cond do
+        match?({:ok, _pid}, local_lookup) ->
+          # return state from process
+          local_lookup
+
+        not is_nil(store) ->
+          # try to load state from store
+          resurrect_via_store(opts, session_id, store)
+
+        true ->
+          # no state
+          {:error, :not_found}
+      end
+    end
+
+    defp resurrect_via_store(opts, session_id, store) do
+      with {:ok, _store_session} <- store.load(session_id, []),
+           {:ok, pid} <- start_and_auto_initialize_session(opts, session_id) do
+        {:ok, pid}
+      else
+        {:error, :not_found} ->
+          {:error, :not_found}
+
+        {:error, reason} ->
+          Logging.transport_event(
+            "session_resurrect_failed",
+            %{session_id: session_id, reason: inspect(reason)},
+            level: :warning
+          )
+
+          {:error, :not_found}
       end
     end
 
