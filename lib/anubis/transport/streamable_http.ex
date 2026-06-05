@@ -518,7 +518,8 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   defp build_sse_headers(state) do
-    %{"accept" => "text/event-stream"}
+    state.headers
+    |> Map.put("accept", "text/event-stream")
     |> put_session_header(state.session_id)
     |> put_last_event_id_header(state.last_event_id)
   end

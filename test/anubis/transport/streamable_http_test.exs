@@ -328,6 +328,57 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       StubClient.clear_messages()
     end
 
+    test "forwards custom :headers to the SSE GET request", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+      session_id = "test-session-headers"
+      test_pid = self()
+
+      # First POST establishes the session (and must also receive the auth header)
+      Bypass.stub(bypass, "POST", "/mcp", fn conn ->
+        auth = conn |> Plug.Conn.get_req_header("authorization") |> List.first()
+        send(test_pid, {:post_auth, auth})
+
+        conn =
+          conn
+          |> Plug.Conn.put_resp_header("content-type", "application/json")
+          |> Plug.Conn.put_resp_header("mcp-session-id", session_id)
+
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      # The SSE GET that follows session establishment — assert auth header arrives,
+      # then short-circuit with 405 so we don't have to fake a real stream.
+      Bypass.stub(bypass, "GET", "/mcp", fn conn ->
+        auth = conn |> Plug.Conn.get_req_header("authorization") |> List.first()
+        send(test_pid, {:sse_auth, auth})
+        Plug.Conn.resp(conn, 405, "")
+      end)
+
+      Bypass.stub(bypass, "DELETE", "/mcp", fn conn -> Plug.Conn.resp(conn, 200, "") end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          enable_sse: true,
+          headers: %{"authorization" => "Bearer test-token"},
+          transport_opts: @test_http_opts
+        )
+
+      # Drive the first POST to establish the session
+      {:ok, ping} = Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+      assert :ok = StreamableHTTP.send_message(transport, ping, timeout: 5000)
+
+      # Both the POST and the subsequent SSE GET must have carried the user header.
+      assert_receive {:post_auth, "Bearer test-token"}, 1_000
+      assert_receive {:sse_auth, "Bearer test-token"}, 1_000
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+
     test "handles custom mcp_path", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       custom_path = "/api/v1/mcp"
