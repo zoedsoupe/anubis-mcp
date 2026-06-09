@@ -300,9 +300,8 @@ defmodule Anubis.Transport.StreamableHTTPTest do
         assert "auth-token" ==
                  conn |> Plug.Conn.get_req_header("authorization") |> List.first()
 
-        # Accept header should be JSON-only when SSE is not enabled (default)
-        assert "application/json" ==
-                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+        # Every POST must advertise both content types per the MCP spec
+        assert_dual_accept(conn)
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
         Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
@@ -496,14 +495,13 @@ defmodule Anubis.Transport.StreamableHTTPTest do
   end
 
   describe "accept header behavior" do
-    test "sends JSON-only accept header when SSE is disabled (default)", %{bypass: bypass} do
+    test "advertises both content types when SSE is disabled (default)", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       {:ok, stub_client} = StubClient.start_link()
 
       Bypass.expect(bypass, "POST", "/mcp", fn conn ->
-        # Without enable_sse, should only accept JSON
-        assert "application/json" ==
-                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+        # Per the MCP spec, every POST advertises both content types
+        assert_dual_accept(conn)
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
         Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
@@ -527,14 +525,13 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       StubClient.clear_messages()
     end
 
-    test "sends JSON-only accept header when SSE enabled but no session yet", %{bypass: bypass} do
+    test "advertises both content types when SSE enabled but no session yet", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       {:ok, stub_client} = StubClient.start_link()
 
       Bypass.expect(bypass, "POST", "/mcp", fn conn ->
-        # Even with enable_sse, first request has no session so only JSON
-        assert "application/json" ==
-                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+        # Both content types are advertised even before a session exists
+        assert_dual_accept(conn)
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
         Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
@@ -566,16 +563,15 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, stub_client} = StubClient.start_link()
       session_id = "test-session-789"
 
-      # First request: no session, JSON-only
-      # Second request: has session, includes SSE
+      # Both requests advertise the dual Accept header; only the second
+      # carries the established session id.
       Bypass.stub(bypass, "POST", "/mcp", fn conn ->
         session_headers = Plug.Conn.get_req_header(conn, "mcp-session-id")
 
         case session_headers do
           [] ->
-            # First request - no session yet
-            assert "application/json" ==
-                     conn |> Plug.Conn.get_req_header("accept") |> List.first()
+            # First request - no session yet, still advertises both content types
+            assert_dual_accept(conn)
 
             conn =
               conn
@@ -586,8 +582,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
           [^session_id] ->
             # Second request - has session, should include SSE
-            assert "application/json, text/event-stream" ==
-                     conn |> Plug.Conn.get_req_header("accept") |> List.first()
+            assert_dual_accept(conn)
 
             conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
             Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"2","result":{}}|)
@@ -655,5 +650,20 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       StubClient.clear_messages()
     end
+  end
+
+  # Asserts the Accept header advertises both MCP media types, regardless of
+  # their order or surrounding whitespace.
+  defp assert_dual_accept(conn) do
+    media_types =
+      conn
+      |> Plug.Conn.get_req_header("accept")
+      |> List.first()
+      |> to_string()
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+
+    assert "application/json" in media_types
+    assert "text/event-stream" in media_types
   end
 end
