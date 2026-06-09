@@ -301,8 +301,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
                  conn |> Plug.Conn.get_req_header("authorization") |> List.first()
 
         # Every POST must advertise both content types per the MCP spec
-        assert "application/json, text/event-stream" ==
-                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+        assert_dual_accept(conn)
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
         Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
@@ -502,8 +501,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       Bypass.expect(bypass, "POST", "/mcp", fn conn ->
         # Per the MCP spec, every POST advertises both content types
-        assert "application/json, text/event-stream" ==
-                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+        assert_dual_accept(conn)
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
         Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
@@ -533,8 +531,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       Bypass.expect(bypass, "POST", "/mcp", fn conn ->
         # Both content types are advertised even before a session exists
-        assert "application/json, text/event-stream" ==
-                 conn |> Plug.Conn.get_req_header("accept") |> List.first()
+        assert_dual_accept(conn)
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
         Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
@@ -574,8 +571,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
         case session_headers do
           [] ->
             # First request - no session yet, still advertises both content types
-            assert "application/json, text/event-stream" ==
-                     conn |> Plug.Conn.get_req_header("accept") |> List.first()
+            assert_dual_accept(conn)
 
             conn =
               conn
@@ -586,8 +582,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
           [^session_id] ->
             # Second request - has session, should include SSE
-            assert "application/json, text/event-stream" ==
-                     conn |> Plug.Conn.get_req_header("accept") |> List.first()
+            assert_dual_accept(conn)
 
             conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
             Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"2","result":{}}|)
@@ -655,5 +650,20 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       StubClient.clear_messages()
     end
+  end
+
+  # Asserts the Accept header advertises both MCP media types, regardless of
+  # their order or surrounding whitespace.
+  defp assert_dual_accept(conn) do
+    media_types =
+      conn
+      |> Plug.Conn.get_req_header("accept")
+      |> List.first()
+      |> to_string()
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+
+    assert "application/json" in media_types
+    assert "text/event-stream" in media_types
   end
 end
