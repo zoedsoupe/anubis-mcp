@@ -300,8 +300,8 @@ defmodule Anubis.Transport.StreamableHTTPTest do
         assert "auth-token" ==
                  conn |> Plug.Conn.get_req_header("authorization") |> List.first()
 
-        # Accept header should be JSON-only when SSE is not enabled (default)
-        assert "application/json" ==
+        # Every POST must advertise both content types per the MCP spec
+        assert "application/json, text/event-stream" ==
                  conn |> Plug.Conn.get_req_header("accept") |> List.first()
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
@@ -496,13 +496,13 @@ defmodule Anubis.Transport.StreamableHTTPTest do
   end
 
   describe "accept header behavior" do
-    test "sends JSON-only accept header when SSE is disabled (default)", %{bypass: bypass} do
+    test "advertises both content types when SSE is disabled (default)", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       {:ok, stub_client} = StubClient.start_link()
 
       Bypass.expect(bypass, "POST", "/mcp", fn conn ->
-        # Without enable_sse, should only accept JSON
-        assert "application/json" ==
+        # Per the MCP spec, every POST advertises both content types
+        assert "application/json, text/event-stream" ==
                  conn |> Plug.Conn.get_req_header("accept") |> List.first()
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
@@ -527,13 +527,13 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       StubClient.clear_messages()
     end
 
-    test "sends JSON-only accept header when SSE enabled but no session yet", %{bypass: bypass} do
+    test "advertises both content types when SSE enabled but no session yet", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       {:ok, stub_client} = StubClient.start_link()
 
       Bypass.expect(bypass, "POST", "/mcp", fn conn ->
-        # Even with enable_sse, first request has no session so only JSON
-        assert "application/json" ==
+        # Both content types are advertised even before a session exists
+        assert "application/json, text/event-stream" ==
                  conn |> Plug.Conn.get_req_header("accept") |> List.first()
 
         conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
@@ -566,15 +566,15 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, stub_client} = StubClient.start_link()
       session_id = "test-session-789"
 
-      # First request: no session, JSON-only
-      # Second request: has session, includes SSE
+      # Both requests advertise the dual Accept header; only the second
+      # carries the established session id.
       Bypass.stub(bypass, "POST", "/mcp", fn conn ->
         session_headers = Plug.Conn.get_req_header(conn, "mcp-session-id")
 
         case session_headers do
           [] ->
-            # First request - no session yet
-            assert "application/json" ==
+            # First request - no session yet, still advertises both content types
+            assert "application/json, text/event-stream" ==
                      conn |> Plug.Conn.get_req_header("accept") |> List.first()
 
             conn =
