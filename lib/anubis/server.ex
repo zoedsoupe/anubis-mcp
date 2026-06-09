@@ -280,6 +280,40 @@ defmodule Anubis.Server do
 
   @doc false
   defmacro __using__(opts) do
+    authorization_config = Keyword.get(opts, :authorization)
+
+    child_spec =
+      if authorization_config do
+        quote generated: true do
+          def child_spec(opts) do
+            opts =
+              if Keyword.has_key?(opts, :authorization) do
+                opts
+              else
+                Keyword.put(opts, :authorization, @__authorization_config__)
+              end
+
+            %{
+              id: __MODULE__,
+              start: {Anubis.Server.Supervisor, :start_link, [__MODULE__, opts]},
+              type: :supervisor,
+              restart: :permanent
+            }
+          end
+        end
+      else
+        quote generated: true do
+          def child_spec(opts) do
+            %{
+              id: __MODULE__,
+              start: {Anubis.Server.Supervisor, :start_link, [__MODULE__, opts]},
+              type: :supervisor,
+              restart: :permanent
+            }
+          end
+        end
+      end
+
     quote generated: true do
       @behaviour Anubis.Server
 
@@ -296,27 +330,11 @@ defmodule Anubis.Server do
       @before_compile Anubis.Server
       @after_compile Anubis.Server
 
-      @__authorization_config__ unquote(Keyword.get(opts, :authorization))
+      @__authorization_config__ unquote(authorization_config)
 
       def __authorization__, do: @__authorization_config__
 
-      def child_spec(opts) do
-        auth_config = @__authorization_config__
-
-        opts =
-          if auth_config && not Keyword.has_key?(opts, :authorization) do
-            Keyword.put(opts, :authorization, auth_config)
-          else
-            opts
-          end
-
-        %{
-          id: __MODULE__,
-          start: {Anubis.Server.Supervisor, :start_link, [__MODULE__, opts]},
-          type: :supervisor,
-          restart: :permanent
-        }
-      end
+      unquote(child_spec)
 
       defoverridable child_spec: 1
     end
