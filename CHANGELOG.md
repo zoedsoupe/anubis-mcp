@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.2](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.1...v1.6.2) (2026-06-09)
+
+
+### Bug Fixes
+
+* forward :headers to SSE GET request ([#180](https://github.com/zoedsoupe/anubis-mcp/issues/180)) ([bb3280f](https://github.com/zoedsoupe/anubis-mcp/commit/bb3280f127084c627983b0c6b1ab4c87ec23c879))
+* macros for Elixir 1.20 type checker compatibility ([48c9478](https://github.com/zoedsoupe/anubis-mcp/commit/48c947840e3bc60bc516d2a68cdacf6d2222b4b7))
+* **streamable_http:** always advertise both content types on POST ([#178](https://github.com/zoedsoupe/anubis-mcp/issues/178)) ([66abc13](https://github.com/zoedsoupe/anubis-mcp/commit/66abc132e5c43993e260793eef1cb32ba152be26))
+
 ## [1.6.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.0...v1.6.1) (2026-05-23)
 
 
