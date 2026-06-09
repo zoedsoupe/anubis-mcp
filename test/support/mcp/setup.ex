@@ -11,8 +11,6 @@ defmodule Anubis.MCP.Setup do
   alias Anubis.Server.Session
   alias Anubis.Server.Transport.STDIO
 
-  require Message
-
   @doc """
   Awaits the next outbound MCP request matching `method` and returns its id.
 

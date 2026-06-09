@@ -24,7 +24,7 @@ defmodule Anubis.Logging do
     * metadata - additional metadata to include with level option (:debug, :info, :warning, :error, etc.)
   """
   defmacro message(direction, type, id, data, metadata \\ []) do
-    quote do
+    quote generated: true do
       level = Anubis.Logging.get_logging_level(:protocol_messages)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)
@@ -66,7 +66,7 @@ defmodule Anubis.Logging do
       * :level - The log level (:debug, :info, :warning, :error, etc.)
   """
   defmacro server_event(event, details, metadata \\ []) do
-    quote do
+    quote generated: true do
       level = Anubis.Logging.get_logging_level(:server_events)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)
@@ -91,7 +91,7 @@ defmodule Anubis.Logging do
       * :level - The log level (:debug, :info, :warning, :error, etc.)
   """
   defmacro client_event(event, details, metadata \\ []) do
-    quote do
+    quote generated: true do
       level = Anubis.Logging.get_logging_level(:client_events)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)
@@ -116,7 +116,7 @@ defmodule Anubis.Logging do
       * :level - The log level (:debug, :info, :warning, :error, etc.)
   """
   defmacro transport_event(event, details, metadata \\ []) do
-    quote do
+    quote generated: true do
       level = Anubis.Logging.get_logging_level(:transport_events)
       level = Keyword.get(unquote(metadata), :level, level)
       metadata = Keyword.delete(unquote(metadata), :level)

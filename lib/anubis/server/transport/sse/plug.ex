@@ -99,8 +99,6 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.Telemetry
     alias Plug.Conn.Unfetched
 
-    require Message
-
     @deprecated "Use Anubis.Server.Transport.StreamableHTTP.Plug instead"
 
     @default_timeout 30_000
