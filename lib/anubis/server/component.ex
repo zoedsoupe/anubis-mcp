@@ -57,7 +57,7 @@ defmodule Anubis.Server.Component do
             "Invalid :task_support value #{inspect(task_support)} — must be one of :forbidden, :optional, :required"
     end
 
-    quote do
+    quote generated: true do
       @behaviour unquote(behaviour_module)
 
       import Anubis.Server.Component,
@@ -174,7 +174,7 @@ defmodule Anubis.Server.Component do
           {:%{}, [], [single_field]}
       end
 
-    quote do
+    quote generated: true do
       import Peri
 
       alias Anubis.Server.Component
@@ -208,7 +208,7 @@ defmodule Anubis.Server.Component do
           {:%{}, [], [single_field]}
       end
 
-    quote do
+    quote generated: true do
       import Peri
 
       alias Anubis.Server.Component

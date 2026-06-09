@@ -86,7 +86,7 @@ defmodule Anubis.ServerTest do
 
       @impl true
       def get_messages(_params, frame) do
-        {:reply, Response.text(Response.prompt(), "ok"), frame}
+        {:reply, Response.user_message(Response.prompt(), "ok"), frame}
       end
     end
 
