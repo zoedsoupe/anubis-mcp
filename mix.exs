@@ -1,7 +1,7 @@
 defmodule Anubis.MixProject do
   use Mix.Project
 
-  @version "1.6.1"
+  @version "1.6.2"
   @source_url "https://github.com/zoedsoupe/anubis-mcp"
 
   def project do
