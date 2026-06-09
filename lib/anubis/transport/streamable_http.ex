@@ -304,18 +304,14 @@ defmodule Anubis.Transport.StreamableHTTP do
   # Private functions
 
   defp send_http_request(state, message, timeout) do
-    # Only advertise SSE support if enabled AND we have a session
-    # This prevents trying to route responses through SSE before it's established
-    accept_header =
-      if state.enable_sse && state.session_id do
-        "application/json, text/event-stream"
-      else
-        "application/json"
-      end
-
+    # Per the MCP Streamable HTTP spec, every POST MUST advertise both
+    # application/json and text/event-stream so the server may reply with either
+    # a single JSON response or an SSE stream. This includes the initialize
+    # request, which is sent before a session exists. The session id is still
+    # only attached once established via put_session_header/2 below.
     headers =
       state.headers
-      |> Map.put("accept", accept_header)
+      |> Map.put("accept", "application/json, text/event-stream")
       |> Map.put("content-type", "application/json")
       |> put_session_header(state.session_id)
 
@@ -518,7 +514,8 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   defp build_sse_headers(state) do
-    %{"accept" => "text/event-stream"}
+    state.headers
+    |> Map.put("accept", "text/event-stream")
     |> put_session_header(state.session_id)
     |> put_last_event_id_header(state.last_event_id)
   end
