@@ -10,6 +10,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
   alias Anubis.Server.Supervisor, as: ServerSupervisor
   alias Anubis.Server.Transport.StreamableHTTP
   alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
+  alias Anubis.Test.MockSessionStore
 
   @moduletag capture_log: true
 
@@ -525,6 +526,367 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert conn.status == 200
       {:ok, response} = Jason.decode(conn.resp_body)
       assert response["result"]["protocolVersion"]
+    end
+  end
+
+  describe "notification with session store configured" do
+    setup do
+      {:ok, _} = MockSessionStore.start_link([])
+      MockSessionStore.reset!()
+
+      original_config = Application.get_env(:anubis_mcp, :session_store)
+
+      Application.put_env(:anubis_mcp, :session_store,
+        enabled: true,
+        adapter: MockSessionStore,
+        ttl: 1_800_000
+      )
+
+      on_exit(fn ->
+        if original_config do
+          Application.put_env(:anubis_mcp, :session_store, original_config)
+        else
+          Application.delete_env(:anubis_mcp, :session_store)
+        end
+      end)
+
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+
+      registry_name = Registry.registry_name(StubServer)
+      start_supervised!({Registry.Local, name: registry_name})
+
+      setup_session_config(registry_mod: Registry.Local)
+      on_exit(&cleanup_session_config/0)
+
+      session_sup_name = Registry.session_supervisor_name(StubServer)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      streamable_name = Registry.transport_name(StubServer, :streamable_http)
+
+      start_supervised!({StreamableHTTP, server: StubServer, name: streamable_name, task_supervisor: task_sup})
+
+      opts = StreamableHTTPPlug.init(server: StubServer)
+
+      %{opts: opts, registry_name: registry_name}
+    end
+
+    test "notification resurrects session from store when no local entry exists",
+         %{opts: opts, registry_name: registry_name} do
+      session_id = "stored-session-#{System.unique_integer([:positive])}"
+
+      # Pre-populate the store as if a peer pod initialized this session.
+      # The Session GenServer's auto_initialize will rehydrate from this map.
+      :ok =
+        MockSessionStore.save(
+          session_id,
+          %{
+            "client_info" => %{"name" => "stored-client", "version" => "1.0"},
+            "frame" => %{}
+          },
+          []
+        )
+
+      # Sanity check: the session is not in this pod's local registry.
+      assert {:error, :not_found} = Registry.Local.lookup_session(registry_name, session_id)
+
+      notification = build_notification("notifications/initialized", %{})
+      {:ok, body} = Message.encode_notification(notification)
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 202
+      assert conn.resp_body == "{}"
+
+      # Resurrection succeeded: a Session GenServer now exists locally.
+      assert {:ok, pid} = Registry.Local.lookup_session(registry_name, session_id)
+      assert Process.alive?(pid)
+    end
+
+    test "notification with store + unknown session-id still returns 404",
+         %{opts: opts, registry_name: registry_name} do
+      session_id = "unknown-session-#{System.unique_integer([:positive])}"
+
+      # Confirm the store has no record of this session.
+      assert {:error, :not_found} = MockSessionStore.load(session_id, [])
+
+      # Confirm the local registry has no record either.
+      assert {:error, :not_found} = Registry.Local.lookup_session(registry_name, session_id)
+
+      notification = build_notification("notifications/initialized", %{})
+      {:ok, body} = Message.encode_notification(notification)
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 404
+
+      # Spec compliance: no ghost session was minted as a side effect.
+      assert {:error, :not_found} = Registry.Local.lookup_session(registry_name, session_id)
+    end
+
+    test "concurrent notifications for same session-id spawn only one Session GenServer",
+         %{opts: opts, registry_name: registry_name} do
+      session_id = "concurrent-session-#{System.unique_integer([:positive])}"
+
+      :ok =
+        MockSessionStore.save(
+          session_id,
+          %{
+            "client_info" => %{"name" => "concurrent-client", "version" => "1.0"},
+            "frame" => %{}
+          },
+          []
+        )
+
+      notification = build_notification("notifications/initialized", %{})
+      {:ok, body} = Message.encode_notification(notification)
+
+      build_conn = fn ->
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+      end
+
+      # Fire two plug calls concurrently. One will start_session successfully;
+      # the other will match {:already_started, pid} in start_new_session/2
+      # (plug.ex:395) and reuse the same PID.
+      task_a = Task.async(fn -> StreamableHTTPPlug.call(build_conn.(), opts) end)
+      task_b = Task.async(fn -> StreamableHTTPPlug.call(build_conn.(), opts) end)
+
+      conn_a = Task.await(task_a)
+      conn_b = Task.await(task_b)
+
+      # Both calls succeed.
+      assert conn_a.status == 202
+      assert conn_b.status == 202
+
+      # Exactly one live Session GenServer is registered for the session-id.
+      assert {:ok, pid} = Registry.Local.lookup_session(registry_name, session_id)
+      assert Process.alive?(pid)
+    end
+  end
+
+  describe "notification with resurrection rejected by server module" do
+    setup do
+      {:ok, _} = MockSessionStore.start_link([])
+      MockSessionStore.reset!()
+
+      original_config = Application.get_env(:anubis_mcp, :session_store)
+
+      Application.put_env(:anubis_mcp, :session_store,
+        enabled: true,
+        adapter: MockSessionStore,
+        ttl: 1_800_000
+      )
+
+      on_exit(fn ->
+        if original_config do
+          Application.put_env(:anubis_mcp, :session_store, original_config)
+        else
+          Application.delete_env(:anubis_mcp, :session_store)
+        end
+      end)
+
+      server = StubSessionRecoveryRejectServer
+      task_sup = Registry.task_supervisor_name(server)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      transport_name = Registry.transport_name(server, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+
+      registry_name = Registry.registry_name(server)
+      start_supervised!({Registry.Local, name: registry_name})
+
+      session_config = %{
+        server_module: server,
+        registry_mod: Registry.Local,
+        transport: [layer: StubTransport, name: transport_name],
+        session_idle_timeout: nil,
+        timeout: 30_000,
+        task_supervisor: task_sup
+      }
+
+      :persistent_term.put({ServerSupervisor, server, :session_config}, session_config)
+      on_exit(fn -> :persistent_term.erase({ServerSupervisor, server, :session_config}) end)
+
+      session_sup_name = Registry.session_supervisor_name(server)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      streamable_name = Registry.transport_name(server, :streamable_http)
+
+      start_supervised!({StreamableHTTP, server: server, name: streamable_name, task_supervisor: task_sup})
+
+      opts = StreamableHTTPPlug.init(server: server)
+
+      %{opts: opts, registry_name: registry_name}
+    end
+
+    test "notification with rejected resurrection returns 404 and logs warning",
+         %{opts: opts, registry_name: registry_name} do
+      session_id = "rejected-session-#{System.unique_integer([:positive])}"
+
+      :ok =
+        MockSessionStore.save(
+          session_id,
+          %{
+            "client_info" => %{"name" => "rejected-client", "version" => "1.0"},
+            "frame" => %{}
+          },
+          []
+        )
+
+      notification = build_notification("notifications/initialized", %{})
+      {:ok, body} = Message.encode_notification(notification)
+
+      log =
+        capture_log(fn ->
+          conn =
+            :post
+            |> conn("/", body)
+            |> put_req_header("content-type", "application/json")
+            |> put_req_header("accept", "application/json")
+            |> put_req_header("mcp-session-id", session_id)
+            |> StreamableHTTPPlug.call(opts)
+
+          assert conn.status == 404
+        end)
+
+      # The warning event fires when start_and_auto_initialize_session/2
+      # returns {:error, {:recovery_rejected, _}} and our resurrect_via_store
+      # helper logs + normalizes to :not_found.
+      assert log =~ "session_resurrect_failed"
+      assert log =~ "recovery_rejected"
+
+      # start_and_auto_initialize_session/2 cleans up the failed session, so
+      # the registry should be empty.
+      assert {:error, :not_found} = Registry.Local.lookup_session(registry_name, session_id)
+    end
+  end
+
+  describe "response with session store configured" do
+    setup do
+      {:ok, _} = MockSessionStore.start_link([])
+      MockSessionStore.reset!()
+
+      original_config = Application.get_env(:anubis_mcp, :session_store)
+
+      Application.put_env(:anubis_mcp, :session_store,
+        enabled: true,
+        adapter: MockSessionStore,
+        ttl: 1_800_000
+      )
+
+      on_exit(fn ->
+        if original_config do
+          Application.put_env(:anubis_mcp, :session_store, original_config)
+        else
+          Application.delete_env(:anubis_mcp, :session_store)
+        end
+      end)
+
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+
+      registry_name = Registry.registry_name(StubServer)
+      start_supervised!({Registry.Local, name: registry_name})
+
+      setup_session_config(registry_mod: Registry.Local)
+      on_exit(&cleanup_session_config/0)
+
+      session_sup_name = Registry.session_supervisor_name(StubServer)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      streamable_name = Registry.transport_name(StubServer, :streamable_http)
+
+      start_supervised!({StreamableHTTP, server: StubServer, name: streamable_name, task_supervisor: task_sup})
+
+      opts = StreamableHTTPPlug.init(server: StubServer)
+
+      %{opts: opts, registry_name: registry_name}
+    end
+
+    test "response resurrects session from store when no local entry exists",
+         %{opts: opts, registry_name: registry_name} do
+      session_id = "response-stored-#{System.unique_integer([:positive])}"
+
+      :ok =
+        MockSessionStore.save(
+          session_id,
+          %{
+            "client_info" => %{"name" => "response-client", "version" => "1.0"},
+            "frame" => %{}
+          },
+          []
+        )
+
+      assert {:error, :not_found} = Registry.Local.lookup_session(registry_name, session_id)
+
+      body =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => "req_42",
+          "result" => %{"some" => "data"}
+        })
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 202
+      assert conn.resp_body == "{}"
+
+      assert {:ok, pid} = Registry.Local.lookup_session(registry_name, session_id)
+      assert Process.alive?(pid)
+    end
+
+    test "response with store + unknown session-id still returns 404",
+         %{opts: opts, registry_name: registry_name} do
+      session_id = "response-unknown-#{System.unique_integer([:positive])}"
+
+      assert {:error, :not_found} = MockSessionStore.load(session_id, [])
+      assert {:error, :not_found} = Registry.Local.lookup_session(registry_name, session_id)
+
+      body =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => "req_99",
+          "result" => %{"some" => "data"}
+        })
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 404
+      assert {:error, :not_found} = Registry.Local.lookup_session(registry_name, session_id)
     end
   end
 end
