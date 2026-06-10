@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.3](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.2...v1.6.3) (2026-06-10)
+
+
+### Continuous Integration
+
+* fix zig correct version for burrito ([6e410bd](https://github.com/zoedsoupe/anubis-mcp/commit/6e410bd509031264c138cdf4ff0efd8aa27d491a))
+* use mlugg/setup-zig 0.15.2 in release-please auto build job ([2ed6187](https://github.com/zoedsoupe/anubis-mcp/commit/2ed61875f87e464d20cbf8392d9c72933894755f))
+
 ## [1.6.2](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.1...v1.6.2) (2026-06-09)
 
 

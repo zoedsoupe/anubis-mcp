@@ -30,7 +30,7 @@ Let's connect to an existing MCP server in under three minutes:
 
 ```elixir
 # In your mix.exs
-{:anubis_mcp, "~> 1.6.2"} # x-release-please-version
+{:anubis_mcp, "~> 1.6.3"} # x-release-please-version
 ```
 
 Add a client to your supervision tree:
