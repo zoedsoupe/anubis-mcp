@@ -102,7 +102,8 @@ defmodule Anubis.Server.Session do
     {:timeout, {:integer, {:default, to_timeout(second: 30)}}},
     {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:task_store,
-     {[adapter: {:required, :atom}, name: {:required, {:custom, &Anubis.genserver_name/1}}], {:default, nil}}}
+     {[adapter: {:required, :atom}, name: {:required, {:custom, &Anubis.genserver_name/1}}], {:default, nil}}},
+    {:pre_initialized, {:boolean, {:default, false}}}
   ])
 
   @doc """
@@ -160,7 +161,7 @@ defmodule Anubis.Server.Session do
       server_module: module,
       protocol_version: nil,
       protocol_module: nil,
-      initialized: false,
+      initialized: opts.pre_initialized,
       client_info: nil,
       client_capabilities: nil,
       log_level: nil,
