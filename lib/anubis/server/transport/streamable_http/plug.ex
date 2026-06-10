@@ -433,7 +433,7 @@ if Code.ensure_loaded?(Plug) do
         store ->
           case store.load(session_id, []) do
             {:ok, stored_state} ->
-              pre_initialized = Map.get(stored_state, "initialized", false)
+              pre_initialized = stored_state["initialized"] == true
               start_new_session(opts, session_id, pre_initialized: pre_initialized)
 
             _ ->

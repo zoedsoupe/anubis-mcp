@@ -334,7 +334,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
         |> Plug.call(opts)
 
       assert conn.status == 200
-      {:ok, decoded} = Jason.decode(conn.resp_body)
+      decoded = JSON.decode!(conn.resp_body)
       refute Map.has_key?(decoded, "error")
     end
 
