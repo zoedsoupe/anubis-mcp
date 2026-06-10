@@ -57,7 +57,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
       {:ok, plug_opts: plug_opts}
     end
 
-    test "GET request with existing session ID reconnects to stored session", %{plug_opts: _plug_opts} do
+    test "GET request with existing session ID reconnects to stored session", %{
+      plug_opts: _plug_opts
+    } do
       session_id = "existing_session_123"
 
       session_data = %{
@@ -304,7 +306,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
       :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)
 
       name = Registry.transport_name(StubServer, :streamable_http)
-      start_supervised!({StreamableHTTP, server: StubServer, name: name, task_supervisor: task_sup})
+
+      start_supervised!(
+        {StreamableHTTP, server: StubServer, name: name, task_supervisor: task_sup}
+      )
 
       on_exit(fn ->
         :persistent_term.erase({ServerSupervisor, StubServer, :session_config})
@@ -314,7 +319,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
       %{opts: opts}
     end
 
-    test "a request for a session not in the local registry is restored from the store", %{opts: opts} do
+    test "a request for a session not in the local registry is restored from the store", %{
+      opts: opts
+    } do
       session_id = "cross-pod-session-#{System.unique_integer([:positive])}"
 
       MockSessionStore.save(
