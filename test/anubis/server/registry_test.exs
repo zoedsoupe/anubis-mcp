@@ -1,5 +1,5 @@
 defmodule Anubis.Server.RegistryTest do
-  use ExUnit.Case, async: false
+  use Anubis.MCP.Case, async: false
 
   alias Anubis.Server.Registry
 
