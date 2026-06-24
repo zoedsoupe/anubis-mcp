@@ -158,13 +158,17 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   def handle_call({:register_sse_handler, session_id, pid}, _from, state) do
     sse_handlers =
       case Map.get(state.sse_handlers, session_id) do
-        {^pid, old_ref} ->
+        {_old_pid, old_ref} ->
+          # A connection is (re)binding to this session. Stop monitoring the
+          # handler currently bound to it, but do NOT send :close_sse to a
+          # superseded handler. A server-initiated close prompts spec-compliant
+          # clients (e.g. the MCP SDK's standalone GET stream) to immediately
+          # reconnect, which races the next registration into an unbounded
+          # register/close flap. The superseded handler is reaped by its own
+          # connection lifecycle (the DOWN monitor below, or its on_close), and
+          # the expected_pid guard in unregister_sse_handler keeps its eventual
+          # close from dropping the handler that took over.
           Process.demonitor(old_ref, [:flush])
-          state.sse_handlers
-
-        {old_pid, old_ref} ->
-          Process.demonitor(old_ref, [:flush])
-          send(old_pid, :close_sse)
           state.sse_handlers
 
         nil ->
