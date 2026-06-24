@@ -89,6 +89,42 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       send(new_handler, :stop)
     end
 
+    test "a superseded handler is not proactively closed", %{transport: transport} do
+      session_id = "test-session-supersede"
+      test_pid = self()
+
+      old_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, self()})
+
+          receive do
+            :close_sse -> send(test_pid, {:closed, self()})
+          end
+        end)
+
+      assert_receive {:registered, ^old_handler}
+
+      new_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, self()})
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive {:registered, ^new_handler}
+
+      assert ^new_handler = StreamableHTTP.get_sse_handler(transport, session_id)
+
+      refute_receive {:closed, ^old_handler}, 200
+
+      send(old_handler, :close_sse)
+      send(new_handler, :stop)
+    end
+
     test "routes messages to sessions", %{transport: transport} do
       session_id = "test-session-789"
 

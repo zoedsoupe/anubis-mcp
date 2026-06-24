@@ -158,13 +158,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   def handle_call({:register_sse_handler, session_id, pid}, _from, state) do
     sse_handlers =
       case Map.get(state.sse_handlers, session_id) do
-        {^pid, old_ref} ->
+        {_old_pid, old_ref} ->
+          # Demonitor the superseded handler but do not close it; its own
+          # connection lifecycle reaps it.
           Process.demonitor(old_ref, [:flush])
-          state.sse_handlers
-
-        {old_pid, old_ref} ->
-          Process.demonitor(old_ref, [:flush])
-          send(old_pid, :close_sse)
           state.sse_handlers
 
         nil ->
