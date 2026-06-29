@@ -62,6 +62,38 @@ defmodule Anubis.Server.SessionTest do
       assert decoded["error"]["data"]["message"] == "Server not initialized"
     end
 
+    test "accepts requests after initialize without notifications/initialized" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      task_sup = Registry.task_supervisor_name(StubServer)
+      session_name = Registry.session_name(StubServer, "init_no_notification")
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: "init_no_notification",
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :init_no_notification_session
+        )
+
+      init_msg =
+        init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, init_msg, %{}})
+
+      request = build_request("tools/list", %{}, 124)
+
+      assert {:ok, encoded} =
+               GenServer.call(session, {:mcp_request, request, %{}})
+
+      assert {:ok, [decoded]} = Message.decode(encoded)
+      assert decoded["id"] == 124
+      refute decoded["error"]
+      assert decoded["result"]["tools"]
+    end
+
     test "accept ping requests when not initialized" do
       transport_name = Registry.transport_name(StubServer, StubTransport)
       task_sup = Registry.task_supervisor_name(StubServer)
