@@ -12,6 +12,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   - Automatic handler cleanup on disconnect
   - Keepalive messages to maintain connections
   - Notification broadcasting to connected clients
+  - Optional resumability: when an `:event_store` is configured, messages on a
+    session's standalone stream are recorded with monotonic ids and replayed on
+    reconnect via `Last-Event-ID`. Messages fired while no handler is attached
+    are still recorded (bounded by `:stream_grace`), so they survive reconnect
+    gaps. See `Anubis.Server.Transport.StreamableHTTP.EventStore`.
 
   ## Usage
 
@@ -58,7 +63,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:keepalive, {:boolean, {:default, true}}},
-    {:keepalive_interval, {:integer, {:default, 5_000}}}
+    {:keepalive_interval, {{:integer, {:gte, 1}}, {:default, 5_000}}},
+    {:event_store, {:any, {:default, nil}}},
+    {:sse_retry, {{:integer, {:gte, 0}}, {:default, nil}}},
+    {:stream_grace, {{:integer, {:gte, 0}}, {:default, 60_000}}}
   ])
 
   @impl Transport
@@ -112,11 +120,35 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @doc """
   Routes a message to a specific session's SSE handler for server-to-client push.
+
+  When resumability is enabled the message is also recorded on the session's
+  stream so it can be replayed on reconnect. The message is recorded even if no
+  handler is currently attached, in which case `:ok` is still returned.
   """
   @spec route_to_session(GenServer.server(), String.t(), binary()) ::
           :ok | {:error, term()}
   def route_to_session(transport, session_id, message) do
     GenServer.call(transport, {:route_to_session, session_id, message})
+  end
+
+  @doc """
+  Returns the resumability config for this transport as `{event_store, retry}`,
+  where `event_store` is `{module, name}` or `nil` and `retry` is the SSE
+  `retry:` value in milliseconds or `nil`. Read by the Plug when opening an SSE
+  stream.
+  """
+  @spec resumability_config(GenServer.server()) :: {term() | nil, non_neg_integer() | nil}
+  def resumability_config(transport) do
+    GenServer.call(transport, :resumability_config)
+  end
+
+  @doc """
+  Closes a session's resumable stream and drops its recorded events. Called on
+  `DELETE` (explicit session termination). No-op when resumability is disabled.
+  """
+  @spec close_session_stream(GenServer.server(), String.t()) :: :ok
+  def close_session_stream(transport, session_id) do
+    GenServer.cast(transport, {:close_session_stream, session_id})
   end
 
   # GenServer implementation
@@ -131,7 +163,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       task_supervisor: opts.task_supervisor,
       sse_handlers: %{},
       keepalive_interval: opts.keepalive_interval,
-      keepalive_enabled: opts.keepalive
+      keepalive_enabled: opts.keepalive,
+      event_store: opts.event_store,
+      sse_retry: opts.sse_retry,
+      stream_grace: opts.stream_grace,
+      streams: MapSet.new(),
+      stream_timers: %{}
     }
 
     if should_keepalive?(state) do
@@ -183,7 +220,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       handler_pid: inspect(pid)
     })
 
-    new_state = %{state | sse_handlers: sse_handlers}
+    # Open the session's stream so broadcasts keep recording into it across
+    # handler disconnects (the reconnect gap), and cancel any pending grace-close
+    # timer since the client has reconnected.
+    streams = open_stream(state, session_id)
+    stream_timers = cancel_close_timer(state.stream_timers, session_id)
+
+    new_state = %{state | sse_handlers: sse_handlers, streams: streams, stream_timers: stream_timers}
 
     # Start keepalive when first SSE handler is registered
     # This fixes the bug where keepalive never starts if server has no handlers at init
@@ -204,14 +247,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_call({:route_to_session, session_id, message}, _from, state) do
-    case Map.get(state.sse_handlers, session_id) do
-      {pid, _ref} ->
-        send(pid, {:sse_message, message})
-        {:reply, :ok, state}
-
-      nil ->
-        {:reply, {:error, :no_sse_handler}, state}
-    end
+    route(state, session_id, message)
   end
 
   @impl GenServer
@@ -221,11 +257,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       active_handlers: map_size(state.sse_handlers)
     })
 
-    for {_session_id, {pid, _ref}} <- state.sse_handlers do
-      send(pid, {:sse_message, message})
-    end
+    {:reply, broadcast(state, message), state}
+  end
 
-    {:reply, :ok, state}
+  @impl GenServer
+  def handle_call(:resumability_config, _from, state) do
+    {:reply, {state.event_store, state.sse_retry}, state}
   end
 
   @impl GenServer
@@ -235,20 +272,24 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_cast({:unregister_sse_handler, session_id, expected_pid}, state) do
-    sse_handlers =
-      case Map.get(state.sse_handlers, session_id) do
-        {pid, _ref} when is_pid(expected_pid) and pid != expected_pid ->
-          state.sse_handlers
+    case Map.get(state.sse_handlers, session_id) do
+      {pid, _ref} when is_pid(expected_pid) and pid != expected_pid ->
+        {:noreply, state}
 
-        {_pid, ref} ->
-          Process.demonitor(ref, [:flush])
-          Map.delete(state.sse_handlers, session_id)
+      {_pid, ref} ->
+        Process.demonitor(ref, [:flush])
+        state = %{state | sse_handlers: Map.delete(state.sse_handlers, session_id)}
+        {:noreply, schedule_close_if_open(state, session_id)}
 
-        nil ->
-          state.sse_handlers
-      end
+      nil ->
+        {:noreply, state}
+    end
+  end
 
-    {:noreply, %{state | sse_handlers: sse_handlers}}
+  @impl GenServer
+  def handle_cast({:close_session_stream, session_id}, state) do
+    timers = cancel_close_timer(state.stream_timers, session_id)
+    close_stream(%{state | stream_timers: timers}, session_id)
   end
 
   @impl GenServer
@@ -270,18 +311,34 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_info({:DOWN, ref, :process, pid, reason}, state) do
-    sse_handlers =
-      state.sse_handlers
-      |> Enum.reject(fn {_session_id, {handler_pid, monitor_ref}} ->
-        handler_pid == pid and monitor_ref == ref
-      end)
-      |> Map.new()
+    case find_handler_session(state.sse_handlers, pid, ref) do
+      nil ->
+        {:noreply, state}
 
-    if map_size(sse_handlers) < map_size(state.sse_handlers) do
-      Logging.transport_event("sse_handler_down", %{reason: inspect(reason)})
+      session_id ->
+        Logging.transport_event("sse_handler_down", %{reason: inspect(reason)})
+        state = %{state | sse_handlers: Map.delete(state.sse_handlers, session_id)}
+        {:noreply, schedule_close_if_open(state, session_id)}
     end
+  end
 
-    {:noreply, %{state | sse_handlers: sse_handlers}}
+  def handle_info({:close_stream_if_idle, session_id, token}, state) do
+    case Map.get(state.stream_timers, session_id) do
+      {_ref, ^token} ->
+        timers = Map.delete(state.stream_timers, session_id)
+
+        if Map.has_key?(state.sse_handlers, session_id) do
+          {:noreply, %{state | stream_timers: timers}}
+        else
+          close_stream(%{state | stream_timers: timers}, session_id)
+        end
+
+      # Stale message: the timer was cancelled/superseded (e.g. the client
+      # reconnected and re-disconnected, arming a fresh timer). Ignore it so it
+      # cannot close the newly reopened stream.
+      _ ->
+        {:noreply, state}
+    end
   end
 
   def handle_info(:send_keepalive, state) do
@@ -333,5 +390,119 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   #   * `state` - The GenServer state containing keepalive config and handlers
   defp should_keepalive?(state) do
     state.keepalive_enabled and not Enum.empty?(state.sse_handlers)
+  end
+
+  # Resumability helpers. With no event store these are no-ops and the transport
+  # keeps its legacy connected-handlers-only broadcast behavior.
+
+  defp open_stream(%{event_store: nil} = state, _session_id), do: state.streams
+
+  defp open_stream(%{event_store: {_mod, _name}} = state, session_id) do
+    MapSet.put(state.streams, session_id)
+  end
+
+  defp route(%{event_store: nil} = state, session_id, message) do
+    case Map.get(state.sse_handlers, session_id) do
+      {pid, _ref} ->
+        send(pid, {:sse_message, message})
+        {:reply, :ok, state}
+
+      nil ->
+        {:reply, {:error, :no_sse_handler}, state}
+    end
+  end
+
+  defp route(%{event_store: {_mod, _name} = store} = state, session_id, message) do
+    if MapSet.member?(state.streams, session_id) do
+      {:reply, record_and_deliver(store, state.sse_handlers, session_id, message), state}
+    else
+      {:reply, {:error, :no_sse_handler}, state}
+    end
+  end
+
+  defp broadcast(%{event_store: nil} = state, message) do
+    for {_session_id, {pid, _ref}} <- state.sse_handlers do
+      send(pid, {:sse_message, message})
+    end
+
+    :ok
+  end
+
+  # Records into every open stream; returns the first append error (if any) so a
+  # dropped write is surfaced to the caller rather than silently swallowed.
+  defp broadcast(%{event_store: {_mod, _name} = store} = state, message) do
+    Enum.reduce(state.streams, :ok, fn session_id, acc ->
+      keep_first_error(acc, record_and_deliver(store, state.sse_handlers, session_id, message))
+    end)
+  end
+
+  defp keep_first_error({:error, _reason} = first, _result), do: first
+  defp keep_first_error(:ok, result), do: result
+
+  # Records the event, then delivers it live (with its store id) only if it was
+  # actually recorded. A failed append is logged and NOT delivered with a bogus
+  # legacy id, which would corrupt the client's resumption cursor; the error is
+  # returned so callers can surface it rather than reporting a phantom success.
+  defp record_and_deliver({mod, name}, sse_handlers, session_id, message) do
+    case mod.append(name, session_id, message) do
+      {:ok, id} ->
+        case Map.get(sse_handlers, session_id) do
+          {pid, _ref} -> send(pid, {:sse_message, message, id})
+          nil -> :ok
+        end
+
+        :ok
+
+      {:error, reason} = error ->
+        Logging.transport_event("sse_record_failed", %{session_id: session_id, reason: inspect(reason)}, level: :warning)
+        error
+    end
+  end
+
+  # Schedules a bounded grace timer to close a session's stream once its handler
+  # has been absent for `:stream_grace`. Cancelled on reconnect. This keeps
+  # recording across short reconnect gaps while bounding memory for sessions that
+  # drop and never return (which would otherwise leak and thrash the store's LRU).
+  defp schedule_close_if_open(%{event_store: nil} = state, _session_id), do: state
+
+  defp schedule_close_if_open(state, session_id) do
+    if MapSet.member?(state.streams, session_id) do
+      timers = cancel_close_timer(state.stream_timers, session_id)
+      token = make_ref()
+      ref = Process.send_after(self(), {:close_stream_if_idle, session_id, token}, state.stream_grace)
+      %{state | stream_timers: Map.put(timers, session_id, {ref, token})}
+    else
+      state
+    end
+  end
+
+  defp cancel_close_timer(timers, session_id) do
+    case Map.pop(timers, session_id) do
+      {nil, timers} ->
+        timers
+
+      {{ref, _token}, timers} ->
+        Process.cancel_timer(ref)
+        timers
+    end
+  end
+
+  defp close_stream(%{event_store: nil} = state, _session_id), do: {:noreply, state}
+
+  defp close_stream(%{event_store: {mod, name}} = state, session_id) do
+    log_delete_result(mod.delete(name, session_id), session_id)
+    {:noreply, %{state | streams: MapSet.delete(state.streams, session_id)}}
+  end
+
+  defp log_delete_result(:ok, _session_id), do: :ok
+
+  defp log_delete_result({:error, reason}, session_id) do
+    Logging.transport_event("sse_delete_failed", %{session_id: session_id, reason: inspect(reason)}, level: :warning)
+  end
+
+  defp find_handler_session(sse_handlers, pid, ref) do
+    Enum.find_value(sse_handlers, fn {session_id, {handler_pid, monitor_ref}} ->
+      if handler_pid == pid and monitor_ref == ref, do: session_id
+    end)
   end
 end

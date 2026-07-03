@@ -72,6 +72,19 @@ defmodule Anubis.Server.Registry do
   @spec task_store_name(module()) :: atom()
   def task_store_name(server), do: :"Anubis.#{server}.task_store"
 
+  @doc """
+  Default atom name for a server's Streamable HTTP SSE event store process.
+  Adapters may override via the optional `resolve_name/2` callback to return a
+  `:via` tuple for distributed deployments.
+
+  ## Examples
+
+      iex> Anubis.Server.Registry.event_store_name(MyApp.Server)
+      :"Anubis.Elixir.MyApp.Server.event_store"
+  """
+  @spec event_store_name(module()) :: atom()
+  def event_store_name(server), do: :"Anubis.#{server}.event_store"
+
   @spec session_supervisor_name(module()) :: atom()
   def session_supervisor_name(server), do: :"Anubis.#{server}.session_supervisor"
 
