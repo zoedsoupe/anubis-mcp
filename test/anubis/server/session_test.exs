@@ -532,4 +532,57 @@ defmodule Anubis.Server.SessionTest do
       assert {:error, _} = Anubis.Server.send_elicitation_request("hi", bad_schema)
     end
   end
+
+  describe "supervisor shutdown lifecycle" do
+    test "terminate telemetry fires when stopped via DynamicSupervisor" do
+      handler_id = "session-terminate-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:anubis_mcp, :server, :terminate],
+          fn _event, _measurements, metadata, pid ->
+            send(pid, {:server_terminate, metadata})
+          end,
+          test_pid
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      sup_name = :"session_sup_#{System.unique_integer([:positive])}"
+      {:ok, _sup} = DynamicSupervisor.start_link(name: sup_name, strategy: :one_for_one)
+
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({StubTransport, name: transport_name}, id: :trap_exit_transport)
+      start_supervised!({Task.Supervisor, name: task_sup}, id: :trap_exit_task_sup)
+
+      session_id = "supervisor-stop-#{System.unique_integer([:positive])}"
+      session_name = Registry.session_name(StubServer, session_id)
+
+      child_spec = %{
+        id: Session,
+        start:
+          {Session, :start_link,
+           [
+             [
+               session_id: session_id,
+               server_module: StubServer,
+               name: session_name,
+               transport: [layer: StubTransport, name: transport_name],
+               task_supervisor: task_sup
+             ]
+           ]}
+      }
+
+      {:ok, session_pid} = DynamicSupervisor.start_child(sup_name, child_spec)
+      assert Process.alive?(session_pid)
+
+      assert :ok = DynamicSupervisor.terminate_child(sup_name, session_pid)
+      refute Process.alive?(session_pid)
+
+      assert_receive {:server_terminate, %{session_id: ^session_id}}, 1_000
+    end
+  end
 end

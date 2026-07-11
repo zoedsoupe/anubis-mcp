@@ -149,6 +149,8 @@ defmodule Anubis.Server.Session do
 
   @impl GenServer
   def init(opts) do
+    Process.flag(:trap_exit, true)
+
     module = opts.server_module
     server_info = module.server_info()
     capabilities = module.server_capabilities()
