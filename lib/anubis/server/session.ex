@@ -149,6 +149,7 @@ defmodule Anubis.Server.Session do
 
   @impl GenServer
   def init(opts) do
+    Process.flag(:trap_exit, true)
     module = opts.server_module
     server_info = module.server_info()
     capabilities = module.server_capabilities()
@@ -489,6 +490,10 @@ defmodule Anubis.Server.Session do
 
   def handle_info({:send_task_status, task_id}, state) do
     _ = emit_task_status_notification(state, task_id)
+    {:noreply, state}
+  end
+
+  def handle_info({:EXIT, _pid, _reason}, state) do
     {:noreply, state}
   end
 
