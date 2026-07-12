@@ -551,7 +551,7 @@ defmodule Anubis.Server.SessionTest do
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
       sup_name = :"session_sup_#{System.unique_integer([:positive])}"
-      {:ok, _sup} = DynamicSupervisor.start_link(name: sup_name, strategy: :one_for_one)
+      start_supervised!({DynamicSupervisor, name: sup_name, strategy: :one_for_one}, id: sup_name)
 
       transport_name = Registry.transport_name(StubServer, StubTransport)
       task_sup = Registry.task_supervisor_name(StubServer)
