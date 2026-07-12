@@ -49,6 +49,21 @@ defmodule Anubis.MCP.ErrorTest do
     end
   end
 
+  describe "wrap_reason/1" do
+    test "passes through existing MCP errors" do
+      error = Error.protocol(:invalid_request, %{message: "unauthorized"})
+      assert Error.wrap_reason(error) == error
+    end
+
+    test "wraps tuples and other terms as encodable internal errors" do
+      error = Error.wrap_reason({:init_failed, %{code: "unauthorized"}})
+
+      assert error.reason == :internal_error
+      assert is_binary(error.data.message)
+      assert String.contains?(error.data.message, "init_failed")
+    end
+  end
+
   describe "transport errors" do
     test "transport/2 creates connection error" do
       error = Error.transport(:connection_refused)

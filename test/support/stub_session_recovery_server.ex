@@ -52,3 +52,49 @@ defmodule StubSessionRecoveryRejectServer do
     {:error, :no_recovery_allowed}
   end
 end
+
+defmodule StubInitRejectServer do
+  @moduledoc """
+  Test server that rejects session setup via init/2.
+  """
+
+  use Anubis.Server,
+    name: "Init Reject Test Server",
+    version: "1.0.0",
+    capabilities: []
+
+  alias Anubis.MCP.Error
+
+  @impl true
+  def handle_request(%{"method" => _}, frame) do
+    {:error, Error.protocol(:method_not_found), frame}
+  end
+
+  @impl true
+  def init(_client_info, _frame) do
+    {:error, %{code: "unauthorized"}}
+  end
+end
+
+defmodule StubInitRejectWithErrorServer do
+  @moduledoc """
+  Test server that rejects session setup via init/2 with a structured MCP error.
+  """
+
+  use Anubis.Server,
+    name: "Init Reject With Error Test Server",
+    version: "1.0.0",
+    capabilities: []
+
+  alias Anubis.MCP.Error
+
+  @impl true
+  def handle_request(%{"method" => _}, frame) do
+    {:error, Error.protocol(:method_not_found), frame}
+  end
+
+  @impl true
+  def init(_client_info, _frame) do
+    {:error, Error.protocol(:invalid_request, %{message: "unauthorized"})}
+  end
+end
