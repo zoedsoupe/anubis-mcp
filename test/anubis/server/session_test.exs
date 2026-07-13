@@ -585,7 +585,7 @@ defmodule Anubis.Server.SessionTest do
       assert Process.alive?(pid)
       :ok = DynamicSupervisor.terminate_child(session_sup, pid)
 
-      assert_receive {:host_terminated, %{reason: _}}, 500
+      assert_receive {:host_terminated, %{reason: :shutdown}}, 500
       refute Process.alive?(pid)
     end
 
