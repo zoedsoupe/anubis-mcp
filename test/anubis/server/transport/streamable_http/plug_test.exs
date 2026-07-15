@@ -97,6 +97,17 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
                timeout: 30_000
              } = opts
     end
+
+    test "defaults subscriber_metadata to a 1-arity function" do
+      opts = StreamableHTTPPlug.init(server: StubServer)
+      assert is_function(opts.subscriber_metadata, 1)
+    end
+
+    test "stores a configured subscriber_metadata callback" do
+      fun = fn _conn -> %{tenant: "acme"} end
+      opts = StreamableHTTPPlug.init(server: StubServer, subscriber_metadata: fun)
+      assert opts.subscriber_metadata == fun
+    end
   end
 
   describe "GET endpoint" do
@@ -142,6 +153,34 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert conn.status == 406
       {:ok, body} = Jason.decode(conn.resp_body)
       assert body["error"]["message"] == "Invalid Request"
+    end
+
+    test "GET SSE registration attaches configured subscriber metadata", %{transport: transport} do
+      opts =
+        StreamableHTTPPlug.init(
+          server: StubServer,
+          subscriber_metadata: fn _conn -> %{tenant: "acme"} end
+        )
+
+      session_id = "meta-session-#{System.unique_integer([:positive])}"
+
+      task =
+        Task.async(fn ->
+          :get
+          |> conn("/")
+          |> put_req_header("accept", "text/event-stream")
+          |> put_req_header("mcp-session-id", session_id)
+          |> StreamableHTTPPlug.call(opts)
+        end)
+
+      handler = wait_for_sse_handler(transport, session_id, 1_000)
+      assert is_pid(handler)
+
+      assert StreamableHTTP.handler_count(transport, &(&1[:tenant] == "acme")) == 1
+
+      # Unblock the streaming loop so the Task can finish.
+      send(handler, :close_sse)
+      Task.await(task, 5_000)
     end
   end
 
