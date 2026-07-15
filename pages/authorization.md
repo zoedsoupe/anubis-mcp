@@ -155,12 +155,12 @@ forward "/.well-known/oauth-protected-resource",
 
 ## Standards
 
-| Standard | Coverage |
-|---|---|
-| RFC 6750 | Bearer token usage on `Authorization` header |
-| RFC 9728 | Protected Resource Metadata (`/.well-known/oauth-protected-resource`) |
-| RFC 8707 | Audience validation (`aud` claim against `resource` URI) |
-| RFC 7662 | Token Introspection |
-| RFC 7519 + 7517 | JWT + JWKS verification |
+| Standard        | Coverage                                                              |
+| --------------- | --------------------------------------------------------------------- |
+| RFC 6750        | Bearer token usage on `Authorization` header                          |
+| RFC 9728        | Protected Resource Metadata (`/.well-known/oauth-protected-resource`) |
+| RFC 8707        | Audience validation (`aud` claim against `resource` URI)              |
+| RFC 7662        | Token Introspection                                                   |
+| RFC 7519 + 7517 | JWT + JWKS verification                                               |
 
 Client-side OAuth flows (PKCE, discovery, token store, refresh) are out of scope — use a dedicated OAuth client library for those.
