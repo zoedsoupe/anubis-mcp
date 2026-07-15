@@ -6,11 +6,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1781026685,
-        "narHash": "sha256-lKhjAoAR5i8qPH61XcVEfA16J5OIlcJoT3yc+of+ULo=",
+        "lastModified": 1784137398,
+        "narHash": "sha256-vv49AOMPmlua58rEi3WEI68PCxjO8c6ARs4wPPsxXDw=",
         "owner": "zoedsoupe",
         "repo": "elixir-overlay",
-        "rev": "f5980c8ec3608152117f18bbedc2d8b7bb5a2845",
+        "rev": "8ca08229f255a774e2266782cc92694b8ceb7f93",
         "type": "github"
       },
       "original": {
@@ -55,16 +55,16 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1780952837,
-        "narHash": "sha256-Fwd1+spDtQ0hDyBwme6ufG3n4mY0UrjjFdYHv+G/Hds=",
+        "lastModified": 1784113276,
+        "narHash": "sha256-EQSc+5dtKeYAukjbFIVHIU9mqzUmyVkRJB0uas1y8Tw=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "e820eb4a444b46a19b2e03e8dfd2359439ff30fe",
+        "rev": "489b2361bda37b7ee35e04ddf4be96048fe12cce",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixos-25.11-small",
+        "ref": "nixos-26.05-small",
         "repo": "nixpkgs",
         "type": "github"
       }
