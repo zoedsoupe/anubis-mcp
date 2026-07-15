@@ -1,0 +1,102 @@
+name: PR Quality
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+jobs:
+  pr-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: peakoss/anti-slop@v0
+        with:
+          # General Settings
+          max-failures: 4
+
+          # PR Branch Checks
+          # Reject PRs opened *from* someone's main/master (classic drive-by slop).
+          blocked-source-branches: |
+            main
+            master
+
+          # PR Size Checks
+          max-changed-files: 15
+          max-changed-lines: 4000
+
+          # PR Quality Checks
+          max-negative-reactions: 0
+          require-maintainer-can-modify: true
+
+          # PR Title Checks
+          # ON: squash-merged titles feed release-please's changelog. Maintainers
+          # are exempt (see exempt-author-association) so this only gates external
+          # PRs, and dependabot's non-conventional "deps:" is bot-exempt.
+          require-conventional-title: true
+
+          # PR Description Checks
+          require-description: true
+          max-description-length: 2500
+          max-emoji-count: 2
+          max-code-references: 5
+          require-linked-issue: false
+
+          # PR Template Checks
+          # ON: repo ships a Problem/Solution/Rationale template. Non-strict so
+          # extra prose is fine; we just want the sections present.
+          require-pr-template: true
+
+          # Commit Message Checks
+          # Title check above is enough; per-commit conventional check punishes
+          # messy-but-fine intermediate commits that squash away anyway.
+          require-conventional-commits: false
+          max-commit-message-length: 500
+          require-commit-author-match: true
+
+          # File Checks
+          blocked-paths: |
+            README.md
+            LICENSE
+          require-final-newline: true
+          # On-brand: CLAUDE.md forbids gratuitous comments; AI-slop PRs are
+          # comment-heavy. Low cap catches them.
+          max-added-comments: 8
+
+          # User Checks (anti-spam signals that don't punish real newcomers)
+          detect-spam-usernames: true
+          min-account-age: 30
+          max-daily-forks: 6
+          require-public-profile: true
+          min-profile-completeness: 4
+
+          # Merge Checks
+          # min-global-merge-ratio left at 0: a genuine first-ever contributor has
+          # a 0 ratio and would be auto-rejected. Account-age + spam-username +
+          # fork-rate + profile checks carry the anti-spam load instead.
+          min-global-merge-ratio: 0
+
+          # Exemptions
+          exempt-bots: |
+            github-actions[bot]
+            dependabot[bot]
+            coderabbitai
+          # OWNER/MEMBER/COLLABORATOR skip all checks -> your own "config:"/"chore:"
+          # direct PRs never trip the conventional-title gate.
+          exempt-author-association: "OWNER,MEMBER,COLLABORATOR"
+          exempt-label: "exempt"
+
+          # PR Failure Actions
+          # Label + comment instead of auto-closing. One false positive shouldn't
+          # slam the door on a real contributor in a small community lib.
+          failure-add-pr-labels: "needs-work"
+          failure-pr-message: |
+            Thanks for the PR! Some automated quality checks didn't pass - see the
+            action logs above for specifics. A maintainer will still take a look.
+            Common fixes: use a conventional title (`fix:`, `feat:`, `docs:` ...),
+            fill in the Problem/Solution/Rationale template, and keep the diff focused.
+          close-pr: false
+          lock-pr: false
