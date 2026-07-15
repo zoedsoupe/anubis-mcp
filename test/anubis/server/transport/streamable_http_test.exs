@@ -49,6 +49,40 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       refute StreamableHTTP.get_sse_handler(transport, session_id)
     end
 
+    test "emits telemetry when an SSE handler registers", %{transport: transport, server: server} do
+      event = [:anubis_mcp, :transport, :sse_handler, :registered]
+      handler_id = "test-sse-register-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        event,
+        fn ^event, measurements, metadata, _config ->
+          send(test_pid, {:telemetry_event, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      session_id = "test-session-telemetry"
+      handler_pid = self()
+
+      assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+
+      assert_receive {:telemetry_event, measurements, metadata}
+      assert %{count: 1, system_time: system_time} = measurements
+      assert is_integer(system_time)
+
+      assert %{
+               transport: :streamable_http,
+               server: ^server,
+               session_id: ^session_id,
+               handler_pid: ^handler_pid,
+               handler_count: 1
+             } = metadata
+    end
+
     test "stale unregister cannot remove a newer handler", %{transport: transport} do
       session_id = "test-session-race"
       test_pid = self()

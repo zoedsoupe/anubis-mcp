@@ -43,6 +43,7 @@ defmodule Anubis.Telemetry do
   def event_transport_disconnect, do: [:transport, :disconnect]
   def event_transport_error, do: [:transport, :error]
   def event_transport_terminate, do: [:transport, :terminate]
+  def event_transport_sse_handler_registered, do: [:transport, :sse_handler, :registered]
 
   # Message events
   def event_message_encode, do: [:message, :encode]
