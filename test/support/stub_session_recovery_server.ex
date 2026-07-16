@@ -20,7 +20,12 @@ defmodule StubSessionRecoveryServer do
 
   @impl true
   def handle_session_expired(_session_id, frame) do
-    frame = assign(frame, :recovery_ran, true)
+    frame =
+      frame
+      |> assign(:recovery_ran, true)
+      |> assign(:seen_assigns, frame.assigns)
+      |> assign(:seen_context, frame.context)
+
     {:ok, %{"name" => "recovered-client", "version" => "1.0"}, frame}
   end
 end
