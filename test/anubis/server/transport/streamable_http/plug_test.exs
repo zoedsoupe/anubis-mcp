@@ -286,10 +286,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
     end
 
     test "POST request does not log tool arguments", %{opts: opts, test_session_id: session_id} do
-      previous_level = Logger.level()
-      Logger.configure(level: :debug)
-      on_exit(fn -> Logger.configure(level: previous_level) end)
-
       secret = "sk-secret-#{System.unique_integer([:positive])}"
       request = build_request("tools/call", %{"name" => "echo", "arguments" => %{"token" => secret}})
       {:ok, body} = Message.encode_request(request, 1)
