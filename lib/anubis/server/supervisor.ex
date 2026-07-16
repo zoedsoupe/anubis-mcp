@@ -11,6 +11,9 @@ defmodule Anubis.Server.Supervisor do
   alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.STDIO
   alias Anubis.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Transport.StreamableHTTP.EventStore
+
+  @default_event_store Anubis.Server.Transport.StreamableHTTP.EventStore.InMemory
 
   @type sse :: {:sse, keyword()}
   @type stream_http :: {:streamable_http, keyword()}
@@ -114,13 +117,18 @@ defmodule Anubis.Server.Supervisor do
 
       :persistent_term.put({__MODULE__, server, :session_config}, session_config)
 
+      {event_store_spec, sse_retry} = resolve_event_store(transport, server)
+
       transport_opts =
         Keyword.merge(transport_opts,
           request_timeout: request_timeout,
-          task_supervisor: task_supervisor
+          task_supervisor: task_supervisor,
+          event_store: event_store_reference(event_store_spec),
+          sse_retry: sse_retry
         )
 
       task_store_child = task_store_child_spec(task_store_mod, task_store_opts, task_store_name)
+      event_store_child = event_store_child_spec(event_store_spec)
 
       children =
         case transport do
@@ -137,7 +145,8 @@ defmodule Anubis.Server.Supervisor do
           _ ->
             extra_children =
               List.wrap(maybe_finch_child(opts, finch_name)) ++
-                session_store_children(Application.get_env(:anubis_mcp, :session_store, []))
+                session_store_children(Application.get_env(:anubis_mcp, :session_store, [])) ++
+                List.wrap(event_store_child)
 
             build_http_children(
               server,
@@ -262,6 +271,68 @@ defmodule Anubis.Server.Supervisor do
 
   defp task_store_child_spec(adapter, store_opts, store_name) do
     case adapter.child_spec(Keyword.put_new(store_opts, :name, store_name)) do
+      :ignore -> nil
+      spec -> spec
+    end
+  end
+
+  # Resolves the optional SSE event store for resumability. Only the
+  # streamable_http transport carries a standalone stream, so other transports
+  # never get a store. Returns `{spec, retry}` where `spec` is `{module, opts,
+  # name}` or `nil`, and `retry` is the configured SSE `retry:` value.
+  defp resolve_event_store({:streamable_http, opts}, server) do
+    spec = event_store_spec(Keyword.get(opts, :event_store, false), opts, server)
+    retry = Keyword.get(opts, :sse_retry)
+
+    if is_nil(spec) and not is_nil(retry) do
+      Logging.log(
+        :warning,
+        "streamable_http :sse_retry is set but resumability (:event_store) is disabled; the retry field will not be emitted",
+        []
+      )
+    end
+
+    {spec, retry}
+  end
+
+  defp resolve_event_store(_transport, _server), do: {nil, nil}
+
+  defp event_store_spec(disabled, _opts, _server) when disabled in [false, nil], do: nil
+
+  defp event_store_spec(true, opts, server) do
+    event_store_spec({@default_event_store, default_event_store_opts(opts)}, opts, server)
+  end
+
+  defp event_store_spec({mod, store_opts}, _opts, server) when is_atom(mod) and is_list(store_opts) do
+    {mod, store_opts, EventStore.resolve_name(mod, server, store_opts)}
+  end
+
+  defp event_store_spec(mod, opts, server) when is_atom(mod) do
+    event_store_spec({mod, []}, opts, server)
+  end
+
+  defp event_store_spec(other, _opts, _server) do
+    raise ArgumentError,
+          "invalid :event_store #{inspect(other)} for the streamable_http transport; " <>
+            "expected false | nil | true | module | {module, keyword}"
+  end
+
+  # Surfaces the in-memory store's bounds through the transport opts, dropping
+  # any the host did not set so the adapter's own defaults apply.
+  defp default_event_store_opts(opts) do
+    Enum.reject(
+      [history_size: Keyword.get(opts, :event_store_history), max_sessions: Keyword.get(opts, :event_store_max_sessions)],
+      fn {_key, value} -> is_nil(value) end
+    )
+  end
+
+  defp event_store_reference(nil), do: nil
+  defp event_store_reference({mod, _opts, name}), do: {mod, name}
+
+  defp event_store_child_spec(nil), do: nil
+
+  defp event_store_child_spec({mod, store_opts, name}) do
+    case mod.child_spec(Keyword.put_new(store_opts, :name, name)) do
       :ignore -> nil
       spec -> spec
     end

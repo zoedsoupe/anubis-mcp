@@ -142,10 +142,16 @@ if Code.ensure_loaded?(Plug) do
       if wants_sse?(conn) do
         session_id = get_or_create_session_id(conn, session_header)
         metadata = resolve_subscriber_metadata(opts, conn)
+        resume_from = parse_last_event_id(conn)
 
         case StreamableHTTP.register_sse_handler(transport, session_id, metadata) do
           :ok ->
-            start_sse_streaming(conn, Map.put(opts, :session_id, session_id))
+            params =
+              opts
+              |> Map.put(:session_id, session_id)
+              |> Map.put(:resume_from, resume_from)
+
+            start_sse_streaming(conn, params)
 
           {:error, reason} ->
             Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
@@ -154,6 +160,22 @@ if Code.ensure_loaded?(Plug) do
         end
       else
         send_error(conn, 406, "Accept header must include text/event-stream")
+      end
+    end
+
+    # Parses the client's resumption cursor from the `Last-Event-ID` header.
+    # Returns the event id as a non-negative integer, or `nil` when the header is
+    # absent or not a well-formed cursor issued by this transport.
+    defp parse_last_event_id(conn) do
+      case get_req_header(conn, "last-event-id") do
+        [value | _] ->
+          case Integer.parse(value) do
+            {id, ""} when id >= 0 -> id
+            _ -> nil
+          end
+
+        [] ->
+          nil
       end
     end
 
@@ -367,7 +389,7 @@ if Code.ensure_loaded?(Plug) do
       conn = put_resp_header(conn, session_header, session_id)
       conn = Streaming.prepare_connection(conn)
 
-      case Streaming.send_event(conn, response, 0) do
+      case Streaming.send_event(conn, response, nil) do
         {:ok, conn} ->
           conn
 
@@ -386,12 +408,25 @@ if Code.ensure_loaded?(Plug) do
       case get_req_header(conn, session_header) do
         [session_id] when is_binary(session_id) and session_id != "" ->
           StreamableHTTP.unregister_sse_handler(transport, session_id)
-          delete_session_from_store(session_id)
-          stop_session_process(opts, session_id)
 
-          conn
-          |> put_resp_content_type("application/json")
-          |> send_resp(200, "{}")
+          case StreamableHTTP.close_session_stream(transport, session_id) do
+            :ok ->
+              delete_session_from_store(session_id)
+              stop_session_process(opts, session_id)
+
+              conn
+              |> put_resp_content_type("application/json")
+              |> send_resp(200, "{}")
+
+            {:error, reason} ->
+              Logging.transport_event(
+                "session_stream_delete_failed",
+                %{session_id: session_id, reason: inspect(reason)},
+                level: :error
+              )
+
+              send_error(conn, 500, "Failed to delete session stream")
+          end
 
         _ ->
           send_error(conn, 400, "Session ID required")
@@ -782,11 +817,15 @@ if Code.ensure_loaded?(Plug) do
     defp start_sse_streaming(conn, params) do
       %{transport: transport, session_id: session_id, session_header: session_header} = params
       handler_pid = self()
+      {event_store, retry} = StreamableHTTP.resumability_config(transport)
 
       conn
       |> put_resp_header(session_header, session_id)
       |> Streaming.prepare_connection()
       |> Streaming.start(transport, session_id,
+        event_store: event_store,
+        resume_from: Map.get(params, :resume_from),
+        retry: retry,
         on_close: fn ->
           StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
         end

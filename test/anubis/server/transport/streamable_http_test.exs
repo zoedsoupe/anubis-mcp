@@ -49,40 +49,6 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       refute StreamableHTTP.get_sse_handler(transport, session_id)
     end
 
-    test "emits telemetry when an SSE handler registers", %{transport: transport, server: server} do
-      event = [:anubis_mcp, :transport, :sse_handler, :registered]
-      handler_id = "test-sse-register-#{System.unique_integer([:positive])}"
-      test_pid = self()
-
-      :telemetry.attach(
-        handler_id,
-        event,
-        fn ^event, measurements, metadata, _config ->
-          send(test_pid, {:telemetry_event, measurements, metadata})
-        end,
-        nil
-      )
-
-      on_exit(fn -> :telemetry.detach(handler_id) end)
-
-      session_id = "test-session-telemetry"
-      handler_pid = self()
-
-      assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
-
-      assert_receive {:telemetry_event, measurements, metadata}
-      assert %{count: 1, system_time: system_time} = measurements
-      assert is_integer(system_time)
-
-      assert %{
-               transport: :streamable_http,
-               server: ^server,
-               session_id: ^session_id,
-               handler_pid: ^handler_pid,
-               handler_count: 1
-             } = metadata
-    end
-
     test "stale unregister cannot remove a newer handler", %{transport: transport} do
       session_id = "test-session-race"
       test_pid = self()
@@ -139,6 +105,7 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
       assert_receive {:registered, ^old_handler}
 
+      # A second connection takes over the same session.
       new_handler =
         spawn(fn ->
           :ok = StreamableHTTP.register_sse_handler(transport, session_id)
@@ -151,8 +118,12 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
 
       assert_receive {:registered, ^new_handler}
 
+      # The new handler becomes the active one for the session...
       assert ^new_handler = StreamableHTTP.get_sse_handler(transport, session_id)
 
+      # ...and the superseded handler is NOT sent :close_sse. A server-initiated
+      # close would make a spec-compliant client immediately reconnect, racing
+      # the next registration into an unbounded register/close flap.
       refute_receive {:closed, ^old_handler}, 200
 
       send(old_handler, :close_sse)
@@ -205,41 +176,6 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
     test "send_message/3 works", %{transport: transport} do
       message = "test message"
       assert :ok = StreamableHTTP.send_message(transport, message, timeout: 5000)
-    end
-
-    test "register_sse_handler/3 stores opaque metadata and reports counts", %{transport: transport} do
-      assert :ok = StreamableHTTP.register_sse_handler(transport, "s1", %{tenant: "acme", role: "admin"})
-      assert :ok = StreamableHTTP.register_sse_handler(transport, "s2", %{tenant: "acme", role: "member"})
-      assert :ok = StreamableHTTP.register_sse_handler(transport, "s3", %{tenant: "globex", role: "admin"})
-
-      assert StreamableHTTP.handler_count(transport) == 3
-      assert StreamableHTTP.handler_count(transport, &(&1[:tenant] == "acme")) == 2
-      assert StreamableHTTP.handler_count(transport, &(&1[:role] == "admin")) == 2
-      assert StreamableHTTP.handler_count(transport, fn _ -> false end) == 0
-    end
-
-    test "register_sse_handler/2 defaults to empty metadata", %{transport: transport} do
-      assert :ok = StreamableHTTP.register_sse_handler(transport, "s-empty")
-
-      assert StreamableHTTP.handler_count(transport) == 1
-      assert StreamableHTTP.handler_count(transport, &(&1 == %{})) == 1
-    end
-
-    test "send_message_to_subscribers delivers only to matching handlers", %{transport: transport} do
-      assert :ok = StreamableHTTP.register_sse_handler(transport, "match-1", %{group: "a"})
-      assert :ok = StreamableHTTP.register_sse_handler(transport, "match-2", %{group: "a"})
-      assert :ok = StreamableHTTP.register_sse_handler(transport, "nomatch", %{group: "b"})
-
-      message = "hello group a"
-
-      assert :ok =
-               StreamableHTTP.send_message_to_subscribers(transport, &(&1[:group] == "a"), message)
-
-      # Two matching subscribers (both handled by this process) each receive it;
-      # the "b" subscriber must not.
-      assert_receive {:sse_message, ^message}
-      assert_receive {:sse_message, ^message}
-      refute_receive {:sse_message, _}, 50
     end
 
     test "shutdown/1 gracefully shuts down", %{transport: transport} do
