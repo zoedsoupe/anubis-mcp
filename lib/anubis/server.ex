@@ -127,8 +127,13 @@ defmodule Anubis.Server do
   It receives the client's information and
   the current frame, allowing you to perform client-specific setup, validate capabilities,
   or prepare resources based on the connected client.
+
+  Returning `{:error, reason}` rejects the session: the transport answers the
+  request with an encodable JSON-RPC error. Return an `Anubis.MCP.Error` struct
+  to control the error code sent to the client; any other term is wrapped as an
+  internal error with a stringified message.
   """
-  @callback init(client_info :: map(), Frame.t()) :: {:ok, Frame.t()}
+  @callback init(client_info :: map(), Frame.t()) :: {:ok, Frame.t()} | {:error, term()}
 
   @doc """
   Handles a tool call request.

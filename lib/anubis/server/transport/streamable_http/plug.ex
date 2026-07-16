@@ -298,7 +298,7 @@ if Code.ensure_loaded?(Plug) do
         {:error, reason} ->
           send_jsonrpc_error(
             conn,
-            Error.protocol(:internal_error, %{reason: reason}),
+            Error.wrap_reason(reason),
             extract_request_id(message)
           )
       end
@@ -593,7 +593,7 @@ if Code.ensure_loaded?(Plug) do
 
       send_jsonrpc_error(
         conn,
-        Error.protocol(:internal_error, %{reason: reason}),
+        Error.wrap_reason(reason),
         extract_request_id(body)
       )
     end

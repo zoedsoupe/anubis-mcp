@@ -206,6 +206,32 @@ defmodule Anubis.MCP.Error do
   end
 
   @doc """
+  Wraps an arbitrary failure reason as an encodable MCP error.
+
+  Passes through existing `%Error{}` values (including those returned from
+  `init/2`). Other terms are converted to an internal error with a string
+  message safe for JSON encoding.
+
+  ## Examples
+
+      iex> error = Anubis.MCP.Error.protocol(:invalid_params, %{message: "bad input"})
+      iex> Anubis.MCP.Error.wrap_reason(error)
+      %Anubis.MCP.Error{code: -32602, reason: :invalid_params, message: "Invalid params", data: %{message: "bad input"}}
+
+      iex> wrapped = Anubis.MCP.Error.wrap_reason({:init_failed, %{code: "unauthorized"}})
+      iex> wrapped.reason
+      :internal_error
+      iex> wrapped.data.message
+      "init_failed: %{code: \\"unauthorized\\"}"
+  """
+  @spec wrap_reason(term()) :: t()
+  def wrap_reason(%__MODULE__{} = error), do: error
+
+  def wrap_reason(reason) do
+    protocol(:internal_error, %{message: stringify_reason(reason)})
+  end
+
+  @doc """
   Creates an error from a JSON-RPC error object.
 
   ## Examples
@@ -275,6 +301,14 @@ defmodule Anubis.MCP.Error do
   defp default_message(reason) do
     Map.get(@error_messages, reason, @error_messages.server_error)
   end
+
+  defp stringify_reason(reason) when is_binary(reason), do: reason
+
+  defp stringify_reason({tag, inner}) when is_atom(tag) do
+    "#{tag}: #{stringify_reason(inner)}"
+  end
+
+  defp stringify_reason(reason), do: inspect(reason, pretty: true, limit: 50)
 
   defp humanize(string) when is_binary(string) do
     string

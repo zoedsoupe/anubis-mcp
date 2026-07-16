@@ -1,6 +1,7 @@
 defmodule Anubis.Server.SessionExpiryTest do
   use Anubis.MCP.Case, async: false
 
+  alias Anubis.MCP.Error
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Test.MockSessionStore
@@ -119,7 +120,7 @@ defmodule Anubis.Server.SessionExpiryTest do
       session_id = "expiry-reject-#{System.unique_integer([:positive])}"
       session = start_session(StubSessionRecoveryRejectServer, session_id)
 
-      assert {:error, {:recovery_rejected, :no_recovery_allowed}} =
+      assert {:error, %Error{reason: :internal_error, data: %{message: _}}} =
                Session.auto_initialize(session)
 
       state = :sys.get_state(session)
@@ -230,6 +231,22 @@ defmodule Anubis.Server.SessionExpiryTest do
 
       state = :sys.get_state(session)
       assert state.frame.assigns["key"] == "value"
+    end
+  end
+
+  describe "init/2 callback" do
+    test "callback returning {:error, reason} causes auto_initialize to fail with encodable error" do
+      session_id = "init-reject-#{System.unique_integer([:positive])}"
+      session = start_session(StubInitRejectServer, session_id)
+
+      assert {:error, %Error{reason: :internal_error, data: %{message: message}}} =
+               Session.auto_initialize(session)
+
+      assert is_binary(message)
+      refute String.contains?(message, "init_failed")
+
+      state = :sys.get_state(session)
+      refute state.initialized
     end
   end
 end
