@@ -1,142 +1,115 @@
-# Welcome to Anubis MCP
+# Introduction
+
+Anubis is an Elixir implementation of the [Model Context Protocol](https://modelcontextprotocol.io/), covering both sides of the wire. You can build MCP servers that expose tools, resources, and prompts from your application, and MCP clients that connect your application to servers written in any language.
 
 ## What is MCP?
 
-The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard that defines how AI assistants (like Claude, ChatGPT, or custom LLM applications) communicate with external tools, data sources, and services. Think of it as a universal plug for AI — instead of building custom integrations for every AI model and every tool, MCP provides a single, standardized protocol.
+MCP is an open protocol that standardizes how AI applications talk to external systems. A server exposes capabilities in three forms:
 
-MCP defines three core primitives that servers can expose:
+- **Tools** are functions a model can call, such as a search or a database lookup.
+- **Resources** are data a model can read, such as files or configuration.
+- **Prompts** are reusable message templates the client can fetch and fill in.
 
-- **Tools** — Functions the AI can call (e.g., search, compute, send email)
-- **Resources** — Data the AI can read (e.g., files, database records, API responses)
-- **Prompts** — Reusable message templates for common interaction patterns
+A client connects to a server, negotiates a protocol version and capabilities during an initialization handshake, and then invokes whatever the server offers. The protocol is JSON-RPC 2.0 over a transport, usually a subprocess speaking on STDIO or an HTTP endpoint.
 
-Clients connect to servers, negotiate capabilities, and then invoke these primitives on behalf of AI models. The protocol runs over multiple transports (STDIO, HTTP, WebSocket) and handles concerns like capability discovery, progress tracking, and error reporting.
+Anubis handles the protocol layer for you: message encoding, version negotiation, capability discovery, request tracking, timeouts, and error reporting. Servers and clients run as supervised OTP processes.
 
-## The LiveView Moment for AI Development
+## Installation
 
-What Phoenix LiveView did for real-time web experiences, Anubis MCP does for AI assistant integration. Turn your Elixir applications into AI superpowers with the same simplicity and reliability you love about the BEAM.
-
-## The AI Integration Revolution
-
-Your AI assistants are hungry for capabilities, but they're trapped in isolation. The Model Context Protocol (MCP) breaks down these walls, creating secure, composable bridges between AI and your applications.
-
-Think of it this way: instead of AI assistants being isolated chatbots, they become extensions of your entire system architecture. Your Phoenix app's user management, your GenServer's real-time data processing, your OTP-supervised background jobs - all available to AI assistants through a fault-tolerant protocol.
-
-Anubis MCP makes this vision real with Elixir's battle-tested concurrency model and Phoenix's developer happiness principles.
-
-## Your First AI Connection
-
-Let's connect to an existing MCP server in under three minutes:
+Add the dependency to your `mix.exs`:
 
 ```elixir
-# In your mix.exs
-{:anubis_mcp, "~> 1.7.0"} # x-release-please-version
+def deps do
+  [
+    {:anubis_mcp, "~> 1.7.0"} # x-release-please-version
+  ]
+end
 ```
 
-Add a client to your supervision tree:
+Anubis requires Elixir 1.15 or later.
+
+## A minimal server
+
+A server is a module that declares its identity and capabilities, plus one module per component. Here is a complete server with a single tool:
 
 ```elixir
-# In your Application.start/2
+defmodule MyApp.Greeter do
+  @moduledoc "Greet a person by name"
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Anubis.Server.Response
+
+  schema do
+    field :name, :string, required: true
+  end
+
+  @impl true
+  def execute(%{name: name}, frame) do
+    {:reply, Response.text(Response.tool(), "Hello, #{name}!"), frame}
+  end
+end
+
+defmodule MyApp.Server do
+  use Anubis.Server,
+    name: "my-app",
+    version: "1.0.0",
+    capabilities: [:tools]
+
+  component MyApp.Greeter
+end
+```
+
+Add it to your supervision tree with a transport:
+
+```elixir
 children = [
-  {Anubis.Client,
-   name: MyApp.MCPClient,
-   transport: {:stdio, command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"]},
-   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
-   capabilities: %{},
-   protocol_version: "2025-06-18"}
+  {MyApp.Server, transport: :stdio}
 ]
 
 Supervisor.start_link(children, strategy: :one_for_one)
 ```
 
-Now watch the magic:
+The `@moduledoc` becomes the tool description, the `schema` block becomes its JSON Schema, and any client that connects can now discover and call `greeter`. To try it against a real client, save the modules together with a `Mix.install` header in a script and register it:
 
-```elixir
-# Discover what's available
-{:ok, tools} = Anubis.Client.list_tools(MyApp.MCPClient)
-# => Find web search, file operations, and more
-
-# Use AI capabilities from your Elixir code
-{:ok, result} = Anubis.Client.call_tool(MyApp.MCPClient, "web_search", %{query: "elixir otp patterns"})
-
-# Even read resources
-{:ok, content} = Anubis.Client.read_resource(MyApp.MCPClient, "file:///project/README.md")
+```bash
+claude mcp add my-app -- elixir --no-halt my_app.exs
 ```
 
-Your Elixir application now has AI-powered web search, file operations, and more. All fault-tolerant, all supervised, all feeling like native Elixir.
+The [Building a Server](building-a-server.md) guide walks through tools, resources, prompts, and server state in detail.
 
-## Exposing Your App to AI
+## A minimal client
 
-The real power comes when AI assistants can use your application's capabilities. Here's how to expose your Elixir logic:
-
-```elixir
-defmodule MyApp.Server do
-  use Anubis.Server,
-    name: "my-app-server",
-    version: "1.0.0",
-    capabilities: [:tools]
-
-  component MyApp.UserLookup
-  component MyApp.DataProcessor
-end
-
-defmodule MyApp.UserLookup do
-  @moduledoc "Find users by email or ID"
-
-  use Anubis.Server.Component, type: :tool
-  alias Anubis.Server.Response
-
-  schema do
-    field :email, :string, regex: ~r/@/, format: "email", required: true
-  end
-
-  def execute(%{email: email}, frame) when is_binary(email) do
-    case MyApp.Users.get_by_email(email) do
-      %User{} = user ->
-        result = %{id: user.id, name: user.name, email: user.email}
-        {:reply, Response.tool() |> Response.structured(result), frame}
-
-      nil ->
-        {:reply, Response.tool() |> Response.error("User not found"), frame}
-    end
-  end
-end
-```
-
-Start your server:
+A client is a supervised process that owns one connection to one server:
 
 ```elixir
-# In your supervision tree
 children = [
-  # Your existing app
-  MyApp.Repo,
-  MyAppWeb.Endpoint,
-
-  # Your MCP server
-  {MyApp.Server, transport: :stdio}
+  {Anubis.Client,
+   name: MyApp.MCPClient,
+   transport: {:stdio, command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"]},
+   client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+   capabilities: %{}}
 ]
+
+Supervisor.start_link(children, strategy: :one_for_one)
 ```
 
-Now any AI assistant can discover and use your user lookup functionality through the MCP protocol. They'll get proper JSON schema documentation, structured responses, and error handling - all automatically generated from your Elixir code.
+Once started, the client negotiates the handshake on its own. You interact with it by name:
 
-## Real-World Power
+```elixir
+{:ok, response} = Anubis.Client.list_tools(MyApp.MCPClient)
 
-This is just the beginning. Anubis MCP enables:
+{:ok, response} =
+  Anubis.Client.call_tool(MyApp.MCPClient, "echo", %{"message" => "hello"})
+```
 
-**Fault-Tolerant AI Integration** - Process crashes don't break your AI connections. Supervision trees ensure reliability.
+The [Building a Client](building-a-client.md) guide covers discovery, error handling, progress tracking, and managing several connections.
 
-**Composable AI Capabilities** - Mix and match different MCP servers. One for file operations, another for database access, another for your business logic.
+## Where to go next
 
-**Phoenix Integration** - Expose LiveView data, trigger real-time updates, authenticate users - all through AI assistants.
-
-**OTP-Native Patterns** - GenServers become AI tools. Agents become AI resources. Your entire BEAM ecosystem becomes AI-accessible.
-
-**Type Safety & Validation** - Peri-powered schema validation ensures AI tools receive clean, validated data.
-
-**Progressive Enhancement** - Start simple, add capabilities incrementally. No big rewrites needed.
-
-## Ready to Build?
-
-The framework handles transport negotiation, capability discovery, error recovery, and request routing. You focus on what your application does best.
-
-_Turn your Elixir applications into AI superpowers. It's time for your AI assistants to meet the BEAM._
+- [Building a Server](building-a-server.md) covers components, responses, and server state.
+- [Building a Client](building-a-client.md) covers connecting to and consuming servers.
+- [Transports](transports.md) explains STDIO and Streamable HTTP, including Phoenix integration.
+- [Authorization](authorization.md) documents OAuth 2.1 bearer token support for HTTP servers.
+- [Testing](testing.md) shows how to test your components with plain ExUnit.
+- [Recipes](recipes.md) collects patterns for common production concerns.

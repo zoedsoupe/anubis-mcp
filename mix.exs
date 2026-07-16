@@ -89,10 +89,13 @@ defmodule Anubis.MixProject do
       extras: [
         "README.md",
         "pages/introduction.md",
-        "pages/building-a-client.md",
         "pages/building-a-server.md",
+        "pages/building-a-client.md",
+        "pages/transports.md",
+        "pages/authorization.md",
+        "pages/testing.md",
         "pages/recipes.md",
-        "pages/reference.md",
+        "pages/cheatsheet.cheatmd",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
         "LICENSE"
@@ -102,13 +105,16 @@ defmodule Anubis.MixProject do
           "README.md",
           "pages/introduction.md"
         ],
-        "Building with Anubis": [
+        Guides: [
+          "pages/building-a-server.md",
           "pages/building-a-client.md",
-          "pages/building-a-server.md"
+          "pages/transports.md",
+          "pages/authorization.md",
+          "pages/testing.md"
         ],
         "Patterns & Reference": [
           "pages/recipes.md",
-          "pages/reference.md"
+          "pages/cheatsheet.cheatmd"
         ],
         "Project Info": [
           "CHANGELOG.md",
