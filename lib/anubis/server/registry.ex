@@ -10,8 +10,14 @@ defmodule Anubis.Server.Registry do
 
   ## Naming Utilities
 
-  The module also provides deterministic atom naming for internal processes.
-  These are safe because server modules are compile-time bounded.
+  The module also provides deterministic atom naming for internal processes
+  (transports, supervisors, task stores). These are keyed off the server module,
+  which is compile-time bounded, so they cannot exhaust the atom table.
+
+  Session processes are different: their ids come from the client-controlled
+  `mcp-session-id` header. `resolve_session_name/3` therefore names sessions via
+  an Elixir `Registry` keyed by the session-id string (a `:via` tuple) rather
+  than minting one atom per session id.
   """
 
   @type session_id :: String.t()
@@ -36,8 +42,8 @@ defmodule Anubis.Server.Registry do
   @doc """
   Resolves the session GenServer name via the registry adapter.
 
-  Falls back to the default atom-based naming if the adapter does not implement
-  the optional `session_name/2` callback.
+  Falls back to the default `:via` naming if the adapter does not implement the
+  optional `session_name/2` callback.
   """
   @spec resolve_session_name(module(), term(), session_id()) :: GenServer.name()
   def resolve_session_name(registry_mod, registry_name, session_id) do
@@ -48,12 +54,25 @@ defmodule Anubis.Server.Registry do
     end
   end
 
-  defp session_name_from_registry_name(registry_name, session_id) when is_atom(registry_name) do
-    :"#{registry_name}.session.#{session_id}"
+  @doc """
+  Name of the per-server `Registry` used to name session processes.
+
+  Session ids are client-controlled (the `mcp-session-id` header), so naming
+  session processes with `:"\#{registry_name}.session.\#{session_id}"` would mint
+  a fresh atom per session id. Atoms are never garbage collected, so an attacker
+  feeding distinct session ids could exhaust the atom table and crash the VM.
+
+  Instead we route the default naming through an Elixir `Registry` keyed by the
+  session-id string. `registry_name` is a compile-time bounded server atom, so
+  deriving this name from it is safe.
+  """
+  @spec naming_registry_name(atom()) :: atom()
+  def naming_registry_name(registry_name) when is_atom(registry_name) do
+    :"#{registry_name}.names"
   end
 
-  defp session_name_from_registry_name(_registry_name, session_id) do
-    :"Anubis.session.#{session_id}"
+  defp session_name_from_registry_name(registry_name, session_id) do
+    {:via, Elixir.Registry, {naming_registry_name(registry_name), session_id}}
   end
 
   # Deterministic atom naming for internal processes
@@ -91,6 +110,18 @@ defmodule Anubis.Server.Registry do
   @spec supervisor_name(module()) :: atom()
   def supervisor_name(server), do: :"Anubis.#{server}.supervisor"
 
+  @doc """
+  Deterministic atom name for a session process.
+
+  ## Warning
+
+  This mints an atom per `session_id`. Only call it with compile-time bounded or
+  otherwise trusted session ids (e.g. in tests). It must **not** be used on the
+  request path with client-supplied session ids, since atoms are never garbage
+  collected and an attacker could exhaust the atom table. The runtime session
+  naming path goes through `resolve_session_name/3`, which returns a `:via`
+  `Registry` name keyed by the session-id string instead.
+  """
   @spec session_name(module(), String.t()) :: atom()
   def session_name(server, session_id), do: :"Anubis.#{server}.session.#{session_id}"
 

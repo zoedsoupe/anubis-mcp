@@ -344,6 +344,7 @@ defmodule Anubis.Server.Supervisor do
          store_children
        ) do
     session_sup_name = Registry.session_supervisor_name(server)
+    naming_registry = Registry.naming_registry_name(Registry.registry_name(server))
 
     registry_child =
       case registry_mod.child_spec(registry_opts) do
@@ -353,6 +354,7 @@ defmodule Anubis.Server.Supervisor do
 
     base = [
       {Task.Supervisor, name: task_supervisor},
+      {Elixir.Registry, keys: :unique, name: naming_registry},
       {sup_mod, name: session_sup_name, strategy: :one_for_one},
       {layer, transport_opts}
     ]
