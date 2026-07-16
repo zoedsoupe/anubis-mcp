@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [1.8.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.7.0...v1.8.0) (2026-07-16)
 
+This release focuses on simplifying the runtime footprint and giving consumers more control over networking.
+
+**⚠️ Breaking change:** the `Application` callback and the bundled CLI have been removed. If you relied on `anubis_mcp` starting supervision trees or processes automatically via `application/0`, you'll now need to start the relevant components explicitly in your own supervision tree. See the updated [README](https://github.com/zoedsoupe/anubis-mcp#readme) and [Introduction guide](https://github.com/zoedsoupe/anubis-mcp/blob/main/pages/introduction.md) for the new setup.
+
+Alongside that, the Finch HTTP pool is now injectable, so you can plug in your own pool configuration (name, size, pool options) instead of relying on a globally started pool - handy for apps that already manage their own Finch instances or need per-tenant pools.
+
+On the housekeeping side, example apps moved out of `lib/` into a dedicated root-level folder to keep the library package lean, and CI now publishes the Hex package using Elixir 1.20.2.
 
 ### Features
 
