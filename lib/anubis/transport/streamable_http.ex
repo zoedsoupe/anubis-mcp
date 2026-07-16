@@ -187,7 +187,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   @impl Transport
-  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18"]
+  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18", "2025-11-25"]
 
   @impl GenServer
   def init(opts) do
