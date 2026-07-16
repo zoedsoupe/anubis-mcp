@@ -1,470 +1,289 @@
 # Recipes
 
-Let's explore patterns we've discovered while building with Anubis MCP. What challenges are you facing?
+Focused patterns for problems that show up once a server leaves the prototype stage. Each recipe stands alone.
 
-## Authentication & Authorization
+## Per-session state from request headers
 
-How do you ensure only authorized clients can access your server? Let's explore a few approaches:
-
-### API Key Authentication
+For HTTP transports, `frame.context.headers` carries the request headers of the initialize call. Use `init/2` to resolve them into assigns once, instead of on every tool call:
 
 ```elixir
-defmodule MyApp.AuthenticatedServer do
+defmodule MyApp.Server do
   use Anubis.Server,
-    name: "secure-app",
+    name: "my-app",
     version: "1.0.0",
     capabilities: [:tools]
 
-  def init(arg, frame) do
-    # Check API key from request headers
-    api_key = frame.context.headers["x-api-key"]
+  component MyApp.SecureTool
 
-    case authenticate_api_key(api_key) do
-      {:ok, user} ->
-        # Store user in frame assigns for later use
-        {:ok, Map.put(frame, :assigns, %{user: user})}
+  @impl true
+  def init(_client_info, frame) do
+    tenant =
+      frame.context.headers
+      |> Map.get("x-tenant-id")
+      |> MyApp.Tenants.get()
 
-      :error ->
-        {:stop, :unauthorized}
-    end
-  end
-
-  defp authenticate_api_key(nil), do: :error
-  defp authenticate_api_key(key) do
-    # Your authentication logic here
-    MyApp.Auth.verify_api_key(key)
+    {:ok, assign(frame, tenant: tenant)}
   end
 end
 ```
 
-Now your tools can access the authenticated user:
+Tools then scope their work to `frame.assigns.tenant`. For real authentication use OAuth bearer tokens, which Anubis validates for you before any callback runs; see [Authorization](authorization.md). If you need to reject unauthenticated requests outright with a simpler scheme such as a static API key, do it in front of the MCP plug, where you can still control the HTTP response:
 
 ```elixir
-defmodule MyApp.SecureTool do
+# lib/my_app_web/plugs/require_api_key.ex
+defmodule MyAppWeb.Plugs.RequireApiKey do
+  import Plug.Conn
+
+  def init(opts), do: opts
+
+  def call(conn, _opts) do
+    with [key] <- get_req_header(conn, "x-api-key"),
+         :ok <- MyApp.Auth.verify_api_key(key) do
+      conn
+    else
+      _ -> conn |> send_resp(401, "unauthorized") |> halt()
+    end
+  end
+end
+
+# router
+pipeline :mcp do
+  plug MyAppWeb.Plugs.RequireApiKey
+end
+
+scope "/mcp" do
+  pipe_through :mcp
+  forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: MyApp.Server
+end
+```
+
+## Safe file access
+
+When a tool reads files on behalf of a model, constrain the reachable paths and treat the check as a trust boundary. Expand the path before comparing, so `../` traversal cannot escape:
+
+```elixir
+defmodule MyApp.FileReader do
+  @moduledoc "Read files from the project's data directory"
+
   use Anubis.Server.Component, type: :tool
 
   alias Anubis.Server.Response
 
-  def execute(params, frame) do
-    user = frame.assigns.user
-
-    # User-scoped operations
-    {:reply, Response.text(Response.tool(), "Hello #{user.name}, you have access to this tool!"), frame}
-  end
-end
-```
-
-### OAuth Integration
-
-For more complex authentication flows:
-
-```elixir
-defmodule MyApp.OAuthResource do
-  use Anubis.Server.Component,
-    type: :resource,
-    uri: "auth://oauth/status"
-
-  alias Anubis.Server.Response
-
-  def read(_params, frame) do
-    case frame.assigns[:oauth_token] do
-      nil ->
-        {:reply, Response.json(Response.resource(), %{
-          authenticated: false,
-          login_url: generate_oauth_url(frame.context.session_id)
-        }), frame}
-
-      token ->
-        {:reply, Response.json(Response.resource(), %{
-          authenticated: true,
-          user: fetch_user_info(token)
-        }), frame}
-    end
-  end
-end
-```
-
-## File Operations
-
-Need to work with files? Here's a safe pattern:
-
-```elixir
-defmodule MyApp.FileManager do
-  use Anubis.Server.Component, type: :tool
-
-  @moduledoc "Safely read files from allowed directories"
-
-  alias Anubis.Server.Response
+  @allowed_root Path.expand("priv/data")
 
   schema do
     field :path, :string, required: true
   end
 
+  @impl true
   def execute(%{path: path}, frame) do
-    user = frame.assigns.user
-    allowed_dirs = get_allowed_directories(user)
+    expanded = Path.expand(path, @allowed_root)
 
-    with :ok <- validate_path_access(path, allowed_dirs),
-         {:ok, content} <- File.read(path) do
-      {:reply, Response.json(Response.tool(), %{
-        path: path,
-        size: byte_size(content),
-        content: content,
-        mime_type: MIME.from_path(path)
-      }), frame}
+    with :ok <- validate_within_root(expanded),
+         {:ok, content} <- File.read(expanded) do
+      {:reply, Response.text(Response.tool(), content), frame}
     else
-      {:error, :access_denied} ->
-        {:reply, Response.error(Response.tool(), "Access denied to path: #{path}"), frame}
+      {:error, :outside_root} ->
+        {:reply, Response.error(Response.tool(), "path outside allowed directory"), frame}
 
       {:error, reason} ->
-        {:reply, Response.error(Response.tool(), "Failed to read file: #{inspect(reason)}"), frame}
+        {:reply, Response.error(Response.tool(), "read failed: #{inspect(reason)}"), frame}
     end
   end
 
-  defp validate_path_access(path, allowed_dirs) do
-    real_path = Path.expand(path)
-
-    if Enum.any?(allowed_dirs, &String.starts_with?(real_path, &1)) do
-      :ok
-    else
-      {:error, :access_denied}
-    end
+  defp validate_within_root(path) do
+    if String.starts_with?(path, @allowed_root <> "/"),
+      do: :ok,
+      else: {:error, :outside_root}
   end
 end
 ```
 
-## Database Operations
+## Constrained database queries
 
-How do you expose database queries safely?
+Never accept raw SQL or arbitrary field names from a model. Let the schema enumerate what is queryable, and keep the mapping from schema values to query fragments in your own code:
 
 ```elixir
-defmodule MyApp.QueryBuilder do
+defmodule MyApp.OrderLookup do
+  @moduledoc "Look up recent orders, optionally filtered by status"
+
   use Anubis.Server.Component, type: :tool
 
-  @moduledoc "Build and execute safe database queries"
+  import Ecto.Query
 
   alias Anubis.Server.Response
 
   schema do
-    field :table, :enum, required: true, values: ["users", "products", "orders"]
-    field :filters, :map
-    field :limit, :integer, default: 100, max: 1000
-    field :order_by, :string
+    field :status, :enum, values: ["pending", "shipped", "delivered"]
+    field :limit, :integer, min: 1, max: 100, default: 20
   end
 
+  @impl true
   def execute(params, frame) do
-    query =
-      build_base_query(params.table)
-      |> apply_filters(params[:filters])
-      |> apply_order(params[:order_by])
-      |> apply_limit(params.limit)
-      |> apply_user_scope(frame.assigns.user)
+    orders =
+      MyApp.Order
+      |> maybe_by_status(params[:status])
+      |> limit(^params.limit)
+      |> where(tenant_id: ^frame.assigns.tenant.id)
+      |> MyApp.Repo.all()
+      |> Enum.map(&Map.take(&1, [:id, :status, :total_cents, :inserted_at]))
 
-    case MyApp.Repo.all(query) do
-      results when is_list(results) ->
-        {:reply, Response.json(Response.tool(), Enum.map(results, &sanitize_result/1)), frame}
-
-      error ->
-        {:reply, Response.error(Response.tool(), "Query failed: #{inspect(error)}"), frame}
-    end
+    {:reply, Response.json(Response.tool(), orders), frame}
   end
 
-  defp build_base_query("users"), do: from(u in User)
-  defp build_base_query("products"), do: from(p in Product)
-  defp build_base_query("orders"), do: from(o in Order)
-
-  defp apply_filters(query, nil), do: query
-  defp apply_filters(query, filters) do
-    Enum.reduce(filters, query, fn {field, value}, q ->
-      where(q, [r], field(r, ^String.to_atom(field)) == ^value)
-    end)
-  end
-
-  defp sanitize_result(record) do
-    # Remove sensitive fields
-    record
-    |> Map.from_struct()
-    |> Map.drop([:password_hash, :api_key, :secret_token])
-  end
+  defp maybe_by_status(query, nil), do: query
+  defp maybe_by_status(query, status), do: where(query, status: ^status)
 end
 ```
 
-## Long-Running Operations
+The enum bounds the filter, the `max` bounds the result size, and the explicit `Map.take/2` decides what leaves the system, so a new sensitive column never leaks by default.
 
-What about operations that take time? Let's handle them gracefully:
+## Long-running work
+
+Tool calls are request-scoped, so work that outlives a sensible request timeout belongs in a background job. Split it into a starter tool and a status tool, and run the work under a supervisor rather than an unlinked task:
 
 ```elixir
-defmodule MyApp.ReportGenerator do
-  use Anubis.Server.Component, type: :tool
+defmodule MyApp.StartReport do
+  @moduledoc "Start report generation, returns a job id to poll"
 
-  @moduledoc "Generate complex reports"
+  use Anubis.Server.Component, type: :tool
 
   alias Anubis.Server.Response
 
   schema do
-    field :report_type, :string, required: true
-    field :date_range, :map
+    field :report_type, :enum, values: ["sales", "inventory"], required: true
   end
 
-  def execute(params, frame) do
-    # Start async task
-    task_id = UUID.uuid4()
+  @impl true
+  def execute(%{report_type: type}, frame) do
+    job_id = Ecto.UUID.generate()
 
-    Task.start(fn ->
-      result = generate_report(params)
-      ReportStore.save(task_id, result)
+    Task.Supervisor.start_child(MyApp.TaskSupervisor, fn ->
+      result = MyApp.Reports.generate(type)
+      MyApp.ReportStore.put(job_id, result)
     end)
 
-    # Return immediately with task ID
-    {:reply, Response.json(Response.tool(), %{
-      task_id: task_id,
-      status: "processing",
-      check_status_with: "report_status"
-    }), frame}
+    {:reply, Response.json(Response.tool(), %{job_id: job_id, status: "running"}), frame}
   end
 end
 
 defmodule MyApp.ReportStatus do
+  @moduledoc "Check the status of a report job"
+
   use Anubis.Server.Component, type: :tool
 
   alias Anubis.Server.Response
 
   schema do
-    field :task_id, :string, required: true
+    field :job_id, :string, required: true
   end
 
-  def execute(%{task_id: task_id}, frame) do
-    case ReportStore.get(task_id) do
-      nil ->
-        {:reply, Response.json(Response.tool(), %{status: "processing"}), frame}
+  @impl true
+  def execute(%{job_id: job_id}, frame) do
+    body =
+      case MyApp.ReportStore.get(job_id) do
+        nil -> %{status: "running"}
+        {:ok, result} -> %{status: "done", result: result}
+        {:error, reason} -> %{status: "failed", error: inspect(reason)}
+      end
 
-      {:completed, result} ->
-        {:reply, Response.json(Response.tool(), %{status: "completed", result: result}), frame}
-
-      {:error, reason} ->
-        {:reply, Response.json(Response.tool(), %{status: "failed", error: reason}), frame}
-    end
+    {:reply, Response.json(Response.tool(), body), frame}
   end
 end
 ```
 
-## Real-time Updates
+If your application already runs Oban, enqueue an Oban job instead of a task and read its state in the status tool.
 
-Need to push updates to clients? Here's how:
+## Pushing updates to clients
+
+When server data changes, notify connected clients so they refresh their view of your resources. Subscribe to your event source in `init/2` and translate events in `handle_info/2`:
 
 ```elixir
-defmodule MyApp.LiveDataServer do
+defmodule MyApp.Server do
   use Anubis.Server,
-    name: "live-data",
+    name: "my-app",
     version: "1.0.0",
     capabilities: [:tools, {:resources, list_changed?: true}]
 
-  def init(arg, frame) do
-    # Subscribe to Phoenix PubSub
-    Phoenix.PubSub.subscribe(MyApp.PubSub, "data_updates")
+  component MyApp.CatalogResource
+
+  @impl true
+  def init(_client_info, frame) do
+    Phoenix.PubSub.subscribe(MyApp.PubSub, "catalog")
     {:ok, frame}
   end
 
-  def handle_info({:data_update, _data}, frame) do
+  @impl true
+  def handle_info({:catalog_updated, _payload}, frame) do
     Anubis.Server.send_resources_list_changed()
     {:noreply, frame}
   end
 end
 ```
 
-## Testing Patterns
+The `list_changed?: true` option is what advertises the notification to clients; without it they will not subscribe to changes.
 
-How do you test MCP components effectively?
+## Graceful degradation
+
+Tools that call external services should decide, per failure mode, what the model can do with the answer. A cached fallback with a warning is often more useful than a bare error:
 
 ```elixir
-defmodule MyApp.ComponentTest do
-  use ExUnit.Case, async: true
+@impl true
+def execute(params, frame) do
+  case MyApp.Weather.fetch(params.city) do
+    {:ok, weather} ->
+      {:reply, Response.json(Response.tool(), weather), frame}
 
-  describe "complex tool validation" do
-    test "validates required fields" do
-      tool = MyApp.ComplexTool
+    {:error, :timeout} ->
+      case MyApp.Weather.cached(params.city) do
+        {:ok, weather} ->
+          body = Map.put(weather, :warning, "live data unavailable, serving cache")
+          {:reply, Response.json(Response.tool(), body), frame}
 
-      # Test schema validation
-      assert {:error, errors} =
-        Anubis.Server.Component.validate_params(tool, %{})
+        :miss ->
+          {:reply, Response.error(Response.tool(), "weather service unavailable"), frame}
+      end
 
-      assert errors[:required_field] == ["is required"]
-    end
-
-    test "executes with valid params" do
-      params = %{required_field: "value", optional_field: 42}
-      frame = %Anubis.Server.Frame{assigns: %{user: %{id: 1}}}
-
-      assert {:reply, %Anubis.Server.Response{} = response, ^frame} =
-               MyApp.ComplexTool.execute(params, frame)
-
-      assert response.type == :tool
-    end
+    {:error, :unknown_city} ->
+      {:reply, Response.error(Response.tool(), "unknown city: #{params.city}"), frame}
   end
 end
 ```
 
-## Error Recovery
+The error strings go to the model, so make them actionable: "unknown city" invites a corrected retry, where a stack trace invites nothing.
 
-How do you handle and recover from errors gracefully?
+## MCP-level logging
+
+Servers with the `:logging` capability can stream log messages to clients over the protocol itself, which is useful when the client is an agent that should see what happened:
 
 ```elixir
-defmodule MyApp.ResilientTool do
-  use Anubis.Server.Component, type: :tool
-
-  alias Anubis.Server.Response
-
-  def execute(params, frame) do
-    with {:ok, data} <- fetch_external_data(params),
-         {:ok, processed} <- process_data(data),
-         {:ok, stored} <- store_results(processed) do
-      {:reply, Response.json(Response.tool(), format_success(stored)), frame}
-    else
-      {:error, :external_service_down} ->
-        # Fallback to cache
-        case get_cached_data(params) do
-          {:ok, cached} ->
-            {:reply, Response.json(Response.tool(), %{data: cached, source: "cache", warning: "Using cached data"}), frame}
-          :error ->
-            {:reply, Response.error(Response.tool(), "Service unavailable and no cached data found"), frame}
-        end
-
-      {:error, :rate_limited} ->
-        {:reply, Response.error(Response.tool(), "Rate limited. Please try again in a few minutes."), frame}
-
-      {:error, reason} ->
-        Logger.error("Tool execution failed: #{inspect(reason)}")
-        {:reply, Response.error(Response.tool(), "An unexpected error occurred"), frame}
-    end
-  end
-end
+# server side, inside any callback
+Anubis.Server.send_log_message(:info, "reindex started", %{index: "products"})
 ```
 
-## Performance Optimization
-
-Need to handle high-throughput scenarios?
-
 ```elixir
-defmodule MyApp.BatchProcessor do
-  use Anubis.Server.Component, type: :tool
+# client side
+Anubis.Client.set_log_level(MyApp.MCPClient, "warning")
 
-  alias Anubis.Server.Response
-
-  schema do
-    field :items, {:list, :map}, required: true
-  end
-
-  def execute(%{items: items}, frame) do
-    # Process in parallel with flow control
-    results =
-      items
-      |> Task.async_stream(
-        &process_item/1,
-        max_concurrency: System.schedulers_online() * 2,
-        timeout: 5_000,
-        on_timeout: :kill_task
-      )
-      |> Enum.map(fn
-        {:ok, result} -> result
-        {:exit, :timeout} -> {:error, "Processing timeout"}
-      end)
-
-    successful = Enum.filter(results, &match?({:ok, _}, &1))
-    failed = Enum.filter(results, &match?({:error, _}, &1))
-
-    {:reply, Response.json(Response.tool(), %{
-      processed: length(successful),
-      failed: length(failed),
-      results: successful
-    }), frame}
-  end
-end
-```
-
-## Logging & Monitoring
-
-How do you track what's happening in your MCP system? Let's explore logging patterns:
-
-### MCP Protocol Logging
-
-Control log verbosity from servers you connect to:
-
-```elixir
-# Tell the server to only send warnings and above
-MyApp.Client.set_log_level("warning")
-
-# Register a handler for incoming logs
-MyApp.Client.register_log_callback(fn level, data, logger ->
-  # Forward to your monitoring service
-  MyApp.Telemetry.log_event(level, data, source: logger)
-
-  # Or filter specific loggers
-  if logger == "database" do
-    Logger.warning("Database: #{data}")
-  end
+Anubis.Client.register_log_callback(MyApp.MCPClient, fn level, data, logger ->
+  MyApp.Telemetry.mcp_log(level, data, logger)
 end)
 ```
 
-### Server-Side Logging
+## Tuning library logging
 
-Send structured logs to connected clients:
-
-```elixir
-defmodule MyApp.LoggingServer do
-  use Anubis.Server,
-    name: "logging-demo",
-    version: "1.0.0",
-    capabilities: [:tools, :logging]
-
-  alias Anubis.Server.Response
-
-  # Dynamic tool registered at runtime (dispatches to handle_tool_call/3)
-  @impl true
-  def init(_client_info, frame) do
-    {:ok, register_tool(frame, "logged_tool",
-      description: "A tool with server-level logging",
-      input_schema: %{input: {:required, :string}}
-    )}
-  end
-
-  @impl true
-  def handle_tool_call("logged_tool", %{input: input}, frame) do
-    Anubis.Server.send_log_message(:info, "Processing tool: logged_tool")
-
-    result = process_input(input)
-
-    Anubis.Server.send_log_message(:debug, "Tool completed: logged_tool")
-    {:reply, Response.text(Response.tool(), result), frame}
-  end
-end
-```
-
-### Configuring Library Logging
-
-Control Anubis's internal logging verbosity:
+Anubis logs its own protocol activity through `Logger`. Adjust verbosity per event category, or switch it off:
 
 ```elixir
-# In config/config.exs
+# config/config.exs
 config :anubis_mcp, :logging,
-  client_events: :info,      # Client lifecycle events
-  server_events: :info,      # Server request handling
-  transport_events: :warning, # Connection issues
-  protocol_messages: :debug   # Raw message exchanges
+  client_events: :info,
+  server_events: :info,
+  transport_events: :warning,
+  protocol_messages: :debug
 
-# Or disable completely for production
+# disable all library logging
 config :anubis_mcp, log: false
 ```
 
-## What Pattern Do You Need?
-
-These recipes come from real-world usage. What challenges are you facing?
-
-- Complex authentication flows?
-- Multi-step workflows?
-- Integration with existing systems?
-- Performance at scale?
-- Logging and observability?
-
-Each pattern can be adapted to your specific needs. The key insight? MCP handles the protocol complexity while you focus on your domain logic.
-
-Ready to implement one of these patterns?
+Unconfigured categories log at `:debug`.

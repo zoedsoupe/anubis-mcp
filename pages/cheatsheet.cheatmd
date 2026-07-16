@@ -1,0 +1,295 @@
+# Cheatsheet
+
+## Client
+{: .col-2}
+
+### Starting
+
+```elixir
+{Anubis.Client,
+ name: MyApp.MCPClient,
+ transport: {:stdio, command: "server", args: []},
+ client_info: %{"name" => "MyApp", "version" => "1.0.0"},
+ capabilities: %{}}
+```
+
+`name`, `transport`, `client_info`, and `capabilities` are required. `protocol_version` defaults to the latest supported version.
+
+### Client transports
+
+```elixir
+{:stdio, command: "cmd", args: ["a"], env: %{}, cwd: "/tmp"}
+{:streamable_http, base_url: "http://localhost:8000", mcp_path: "/mcp", headers: %{}}
+{:websocket, base_url: "ws://localhost:8000"}
+{:sse, base_url: "http://localhost:8000"}  # legacy
+```
+
+### Requests
+
+```elixir
+Anubis.Client.ping(client)
+Anubis.Client.list_tools(client)
+Anubis.Client.call_tool(client, "name", %{"arg" => 1})
+Anubis.Client.list_resources(client)
+Anubis.Client.read_resource(client, "file:///a.txt")
+Anubis.Client.list_prompts(client)
+Anubis.Client.get_prompt(client, "name", %{"arg" => "v"})
+Anubis.Client.complete(client, ref, argument)
+```
+
+All request functions accept `timeout:` (ms) and `progress: [token:, callback:]` options.
+
+### Return values
+
+```elixir
+{:ok, %Anubis.MCP.Response{result: map, is_error: false}}
+{:ok, %Anubis.MCP.Response{result: map, is_error: true}}   # tool failed
+{:error, %Anubis.MCP.Error{}}                              # request failed
+```
+
+### Connection
+
+```elixir
+Anubis.Client.await_ready(client)
+Anubis.Client.get_server_info(client)
+Anubis.Client.get_server_capabilities(client)
+Anubis.Client.close(client)
+```
+
+### Callbacks and roots
+
+```elixir
+Anubis.Client.set_log_level(client, "warning")
+Anubis.Client.register_log_callback(client, fn level, data, logger -> ... end)
+Anubis.Client.register_sampling_callback(client, fn params -> {:ok, response} end)
+Anubis.Client.register_elicitation_callback(client, fn params -> ... end)
+Anubis.Client.add_root(client, "file:///proj", "proj")
+Anubis.Client.cancel_all_requests(client)
+```
+
+## Server
+{: .col-2}
+
+### Definition
+
+```elixir
+defmodule MyApp.Server do
+  use Anubis.Server,
+    name: "my-app",
+    version: "1.0.0",
+    capabilities: [:tools, {:resources, subscribe?: true}]
+
+  component MyApp.MyTool
+  component MyApp.MyResource, name: "custom_name"
+end
+```
+
+Capabilities: `:tools`, `:resources`, `:prompts`, `:logging`, `:completion`. Options: `subscribe?:`, `list_changed?:`.
+
+### Starting
+
+```elixir
+{MyApp.Server, transport: :stdio}
+{MyApp.Server, transport: :streamable_http}
+{MyApp.Server, transport: {:streamable_http, start: true}}
+```
+
+Extra options: `session_idle_timeout:` (default 30 min), `request_timeout:` (default 30 s).
+
+### HTTP endpoint
+
+```elixir
+# Phoenix router
+forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug,
+  server: MyApp.Server
+
+# standalone
+{Bandit, plug: {Anubis.Server.Transport.StreamableHTTP.Plug,
+  server: MyApp.Server}, port: 8080}
+```
+
+### Callbacks (all optional)
+
+```elixir
+def init(client_info, frame), do: {:ok, frame}
+def handle_info(msg, frame), do: {:noreply, frame}
+def server_instructions, do: "usage hints for clients"
+def handle_tool_call(name, args, frame), do: {:reply, response, frame}
+```
+
+### Notifications (inside callbacks)
+
+```elixir
+Anubis.Server.send_tools_list_changed()
+Anubis.Server.send_resources_list_changed()
+Anubis.Server.send_prompts_list_changed()
+Anubis.Server.send_resource_updated(uri)
+Anubis.Server.send_log_message(:info, "msg", %{meta: 1})
+Anubis.Server.send_progress(token, 50, total: 100)
+```
+
+## Components
+{: .col-2}
+
+### Tool
+
+```elixir
+defmodule MyApp.MyTool do
+  @moduledoc "Description clients will see"
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Anubis.Server.Response
+
+  schema do
+    field :query, :string, required: true
+  end
+
+  @impl true
+  def execute(params, frame) do
+    {:reply, Response.text(Response.tool(), "ok"), frame}
+  end
+end
+```
+
+### Resource
+
+```elixir
+use Anubis.Server.Component,
+  type: :resource,
+  uri: "config://app",
+  mime_type: "application/json"
+
+@impl true
+def read(_params, frame) do
+  {:reply, Response.json(Response.resource(), data), frame}
+end
+```
+
+### Prompt
+
+```elixir
+use Anubis.Server.Component, type: :prompt
+
+schema do
+  field :topic, :string, required: true
+end
+
+@impl true
+def get_messages(%{topic: topic}, frame) do
+  response =
+    Response.prompt()
+    |> Response.user_message("Explain #{topic}")
+
+  {:reply, response, frame}
+end
+```
+
+### Component return values
+
+```elixir
+{:reply, %Anubis.Server.Response{}, frame}
+{:noreply, frame}
+{:error, %Anubis.MCP.Error{}, frame}
+```
+
+## Schema DSL
+{: .col-2}
+
+### Field types
+
+```elixir
+schema do
+  field :name, :string, required: true, min_length: 1, max_length: 80
+  field :count, :integer, min: 0, max: 100, default: 10
+  field :ratio, :number
+  field :active, :boolean, default: false
+  field :kind, :enum, values: ["a", "b"], required: true
+  field :tags, {:list, :string}
+end
+```
+
+### Nested fields
+
+```elixir
+schema do
+  embeds_one :profile, required: true do
+    field :name, :string, required: true
+  end
+
+  embeds_many :items do
+    field :sku, :string, required: true
+  end
+end
+```
+
+### Metadata
+
+```elixir
+field :email, :string,
+  required: true,
+  format: "email",
+  description: "Contact email address"
+```
+
+## Responses
+{: .col-2}
+
+### Tool responses
+
+```elixir
+alias Anubis.Server.Response
+
+Response.text(Response.tool(), "plain text")
+Response.json(Response.tool(), %{any: "map"})
+Response.structured(Response.tool(), %{typed: "output"})
+Response.image(Response.tool(), base64, "image/png")
+Response.audio(Response.tool(), base64, "audio/wav")
+Response.error(Response.tool(), "what went wrong")
+```
+
+### Resource responses
+
+```elixir
+Response.text(Response.resource(), "content")
+Response.json(Response.resource(), %{a: 1})
+Response.blob(Response.resource(), binary)
+```
+
+### Prompt responses
+
+```elixir
+Response.prompt()
+|> Response.system_message("context")
+|> Response.user_message("question")
+|> Response.assistant_message("example answer")
+```
+
+## Frame
+{: .col-2}
+
+### Assigns
+
+```elixir
+frame = assign(frame, :key, value)
+frame = assign(frame, key: 1, other: 2)
+frame.assigns.key
+```
+
+### Context
+
+```elixir
+frame.context.session_id
+frame.context.client_info
+frame.context.headers      # HTTP transports
+frame.context.remote_ip    # HTTP transports
+```
+
+### Authorization
+
+```elixir
+Anubis.Server.Frame.subject(frame)
+Anubis.Server.Frame.scopes(frame)
+Anubis.Server.Frame.has_scope?(frame, "files:write")
+Anubis.Server.Frame.authorization(frame)
+```
