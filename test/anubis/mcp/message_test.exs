@@ -76,6 +76,28 @@ defmodule Anubis.MCP.MessageTest do
       assert {:ok, _} = Message.validate_message(msg)
     end
 
+    test "preserves _meta on initialize params and clientInfo" do
+      msg = %{
+        "jsonrpc" => "2.0",
+        "method" => "initialize",
+        "id" => 1,
+        "params" => %{
+          "protocolVersion" => "2024-05-01",
+          "capabilities" => %{},
+          "_meta" => %{"appId" => "acme", "mode" => "batch"},
+          "clientInfo" => %{
+            "name" => "TestClient",
+            "version" => "1.0.0",
+            "_meta" => %{"tenant" => "t-1"}
+          }
+        }
+      }
+
+      assert {:ok, validated} = Message.validate_message(msg)
+      assert validated["params"]["_meta"] == %{"appId" => "acme", "mode" => "batch"}
+      assert validated["params"]["clientInfo"]["_meta"] == %{"tenant" => "t-1"}
+    end
+
     test "validates ping request" do
       msg = %{
         "jsonrpc" => "2.0",
@@ -288,6 +310,27 @@ defmodule Anubis.MCP.MessageTest do
       {:ok, [decoded]} = Message.decode(encoded)
       assert decoded["id"] == 1
       assert decoded["method"] == "initialize"
+    end
+
+    test "keeps _meta on initialize through wire encode" do
+      req = %{
+        "method" => "initialize",
+        "params" => %{
+          "protocolVersion" => "2024-05-01",
+          "capabilities" => %{},
+          "_meta" => %{"appId" => "acme"},
+          "clientInfo" => %{
+            "name" => "TestClient",
+            "version" => "1.0.0",
+            "_meta" => %{"tenant" => "t-1"}
+          }
+        }
+      }
+
+      assert {:ok, encoded} = Message.encode_request(req, 1)
+      {:ok, [decoded]} = Message.decode(encoded)
+      assert decoded["params"]["_meta"] == %{"appId" => "acme"}
+      assert decoded["params"]["clientInfo"]["_meta"] == %{"tenant" => "t-1"}
     end
 
     test "encodes ping request" do

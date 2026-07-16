@@ -73,9 +73,11 @@ defmodule Anubis.Protocol.V2024_11_05 do
     %{
       "protocolVersion" => {:required, :string},
       "capabilities" => {:map, {:default, %{}}},
+      "_meta" => :map,
       "clientInfo" => %{
         "name" => {:required, :string},
-        "version" => {:required, :string}
+        "version" => {:required, :string},
+        "_meta" => :map
       }
     }
   end

@@ -54,6 +54,7 @@ defmodule Anubis.Server.Session do
           initialized: boolean(),
           client_info: map() | nil,
           client_capabilities: map() | nil,
+          init_meta: map(),
           log_level: String.t() | nil,
           frame: Frame.t(),
           server_info: map(),
@@ -169,6 +170,7 @@ defmodule Anubis.Server.Session do
       initialized: opts.pre_initialized,
       client_info: nil,
       client_capabilities: nil,
+      init_meta: %{},
       log_level: nil,
       frame: Frame.new(),
       server_info: server_info,
@@ -192,6 +194,7 @@ defmodule Anubis.Server.Session do
     }
 
     state = schedule_session_expiry(state)
+    maybe_schedule_store_ttl_refresh()
 
     Logging.server_event("session_starting", %{
       session_id: opts.session_id,
@@ -231,7 +234,7 @@ defmodule Anubis.Server.Session do
     with [latest_version | _] <- state.supported_versions,
          {:ok, protocol_version, protocol_module} <-
            Anubis.Protocol.Registry.negotiate(latest_version, state.supported_versions) do
-      {restored_client_info, restored_frame} = maybe_restore_from_store(state.session_id)
+      {restored_client_info, restored_frame, restored_init_meta} = maybe_restore_from_store(state.session_id)
 
       auto_state = %{
         state
@@ -239,6 +242,7 @@ defmodule Anubis.Server.Session do
           protocol_module: protocol_module,
           client_info: restored_client_info || %{"name" => "auto-recovered", "version" => "unknown"},
           client_capabilities: %{},
+          init_meta: restored_init_meta,
           initialized: true,
           frame: restored_frame || state.frame
       }
@@ -428,6 +432,12 @@ defmodule Anubis.Server.Session do
   def handle_info(:session_expired, state) do
     Logging.server_event("session_expired", %{session_id: state.session_id})
     {:stop, {:shutdown, :session_expired}, state}
+  end
+
+  def handle_info(:refresh_store_ttl, state) do
+    refresh_store_ttl(state)
+    maybe_schedule_store_ttl_refresh()
+    {:noreply, state}
   end
 
   def handle_info({:send_sampling_request, params, timeout}, state) do
@@ -683,6 +693,7 @@ defmodule Anubis.Server.Session do
         protocol_module: protocol_module,
         client_info: client_info,
         client_capabilities: client_capabilities,
+        init_meta: Map.get(params, "_meta", %{}),
         initialized: true
     }
 
@@ -1084,6 +1095,7 @@ defmodule Anubis.Server.Session do
     context = %Context{
       session_id: state.session_id,
       client_info: state.client_info,
+      init_meta: state.init_meta,
       headers: headers,
       remote_ip: remote_ip,
       auth: auth
@@ -1503,6 +1515,7 @@ defmodule Anubis.Server.Session do
       initialized: state.initialized,
       client_info: state.client_info,
       client_capabilities: state.client_capabilities,
+      init_meta: state.init_meta,
       log_level: state.log_level,
       pending_requests: state.pending_requests,
       frame: Frame.to_saved(frame)
@@ -1525,6 +1538,7 @@ defmodule Anubis.Server.Session do
       initialized: map["initialized"],
       client_info: map["client_info"],
       client_capabilities: map["client_capabilities"],
+      init_meta: map["init_meta"] || %{},
       log_level: map["log_level"],
       pending_requests: map["pending_requests"] || %{},
       frame: Frame.from_saved(map["frame"] || %{})
@@ -1567,19 +1581,21 @@ defmodule Anubis.Server.Session do
   defp maybe_restore_from_store(session_id) do
     case Anubis.get_session_store_adapter() do
       nil ->
-        {nil, nil}
+        {nil, nil, %{}}
 
       store ->
         case store.load(session_id, []) do
-          {:ok, saved} ->
-            client_info = saved["client_info"] || saved[:client_info]
-            frame = Frame.from_saved(saved["frame"] || saved[:frame] || %{})
-            {client_info, frame}
-
-          _ ->
-            {nil, nil}
+          {:ok, saved} -> parse_restored(saved)
+          _ -> {nil, nil, %{}}
         end
     end
+  end
+
+  defp parse_restored(saved) do
+    client_info = saved["client_info"] || saved[:client_info]
+    frame = Frame.from_saved(saved["frame"] || saved[:frame] || %{})
+    init_meta = saved["init_meta"] || saved[:init_meta] || %{}
+    {client_info, frame, init_meta}
   end
 
   defp fallback_to_init(module, auto_state, frame, protocol_version, state) do
@@ -1597,6 +1613,37 @@ defmodule Anubis.Server.Session do
 
     maybe_persist_session(%{auto_state | frame: frame})
     {:reply, :ok, %{auto_state | frame: frame}}
+  end
+
+  defp maybe_schedule_store_ttl_refresh do
+    if Anubis.get_session_store_adapter() do
+      interval = div(Anubis.get_session_store_ttl(), 2)
+      Process.send_after(self(), :refresh_store_ttl, interval)
+    end
+  end
+
+  defp refresh_store_ttl(%{initialized: false}), do: :ok
+
+  defp refresh_store_ttl(%{session_id: session_id} = state) do
+    if store = Anubis.get_session_store_adapter() do
+      case store.update_ttl(session_id, Anubis.get_session_store_ttl(), []) do
+        :ok ->
+          :ok
+
+        {:error, :not_found} ->
+          maybe_persist_session(state)
+
+        {:error, reason} ->
+          Logging.log(
+            :warning,
+            "Failed to refresh store TTL for session #{inspect(session_id)}",
+            session_id: session_id,
+            error: reason
+          )
+
+          :ok
+      end
+    end
   end
 
   defp maybe_persist_session(%{session_id: session_id} = state) do

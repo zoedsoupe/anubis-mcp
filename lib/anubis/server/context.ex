@@ -25,6 +25,13 @@ defmodule Anubis.Server.Context do
       }
 
   `auth` is `nil` when no authorization is configured or the transport is STDIO.
+
+  ## Init meta field
+
+  `init_meta` carries the `_meta` map the client sent on its `initialize`
+  request params (the MCP extension namespace), available to every callback
+  including `init/2`. Empty map when the client sent none. Metadata sent under
+  `clientInfo._meta` is preserved inside `client_info` itself.
   """
 
   @type auth_claims :: %{
@@ -41,6 +48,7 @@ defmodule Anubis.Server.Context do
   @type t :: %__MODULE__{
           session_id: String.t() | nil,
           client_info: map() | nil,
+          init_meta: map(),
           headers: %{String.t() => String.t()},
           remote_ip: :inet.ip_address() | nil,
           auth: auth_claims() | nil
@@ -48,6 +56,7 @@ defmodule Anubis.Server.Context do
 
   defstruct session_id: nil,
             client_info: nil,
+            init_meta: %{},
             headers: %{},
             remote_ip: nil,
             auth: nil

@@ -65,4 +65,12 @@ defmodule Anubis do
 
     if enabled? && Code.ensure_loaded?(adapter), do: adapter
   end
+
+  @default_session_store_ttl to_timeout(minute: 30)
+
+  @spec get_session_store_ttl :: pos_integer
+  def get_session_store_ttl do
+    config = Application.get_env(:anubis_mcp, :session_store) || []
+    config[:ttl] || @default_session_store_ttl
+  end
 end

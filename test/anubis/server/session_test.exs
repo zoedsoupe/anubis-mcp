@@ -32,6 +32,74 @@ defmodule Anubis.Server.SessionTest do
     end
   end
 
+  describe "initialize _meta passthrough" do
+    test "carries params._meta and clientInfo._meta through to session state and context" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      session_id = "meta_session_#{System.unique_integer()}"
+      session_name = Registry.session_name(StubServer, session_id)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :meta_session
+        )
+
+      client_info = %{"name" => "TestClient", "version" => "1.0.0", "_meta" => %{"tenant" => "t-1"}}
+
+      init_msg =
+        "2025-03-26"
+        |> init_request(client_info)
+        |> put_in(["params", "_meta"], %{"appId" => "acme"})
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, init_msg, %{}})
+
+      init_notification = build_notification("notifications/initialized", %{})
+      assert :ok = GenServer.cast(session, {:mcp_notification, init_notification, %{}})
+
+      state = :sys.get_state(session)
+      assert state.init_meta == %{"appId" => "acme"}
+      assert state.client_info == client_info
+      assert state.frame.context.init_meta == %{"appId" => "acme"}
+      assert state.frame.context.client_info["_meta"] == %{"tenant" => "t-1"}
+    end
+
+    test "defaults init_meta to empty map when client sends none" do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      session_id = "no_meta_session_#{System.unique_integer()}"
+      session_name = Registry.session_name(StubServer, session_id)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :no_meta_session
+        )
+
+      init_msg = init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, init_msg, %{}})
+
+      state = :sys.get_state(session)
+      assert state.init_meta == %{}
+    end
+  end
+
   describe "handle_call/3 for messages" do
     setup :initialized_server
 

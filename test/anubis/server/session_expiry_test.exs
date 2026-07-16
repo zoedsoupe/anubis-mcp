@@ -101,6 +101,93 @@ defmodule Anubis.Server.SessionExpiryTest do
       state = :sys.get_state(session)
       assert state.client_info == %{"name" => "auto-recovered", "version" => "unknown"}
     end
+
+    test "restores init_meta from store" do
+      session_id = "store-meta-#{System.unique_integer([:positive])}"
+
+      MockSessionStore.save(
+        session_id,
+        %{
+          "id" => session_id,
+          "client_info" => %{"name" => "real-client", "version" => "2.0"},
+          "init_meta" => %{"appId" => "acme"},
+          "frame" => %{"assigns" => %{}, "pagination_limit" => nil}
+        },
+        []
+      )
+
+      session = start_session(StubServer, session_id)
+
+      assert :ok = Session.auto_initialize(session)
+
+      state = :sys.get_state(session)
+      assert state.init_meta == %{"appId" => "acme"}
+    end
+  end
+
+  describe "sliding store TTL refresh" do
+    setup do
+      {:ok, _} = MockSessionStore.start_link([])
+      MockSessionStore.reset!()
+
+      Application.put_env(:anubis_mcp, :session_store,
+        enabled: true,
+        adapter: MockSessionStore,
+        ttl: 100
+      )
+
+      on_exit(fn -> Application.delete_env(:anubis_mcp, :session_store) end)
+
+      :ok
+    end
+
+    defp eventually(fun, timeout \\ 1_000) do
+      deadline = System.monotonic_time(:millisecond) + timeout
+
+      fn ->
+        result = fun.()
+        if not result and System.monotonic_time(:millisecond) < deadline, do: Process.sleep(10)
+        result
+      end
+      |> Stream.repeatedly()
+      |> Enum.find(& &1) || flunk("condition not met within #{timeout}ms")
+    end
+
+    test "initialized session periodically refreshes the persisted TTL" do
+      session_id = "ttl-refresh-#{System.unique_integer([:positive])}"
+      session = start_session(StubServer, session_id)
+
+      assert :ok = Session.auto_initialize(session)
+      assert Map.has_key?(MockSessionStore.get_all_sessions(), session_id)
+
+      eventually(fn ->
+        Enum.any?(MockSessionStore.get_ttl_updates(), &(&1 == {session_id, 100}))
+      end)
+    end
+
+    test "uninitialized session does not touch the store" do
+      session_id = "ttl-uninit-#{System.unique_integer([:positive])}"
+      _session = start_session(StubServer, session_id)
+
+      Process.sleep(200)
+
+      assert MockSessionStore.get_ttl_updates() == []
+      refute Map.has_key?(MockSessionStore.get_all_sessions(), session_id)
+    end
+
+    test "re-persists an active session that fell out of the store" do
+      session_id = "ttl-repersist-#{System.unique_integer([:positive])}"
+      session = start_session(StubServer, session_id)
+
+      assert :ok = Session.auto_initialize(session)
+      assert Map.has_key?(MockSessionStore.get_all_sessions(), session_id)
+
+      MockSessionStore.delete(session_id, [])
+
+      eventually(fn ->
+        Map.has_key?(MockSessionStore.get_all_sessions(), session_id)
+      end)
+    end
   end
 
   describe "handle_session_expired/2 callback" do

@@ -11,7 +11,7 @@ defmodule Anubis.Test.MockSessionStore do
   use Agent
 
   def start_link(_opts) do
-    start = fn -> %{sessions: %{}} end
+    start = fn -> %{sessions: %{}, ttl_updates: []} end
 
     with {:error, {:already_started, pid}} <- Agent.start_link(start, name: __MODULE__) do
       {:ok, pid}
@@ -54,9 +54,14 @@ defmodule Anubis.Test.MockSessionStore do
     {:ok, sessions}
   end
 
-  def update_ttl(_session_id, _ttl_seconds, _opts) do
-    # Mock doesn't implement TTL
-    :ok
+  def update_ttl(session_id, ttl_ms, _opts) do
+    Agent.get_and_update(__MODULE__, fn data ->
+      if Map.has_key?(data.sessions, session_id) do
+        {:ok, %{data | ttl_updates: [{session_id, ttl_ms} | data.ttl_updates]}}
+      else
+        {{:error, :not_found}, data}
+      end
+    end)
   end
 
   def update(session_id, updates, _opts) do
@@ -82,11 +87,15 @@ defmodule Anubis.Test.MockSessionStore do
 
   def reset! do
     if Process.whereis(__MODULE__) do
-      Agent.update(__MODULE__, fn _ -> %{sessions: %{}} end)
+      Agent.update(__MODULE__, fn _ -> %{sessions: %{}, ttl_updates: []} end)
     end
   end
 
   def get_all_sessions do
     Agent.get(__MODULE__, & &1.sessions)
+  end
+
+  def get_ttl_updates do
+    Agent.get(__MODULE__, & &1.ttl_updates)
   end
 end

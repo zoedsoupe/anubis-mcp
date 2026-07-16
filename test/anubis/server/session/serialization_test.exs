@@ -148,6 +148,7 @@ defmodule Anubis.Server.Session.SerializationTest do
       initialized: true,
       client_info: %{"name" => "test_client"},
       client_capabilities: %{"tools" => %{}},
+      init_meta: %{},
       log_level: "info",
       frame: %Frame{assigns: %{"key" => "value"}, pagination_limit: 10},
       server_info: %{name: "test"},

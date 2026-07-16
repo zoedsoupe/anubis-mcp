@@ -53,7 +53,9 @@ defmodule Anubis.MCP.Message do
   @progress_notif_params_schema_2025 V2025_03_26.progress_params_schema()
 
   @request_branch_specs %{
-    "initialize" => Map.merge(V2025_11_25.request_params_schema("initialize"), @progress_params),
+    # initialize declares its own open "_meta" (extension namespace, issue #206);
+    # merge order keeps it from being narrowed to the progress-only "_meta"
+    "initialize" => Map.merge(@progress_params, V2025_11_25.request_params_schema("initialize")),
     "ping" => :map,
     "resources/list" => Map.merge(V2025_11_25.request_params_schema("resources/list"), @progress_params),
     "resources/templates/list" => :map,
