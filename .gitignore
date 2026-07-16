@@ -35,9 +35,6 @@ hermes_mcp-*.tar
 
 /.context/
 
-# Burrito specific
-/burrito_out/
-
 # Local envs
 .env.*
 .direnv
