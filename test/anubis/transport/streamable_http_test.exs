@@ -378,6 +378,49 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       StubClient.clear_messages()
     end
 
+    test "forwards custom :headers to the DELETE session request", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+      session_id = "test-session-delete-headers"
+      test_pid = self()
+
+      # POST establishes the session (returns an mcp-session-id so delete_session runs)
+      Bypass.stub(bypass, "POST", "/mcp", fn conn ->
+        conn =
+          conn
+          |> Plug.Conn.put_resp_header("content-type", "application/json")
+          |> Plug.Conn.put_resp_header("mcp-session-id", session_id)
+
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      # The DELETE that shutdown/1 triggers — assert the auth header arrives.
+      Bypass.stub(bypass, "DELETE", "/mcp", fn conn ->
+        auth = conn |> Plug.Conn.get_req_header("authorization") |> List.first()
+        send(test_pid, {:delete_auth, auth})
+        Plug.Conn.resp(conn, 200, "")
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          headers: %{"authorization" => "Bearer test-token"},
+          transport_opts: @test_http_opts
+        )
+
+      # Drive a POST to establish the session, so shutdown issues a DELETE.
+      {:ok, ping} = Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+      assert :ok = StreamableHTTP.send_message(transport, ping, timeout: 5000)
+
+      StreamableHTTP.shutdown(transport)
+
+      assert_receive {:delete_auth, "Bearer test-token"}, 1_000
+
+      StubClient.clear_messages()
+    end
+
     test "handles custom mcp_path", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       custom_path = "/api/v1/mcp"
