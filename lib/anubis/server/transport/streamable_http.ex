@@ -235,16 +235,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       handler_pid: inspect(pid)
     })
 
-    # Emit an on-register telemetry signal so hosts can react the moment a client
-    # (re)attaches an SSE handler -- for example, observing standalone GET/SSE
-    # stream churn, or nudging a reconnecting client to drain state buffered while
-    # no handler was connected. Metadata shape:
-    #
-    #   %{transport: :streamable_http, server: term(), session_id: String.t(),
-    #     handler_pid: pid(), handler_count: non_neg_integer()}
-    #
-    # where handler_count is the number of SSE handlers connected after this
-    # registration. Measurements carry %{count: 1, system_time: integer()}.
     Telemetry.execute(
       Telemetry.event_transport_sse_handler_registered(),
       %{count: 1, system_time: System.system_time()},
