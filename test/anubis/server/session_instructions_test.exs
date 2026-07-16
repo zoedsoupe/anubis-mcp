@@ -1,11 +1,8 @@
 defmodule Anubis.Server.SessionInstructionsTest do
   use Anubis.MCP.Case, async: false
 
-  alias Anubis.MCP.Message
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
-
-  require Message
 
   @moduletag capture_log: true
 
