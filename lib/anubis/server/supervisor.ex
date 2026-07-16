@@ -26,6 +26,7 @@ defmodule Anubis.Server.Supervisor do
           | {:session_idle_timeout, pos_integer() | nil}
           | {:request_timeout, pos_integer() | nil}
           | {:authorization, keyword() | nil}
+          | {:finch_name, Finch.name()}
 
   @doc """
   Starts the server supervisor.
@@ -80,8 +81,9 @@ defmodule Anubis.Server.Supervisor do
   def init(opts) do
     server = Keyword.fetch!(opts, :module)
     transport = normalize_transport(Keyword.fetch!(opts, :transport))
+    finch_name = Keyword.get(opts, :finch_name, Anubis.Finch)
 
-    maybe_store_authorization_config(server, transport, opts)
+    maybe_store_authorization_config(server, transport, opts, finch_name)
 
     if should_start?(transport) do
       session_idle_timeout = Keyword.get(opts, :session_idle_timeout)
@@ -133,15 +135,22 @@ defmodule Anubis.Server.Supervisor do
             )
 
           _ ->
+            extra_children =
+              List.wrap(maybe_finch_child(opts, finch_name)) ++
+                session_store_children(Application.get_env(:anubis_mcp, :session_store, []))
+
             build_http_children(
               server,
-              registry_mod,
-              registry_opts,
-              sup_mod,
-              layer,
-              transport_opts,
-              task_supervisor,
-              task_store_child
+              %{
+                registry_mod: registry_mod,
+                registry_opts: registry_opts,
+                sup_mod: sup_mod,
+                layer: layer,
+                transport_opts: transport_opts,
+                task_supervisor: task_supervisor,
+                task_store_child: task_store_child,
+                extra_children: extra_children
+              }
             )
         end
 
@@ -170,7 +179,7 @@ defmodule Anubis.Server.Supervisor do
     :persistent_term.get({__MODULE__, server, :authorization_config}, nil)
   end
 
-  defp maybe_store_authorization_config(server, transport, opts) do
+  defp maybe_store_authorization_config(server, transport, opts, finch_name) do
     case Keyword.get(opts, :authorization) do
       nil ->
         :persistent_term.erase({__MODULE__, server, :authorization_config})
@@ -188,9 +197,52 @@ defmodule Anubis.Server.Supervisor do
             )
 
           _ ->
-            parsed = Authorization.parse_config!(auth_opts)
+            parsed = auth_opts |> Authorization.parse_config!() |> Map.put(:finch_name, finch_name)
             :persistent_term.put({__MODULE__, server, :authorization_config}, parsed)
         end
+    end
+  end
+
+  # Only start a default Finch when authorization needs one and the caller
+  # didn't bring its own pool. Pass :finch_name to run/size/share your own.
+  defp maybe_finch_child(opts, finch_name) do
+    auth_configured? = not is_nil(Keyword.get(opts, :authorization))
+    brings_own_finch? = Keyword.has_key?(opts, :finch_name)
+
+    if auth_configured? and not brings_own_finch? do
+      # ponytail: default size 15; bring your own :finch_name to size/share it
+      {Finch, name: finch_name, pools: %{default: [size: 15]}}
+    end
+  end
+
+  # ponytail: single global session store; running multiple servers means
+  # starting the store yourself and leaving :session_store disabled here.
+  @doc false
+  def session_store_children(config) when is_list(config) do
+    enabled? = Keyword.get(config, :enabled, false)
+    adapter = Keyword.get(config, :adapter)
+
+    cond do
+      not enabled? ->
+        []
+
+      is_nil(adapter) ->
+        Logging.log(:warning, "Session store enabled but adapter not configured", [])
+        []
+
+      Code.ensure_loaded?(adapter) ->
+        Logging.log(:info, "Starting session store",
+          enabled: true,
+          adapter: adapter,
+          ttl: Keyword.get(config, :ttl),
+          namespace: Keyword.get(config, :namespace)
+        )
+
+        [{adapter, config}]
+
+      true ->
+        Logging.log(:warning, "Session store enabled but adapter not available", adapter: adapter)
+        []
     end
   end
 
@@ -259,16 +311,16 @@ defmodule Anubis.Server.Supervisor do
   end
 
   # For HTTP transports: session supervisor (DynamicSupervisor or pluggable) + registry
-  defp build_http_children(
-         server,
-         registry_mod,
-         registry_opts,
-         sup_mod,
-         layer,
-         transport_opts,
-         task_supervisor,
-         task_store_child
-       ) do
+  defp build_http_children(server, %{
+         registry_mod: registry_mod,
+         registry_opts: registry_opts,
+         sup_mod: sup_mod,
+         layer: layer,
+         transport_opts: transport_opts,
+         task_supervisor: task_supervisor,
+         task_store_child: task_store_child,
+         extra_children: extra_children
+       }) do
     session_sup_name = Registry.session_supervisor_name(server)
     naming_registry = Registry.naming_registry_name(Registry.registry_name(server))
 
@@ -278,12 +330,14 @@ defmodule Anubis.Server.Supervisor do
         spec -> spec
       end
 
-    base = [
-      {Task.Supervisor, name: task_supervisor},
-      {Elixir.Registry, keys: :unique, name: naming_registry},
-      {sup_mod, name: session_sup_name, strategy: :one_for_one},
-      {layer, transport_opts}
-    ]
+    base =
+      extra_children ++
+        [
+          {Task.Supervisor, name: task_supervisor},
+          {Elixir.Registry, keys: :unique, name: naming_registry},
+          {sup_mod, name: session_sup_name, strategy: :one_for_one},
+          {layer, transport_opts}
+        ]
 
     base = if registry_child, do: [registry_child | base], else: base
     if task_store_child, do: [task_store_child | base], else: base

@@ -1,8 +1,9 @@
-defmodule Anubis.ApplicationTest do
+defmodule Anubis.Server.SessionStoreTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
+  alias Anubis.Server.Supervisor
   alias Anubis.Test.MockSessionStore
 
   test "does not log warning when session store is disabled" do
@@ -10,7 +11,7 @@ defmodule Anubis.ApplicationTest do
 
     log =
       capture_log(fn ->
-        assert [] == Anubis.Application.session_store_children(config)
+        assert [] == Supervisor.session_store_children(config)
       end)
 
     refute log =~ "Session store enabled but adapter not available"
@@ -22,7 +23,7 @@ defmodule Anubis.ApplicationTest do
 
     log =
       capture_log(fn ->
-        assert [] == Anubis.Application.session_store_children(config)
+        assert [] == Supervisor.session_store_children(config)
       end)
 
     assert log =~ "Session store enabled but adapter not configured"
@@ -33,7 +34,7 @@ defmodule Anubis.ApplicationTest do
 
     log =
       capture_log(fn ->
-        assert [] == Anubis.Application.session_store_children(config)
+        assert [] == Supervisor.session_store_children(config)
       end)
 
     assert log =~ "Session store enabled but adapter not available"
@@ -42,6 +43,6 @@ defmodule Anubis.ApplicationTest do
   test "returns child spec when session store is enabled and adapter is available" do
     config = [enabled: true, adapter: MockSessionStore, ttl: 1_800_000, namespace: "anubis:sessions"]
 
-    assert [{MockSessionStore, config}] == Anubis.Application.session_store_children(config)
+    assert [{MockSessionStore, config}] == Supervisor.session_store_children(config)
   end
 end

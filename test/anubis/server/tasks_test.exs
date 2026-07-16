@@ -7,8 +7,6 @@ defmodule Anubis.Server.TasksTest do
   alias Anubis.Server.TaskStore.Local, as: TaskStoreLocal
   alias Anubis.Test.SyncHelpers
 
-  require Message
-
   @moduletag capture_log: true
 
   setup :start_tasks_session

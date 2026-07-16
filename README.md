@@ -115,9 +115,9 @@ For detailed guides and examples, visit the [official documentation](https://hex
 
 We have build some elixir implementation examples using `plug` based and `phoenix` apps:
 
-1. [upcase-server](/priv/dev/upcase/README.md): `plug` based MCP server using streamable_http
-2. [echo-elixir](/priv/dev/echo-elixir/README.md): `phoenix` based MCP server using sse
-3. [ascii-server](/priv/dev/ascii/README.md): `phoenix_live_view` based MCP server using streamable_http and UI
+1. [upcase-server](/examples/upcase/README.md): `plug` based MCP server using streamable_http
+2. [echo-elixir](/examples/echo-elixir/README.md): `phoenix` based MCP server using sse
+3. [ascii-server](/examples/ascii/README.md): `phoenix_live_view` based MCP server using streamable_http and UI
 
 ## License
 

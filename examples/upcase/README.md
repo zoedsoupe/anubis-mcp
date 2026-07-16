@@ -47,7 +47,7 @@ The server uses StreamableHTTP transport through Bandit, exposing the MCP endpoi
 
 ```bash
 # Development mode
-cd priv/dev/upcase
+cd examples/upcase
 mix deps.get
 mix run --no-halt
 ```

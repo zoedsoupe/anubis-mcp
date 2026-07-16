@@ -38,6 +38,7 @@ defmodule Anubis.SSE do
   """
   @spec connect(String.t(), map(), Keyword.t()) :: Enumerable.t()
   def connect(server_url, headers \\ %{}, opts \\ []) do
+    {finch_name, opts} = Keyword.pop(opts, :finch_name, Anubis.Finch)
     opts = Keyword.merge(@default_http_opts, opts)
 
     with {:ok, uri} <- parse_uri(server_url) do
@@ -45,7 +46,7 @@ defmodule Anubis.SSE do
 
       req = Finch.build(:get, uri, headers)
       ref = make_ref()
-      task = spawn_stream_task(req, ref, opts)
+      task = spawn_stream_task(req, ref, finch_name, opts)
 
       Stream.resource(
         fn -> {ref, task} end,
@@ -59,13 +60,13 @@ defmodule Anubis.SSE do
     with {:error, _} <- URI.new(url), do: {:error, :invalid_url}
   end
 
-  defp spawn_stream_task(%Finch.Request{} = req, ref, opts) do
+  defp spawn_stream_task(%Finch.Request{} = req, ref, finch_name, opts) do
     dest = Keyword.get(opts, :dest, self())
 
-    Task.async(fn -> loop_sse_stream(req, ref, dest, opts) end)
+    Task.async(fn -> loop_sse_stream(req, ref, dest, finch_name, opts) end)
   end
 
-  defp loop_sse_stream(req, ref, dest, opts, attempt \\ 1) do
+  defp loop_sse_stream(req, ref, dest, finch_name, opts, attempt \\ 1) do
     {retry, http} = Keyword.split(opts, @retry_opts)
 
     if attempt <= retry[:max_reconnections] do
@@ -75,7 +76,7 @@ defmodule Anubis.SSE do
 
       on_chunk = &process_sse_stream(&1, &2, dest, ref)
 
-      case Finch.stream_while(req, Anubis.Finch, nil, on_chunk, http) do
+      case Finch.stream_while(req, finch_name, nil, on_chunk, http) do
         {:ok, _acc} ->
           Anubis.Logging.transport_event("sse_reconnect", %{
             reason: "success",
@@ -84,7 +85,7 @@ defmodule Anubis.SSE do
           })
 
           Process.sleep(backoff)
-          loop_sse_stream(req, ref, dest, opts, attempt + 1)
+          loop_sse_stream(req, ref, dest, finch_name, opts, attempt + 1)
 
         {:error, exc, _acc} ->
           Anubis.Logging.transport_event(
@@ -99,7 +100,7 @@ defmodule Anubis.SSE do
           )
 
           Process.sleep(backoff + to_timeout(second: 1))
-          loop_sse_stream(req, ref, dest, opts, attempt + 1)
+          loop_sse_stream(req, ref, dest, finch_name, opts, attempt + 1)
       end
     else
       send(dest, {:chunk, :halted, ref})
