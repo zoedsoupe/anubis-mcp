@@ -161,18 +161,23 @@ if Code.ensure_loaded?(Plug) do
 
     defp handle_post(conn, %{session_header: session_header} = opts) do
       with :ok <- validate_accept_header(conn),
-           {:ok, body, conn} <- maybe_read_request_body(conn, opts),
-           {:ok, [message]} <- maybe_parse_messages(body) do
-        session_id = determine_session_id(conn, session_header, message)
-        context = build_request_context(conn, Map.get(opts, :auth_claims))
+           {:ok, body, conn} <- maybe_read_request_body(conn, opts) do
+        case maybe_parse_messages(body) do
+          {:ok, [message]} ->
+            session_id = determine_session_id(conn, session_header, message)
+            context = build_request_context(conn, Map.get(opts, :auth_claims))
 
-        Logging.transport_event("parsed_messages", %{
-          method: message["method"],
-          id: message["id"],
-          session_id: session_id
-        })
+            Logging.transport_event("parsed_messages", %{
+              method: message["method"],
+              id: message["id"],
+              session_id: session_id
+            })
 
-        process_message(conn, message, session_id, context, opts)
+            process_message(conn, message, session_id, context, opts)
+
+          {:error, reason} ->
+            send_parse_failure(conn, body, reason)
+        end
       else
         {:error, :invalid_accept_header} ->
           send_error(
@@ -181,19 +186,53 @@ if Code.ensure_loaded?(Plug) do
             "Not Acceptable: Client must accept application/json"
           )
 
-        {:error, :invalid_json} ->
+        {:error, reason} ->
+          Logging.transport_event("request_error", %{reason: reason}, level: :error)
+
+          send_jsonrpc_error(
+            conn,
+            Error.protocol(:internal_error, %{reason: reason}),
+            nil
+          )
+      end
+    end
+
+    defp send_parse_failure(conn, body, reason) do
+      case reason do
+        :parse_error ->
+          send_jsonrpc_error(
+            conn,
+            Error.protocol(:parse_error, %{message: "Parse error"}),
+            nil
+          )
+
+        :invalid_json ->
           send_jsonrpc_error(
             conn,
             Error.protocol(:parse_error, %{message: "Invalid JSON"}),
             nil
           )
 
-        {:error, reason} ->
-          Logging.transport_event("request_error", %{reason: reason}, level: :error)
+        :invalid_request ->
+          send_jsonrpc_error(
+            conn,
+            Error.protocol(:invalid_request, %{message: "Invalid Request"}),
+            extract_request_id_from_body(body)
+          )
+
+        :method_not_found ->
+          send_jsonrpc_error(
+            conn,
+            Error.protocol(:method_not_found, %{message: "Method not found"}),
+            extract_request_id_from_body(body)
+          )
+
+        other ->
+          Logging.transport_event("request_error", %{reason: other}, level: :error)
 
           send_jsonrpc_error(
             conn,
-            Error.protocol(:parse_error, %{reason: reason}),
+            Error.protocol(:internal_error, %{reason: other}),
             nil
           )
       end
@@ -490,14 +529,14 @@ if Code.ensure_loaded?(Plug) do
             level: :error
           )
 
-          {:error, :invalid_json}
+          {:error, reason}
       end
     end
 
     defp maybe_parse_messages(body) when is_map(body) do
       case Message.validate_message(body) do
         {:ok, message} -> {:ok, [message]}
-        {:error, _} -> {:error, :invalid_json}
+        {:error, reason} -> {:error, reason}
       end
     end
 
@@ -561,6 +600,15 @@ if Code.ensure_loaded?(Plug) do
 
     defp extract_request_id(%{"id" => request_id}), do: request_id
     defp extract_request_id(_), do: nil
+
+    defp extract_request_id_from_body(body) when is_binary(body) do
+      case JSON.decode(body) do
+        {:ok, %{"id" => request_id}} -> request_id
+        _ -> nil
+      end
+    end
+
+    defp extract_request_id_from_body(_), do: nil
 
     defp build_request_context(conn, auth_claims) do
       %{
