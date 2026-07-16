@@ -22,8 +22,10 @@ jobs:
             otp: 28
           - elixir: 1.18
             otp: 27
-          - elixir: 1.18
-            otp: 26
+          - elixir: 1.19.5
+            otp: 28
+          - elixir: 1.20.2
+            otp: 28
 
     steps:
       - name: Checkout code
@@ -79,8 +81,10 @@ jobs:
             otp: 28
           - elixir: 1.18
             otp: 27
-          - elixir: 1.18
-            otp: 26
+          - elixir: 1.19.5
+            otp: 28
+          - elixir: 1.20.2
+            otp: 28
 
     steps:
       - name: Checkout code
@@ -163,8 +167,10 @@ jobs:
             otp: 28
           - elixir: 1.18
             otp: 27
-          - elixir: 1.18
-            otp: 26
+          - elixir: 1.19.5
+            otp: 28
+          - elixir: 1.20.2
+            otp: 28
 
     steps:
       - name: Checkout code
