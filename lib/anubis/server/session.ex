@@ -139,8 +139,11 @@ defmodule Anubis.Server.Session do
   should not rely on this identity for client-specific decisions.
   """
   @spec auto_initialize(GenServer.server()) :: :ok | {:error, term()}
-  def auto_initialize(session) do
-    GenServer.call(session, :auto_initialize)
+  def auto_initialize(session), do: auto_initialize(session, nil)
+
+  @spec auto_initialize(GenServer.server(), map() | nil) :: :ok | {:error, term()}
+  def auto_initialize(session, transport_context) do
+    GenServer.call(session, {:auto_initialize, transport_context})
   catch
     :exit, reason -> {:error, {:session_unavailable, reason}}
   end
@@ -217,11 +220,11 @@ defmodule Anubis.Server.Session do
     handle_single_request(decoded, transport_context, from, state)
   end
 
-  def handle_call(:auto_initialize, _from, %{initialized: true} = state) do
+  def handle_call({:auto_initialize, _transport_context}, _from, %{initialized: true} = state) do
     {:reply, :ok, state}
   end
 
-  def handle_call(:auto_initialize, _from, %{server_module: module} = state) do
+  def handle_call({:auto_initialize, transport_context}, _from, %{server_module: module} = state) do
     with [latest_version | _] <- state.supported_versions,
          {:ok, protocol_version, protocol_module} <-
            Anubis.Protocol.Registry.negotiate(latest_version, state.supported_versions) do
@@ -237,7 +240,8 @@ defmodule Anubis.Server.Session do
           frame: restored_frame || state.frame
       }
 
-      frame = prepare_frame(auto_state)
+      auto_state = put_recovery_assigns(auto_state, transport_context)
+      frame = prepare_frame(auto_state, transport_context)
 
       case maybe_call_session_expired(module, auto_state.session_id, frame) do
         {:ok, frame} ->
@@ -1089,6 +1093,12 @@ defmodule Anubis.Server.Session do
   end
 
   defp merge_transport_assigns(state, _context), do: state
+
+  defp put_recovery_assigns(state, %{assigns: assigns}) when is_map(assigns) and map_size(assigns) > 0 do
+    %{state | frame: %{state.frame | assigns: assigns}}
+  end
+
+  defp put_recovery_assigns(state, _transport_context), do: state
 
   defp normalize_headers(req_headers) when is_list(req_headers) do
     Map.new(req_headers, fn {k, v} -> {String.downcase(k), v} end)
