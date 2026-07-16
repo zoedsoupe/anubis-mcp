@@ -642,4 +642,63 @@ defmodule Anubis.Server.SessionTest do
       assert_receive {:lib_terminate, %{session_id: ^session_id}}, 500
     end
   end
+
+  describe "pre_initialized option" do
+    setup do
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+      %{transport_name: transport_name, task_sup: task_sup}
+    end
+
+    test "accepts requests without the initialize handshake when pre_initialized: true", %{
+      transport_name: transport_name,
+      task_sup: task_sup
+    } do
+      session_name = Registry.session_name(StubServer, "pre-init-session")
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: "pre-init-session",
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup,
+           pre_initialized: true},
+          id: :pre_init_session
+        )
+
+      request = build_request("tools/list", %{}, 1)
+
+      assert {:ok, encoded} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert {:ok, [decoded]} = Message.decode(encoded)
+      refute Map.has_key?(decoded, "error")
+    end
+
+    test "rejects requests by default (pre_initialized: false) before the handshake", %{
+      transport_name: transport_name,
+      task_sup: task_sup
+    } do
+      session_name = Registry.session_name(StubServer, "default-not-init-session")
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: "default-not-init-session",
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :default_not_init_session
+        )
+
+      request = build_request("tools/list", %{}, 1)
+
+      assert {:ok, encoded} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert {:ok, [decoded]} = Message.decode(encoded)
+      assert decoded["error"]["data"]["message"] == "Server not initialized"
+    end
+  end
 end

@@ -4,7 +4,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
   import Plug.Conn
   import Plug.Test
 
+  alias Anubis.MCP.Message
+  alias Anubis.Server.Registry
   alias Anubis.Server.Supervisor, as: ServerSupervisor
+  alias Anubis.Server.Transport.StreamableHTTP
   alias Anubis.Server.Transport.StreamableHTTP.Plug
   alias Anubis.Test.MockSessionStore
 
@@ -54,7 +57,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
       {:ok, plug_opts: plug_opts}
     end
 
-    test "GET request with existing session ID reconnects to stored session", %{plug_opts: _plug_opts} do
+    test "GET request with existing session ID reconnects to stored session", %{
+      plug_opts: _plug_opts
+    } do
       session_id = "existing_session_123"
 
       session_data = %{
@@ -273,6 +278,137 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
         |> put_req_header("mcp-session-id", session_id)
 
       assert get_req_header(conn, "mcp-session-id") == [session_id]
+    end
+  end
+
+  describe "cross-pod session restore" do
+    setup do
+      task_sup = Registry.task_supervisor_name(StubServer)
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      registry_name = Registry.registry_name(StubServer)
+
+      start_supervised!({Task.Supervisor, name: task_sup})
+      start_supervised!({StubTransport, name: transport_name})
+      start_supervised!({Registry.Local, name: registry_name})
+
+      naming_registry = Registry.naming_registry_name(registry_name)
+      start_supervised!({Elixir.Registry, keys: :unique, name: naming_registry})
+
+      session_sup_name = Registry.session_supervisor_name(StubServer)
+      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one})
+
+      session_config = %{
+        server_module: StubServer,
+        registry_mod: Registry.Local,
+        transport: [layer: StubTransport, name: transport_name],
+        session_idle_timeout: nil,
+        timeout: 30_000,
+        task_supervisor: task_sup
+      }
+
+      :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)
+
+      name = Registry.transport_name(StubServer, :streamable_http)
+
+      start_supervised!({StreamableHTTP, server: StubServer, name: name, task_supervisor: task_sup})
+
+      on_exit(fn ->
+        :persistent_term.erase({ServerSupervisor, StubServer, :session_config})
+      end)
+
+      opts = Plug.init(server: StubServer)
+      %{opts: opts}
+    end
+
+    test "a request for a session not in the local registry is restored from the store", %{
+      opts: opts
+    } do
+      session_id = "cross-pod-session-#{System.unique_integer([:positive])}"
+
+      MockSessionStore.save(
+        session_id,
+        %{"initialized" => true, "protocol_version" => "2025-03-26"},
+        []
+      )
+
+      {:ok, body} = Message.encode_request(%{"method" => "ping", "params" => %{}}, 1)
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> Plug.call(opts)
+
+      assert conn.status == 200
+      decoded = JSON.decode!(conn.resp_body)
+      refute Map.has_key?(decoded, "error")
+    end
+
+    test "a request for a session not in the store falls back to auto-initialize", %{opts: opts} do
+      session_id = "unknown-session-#{System.unique_integer([:positive])}"
+
+      {:ok, body} = Message.encode_request(%{"method" => "ping", "params" => %{}}, 1)
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> Plug.call(opts)
+
+      assert conn.status == 200
+    end
+
+    test "a notification for a session not in the local registry is restored from the store", %{
+      opts: opts
+    } do
+      session_id = "cross-pod-notif-#{System.unique_integer([:positive])}"
+
+      MockSessionStore.save(
+        session_id,
+        %{"initialized" => true, "protocol_version" => "2025-03-26"},
+        []
+      )
+
+      {:ok, body} =
+        Message.encode_notification(%{
+          "method" => "notifications/message",
+          "params" => %{"level" => "info", "data" => "hi"}
+        })
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> Plug.call(opts)
+
+      assert conn.status == 202
+      assert conn.resp_body == "{}"
+    end
+
+    test "a notification for a completely unknown session returns 404", %{opts: opts} do
+      session_id = "completely-unknown-#{System.unique_integer([:positive])}"
+
+      {:ok, body} =
+        Message.encode_notification(%{
+          "method" => "notifications/message",
+          "params" => %{"level" => "info", "data" => "hi"}
+        })
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> Plug.call(opts)
+
+      assert conn.status == 404
     end
   end
 end
