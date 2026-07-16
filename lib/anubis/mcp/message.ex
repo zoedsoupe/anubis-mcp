@@ -8,98 +8,17 @@ defmodule Anubis.MCP.Message do
   import Peri
 
   # MCP message schemas
+  #
+  # The version-specific param schemas live in the `Anubis.Protocol.V*` modules
+  # and are the single source of truth. This module derives the flat,
+  # version-agnostic superset used to validate any incoming message by pulling
+  # each method's schema from the latest protocol version at compile time.
 
-  @init_params_schema %{
-    "protocolVersion" => {:required, :string},
-    "capabilities" => {:map, {:default, %{}}},
-    "clientInfo" => %{
-      "name" => {:required, :string},
-      "version" => {:required, :string}
-    }
-  }
-
-  @ping_params_schema :map
-
-  @resources_list_params_schema %{
-    "cursor" => :string
-  }
-
-  @resources_read_params_schema %{
-    "uri" => {:required, :string}
-  }
-
-  @resources_subscribe_params_schema %{
-    "uri" => {:required, :string}
-  }
-
-  @resources_unsubscribe_params_schema %{
-    "uri" => {:required, :string}
-  }
-
-  @prompts_list_params_schema %{
-    "cursor" => :string
-  }
-
-  @prompts_get_params_schema %{
-    "name" => {:required, :string},
-    "arguments" => :map
-  }
-
-  @tools_list_params_schema %{
-    "cursor" => :string
-  }
-
-  @task_augmentation_schema %{
-    "ttl" => {:integer, {:gte, 0}}
-  }
-
-  @tools_call_params_schema %{
-    "name" => {:required, :string},
-    "arguments" => :map,
-    "task" => @task_augmentation_schema
-  }
-
-  @tasks_get_params_schema %{
-    "taskId" => {:required, :string}
-  }
-
-  @tasks_result_params_schema %{
-    "taskId" => {:required, :string}
-  }
-
-  @tasks_cancel_params_schema %{
-    "taskId" => {:required, :string}
-  }
-
-  @tasks_list_params_schema %{
-    "cursor" => :string
-  }
+  alias Anubis.Protocol.V2024_11_05
+  alias Anubis.Protocol.V2025_03_26
+  alias Anubis.Protocol.V2025_11_25
 
   @log_levels ~w(debug info notice warning error critical alert emergency)
-
-  @set_log_level_params_schema %{
-    "level" => {:required, {:enum, @log_levels}}
-  }
-
-  @completion_prompt_ref_schema %{
-    "type" => {:required, {:string, {:eq, "ref/prompt"}}},
-    "name" => {:required, :string}
-  }
-
-  @completion_resource_ref_schema %{
-    "type" => {:required, {:string, {:eq, "ref/resource"}}},
-    "uri" => {:required, :string}
-  }
-
-  @completion_argument_schema %{
-    "name" => {:required, :string},
-    "value" => {:required, :string}
-  }
-
-  @completion_complete_params_schema %{
-    "ref" => {:required, {:oneof, [@completion_prompt_ref_schema, @completion_resource_ref_schema]}},
-    "argument" => {:required, @completion_argument_schema}
-  }
 
   @progress_params %{
     "_meta" => %{
@@ -107,6 +26,10 @@ defmodule Anubis.MCP.Message do
     }
   }
 
+  # Content schemas for sampling RESULT validation. The protocol version modules
+  # only model request/notification params, not results, so these live here.
+  # keep in sync with the content schemas built inside
+  # Anubis.Protocol.V2025_03_26.request_params_schema("sampling/createMessage")
   @text_content_schema %{
     "type" => {:required, {:literal, "text"}},
     "text" => {:required, :string}
@@ -124,50 +47,31 @@ defmodule Anubis.MCP.Message do
     "mimeType" => {:required, :string}
   }
 
-  @message_schema %{
-    "role" => {:required, {:enum, ~w(user assistant system)}},
-    "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema, @audio_content_schema]}}
-  }
-
-  @model_preferences_schema %{
-    "intelligencePriority" => :float,
-    "speedPriority" => :float,
-    "costPriority" => :float,
-    "hints" => {:list, %{"name" => :string}}
-  }
-
-  @sampling_create_params %{
-    "messages" => {:list, @message_schema},
-    "modelPreferences" => @model_preferences_schema,
-    "systemPrompt" => :string,
-    "maxTokens" => :integer
-  }
-
-  @elicitation_create_params %{
-    "message" => {:required, :string},
-    "requestedSchema" => {:required, {:custom, &Anubis.MCP.ElicitationSchema.validate/1}}
-  }
+  # Progress notification schemas exposed for the encode helpers, single-sourced
+  # from the protocol version modules.
+  @progress_notif_params_schema V2024_11_05.progress_params_schema()
+  @progress_notif_params_schema_2025 V2025_03_26.progress_params_schema()
 
   @request_branch_specs %{
-    "initialize" => Map.merge(@init_params_schema, @progress_params),
-    "ping" => @ping_params_schema,
-    "resources/list" => Map.merge(@resources_list_params_schema, @progress_params),
+    "initialize" => Map.merge(V2025_11_25.request_params_schema("initialize"), @progress_params),
+    "ping" => :map,
+    "resources/list" => Map.merge(V2025_11_25.request_params_schema("resources/list"), @progress_params),
     "resources/templates/list" => :map,
-    "resources/read" => Map.merge(@resources_read_params_schema, @progress_params),
-    "resources/subscribe" => Map.merge(@resources_subscribe_params_schema, @progress_params),
-    "resources/unsubscribe" => Map.merge(@resources_unsubscribe_params_schema, @progress_params),
-    "prompts/list" => Map.merge(@prompts_list_params_schema, @progress_params),
-    "prompts/get" => Map.merge(@prompts_get_params_schema, @progress_params),
-    "tools/list" => Map.merge(@tools_list_params_schema, @progress_params),
-    "tools/call" => Map.merge(@tools_call_params_schema, @progress_params),
-    "tasks/get" => @tasks_get_params_schema,
-    "tasks/result" => @tasks_result_params_schema,
-    "tasks/cancel" => @tasks_cancel_params_schema,
-    "tasks/list" => @tasks_list_params_schema,
-    "logging/setLevel" => Map.merge(@set_log_level_params_schema, @progress_params),
-    "completion/complete" => Map.merge(@completion_complete_params_schema, @progress_params),
-    "sampling/createMessage" => Map.merge(@sampling_create_params, @progress_params),
-    "elicitation/create" => Map.merge(@elicitation_create_params, @progress_params),
+    "resources/read" => Map.merge(V2025_11_25.request_params_schema("resources/read"), @progress_params),
+    "resources/subscribe" => Map.merge(V2025_11_25.request_params_schema("resources/subscribe"), @progress_params),
+    "resources/unsubscribe" => Map.merge(V2025_11_25.request_params_schema("resources/unsubscribe"), @progress_params),
+    "prompts/list" => Map.merge(V2025_11_25.request_params_schema("prompts/list"), @progress_params),
+    "prompts/get" => Map.merge(V2025_11_25.request_params_schema("prompts/get"), @progress_params),
+    "tools/list" => Map.merge(V2025_11_25.request_params_schema("tools/list"), @progress_params),
+    "tools/call" => Map.merge(V2025_11_25.request_params_schema("tools/call"), @progress_params),
+    "tasks/get" => V2025_11_25.request_params_schema("tasks/get"),
+    "tasks/result" => V2025_11_25.request_params_schema("tasks/result"),
+    "tasks/cancel" => V2025_11_25.request_params_schema("tasks/cancel"),
+    "tasks/list" => V2025_11_25.request_params_schema("tasks/list"),
+    "logging/setLevel" => Map.merge(V2025_11_25.request_params_schema("logging/setLevel"), @progress_params),
+    "completion/complete" => Map.merge(V2025_11_25.request_params_schema("completion/complete"), @progress_params),
+    "sampling/createMessage" => Map.merge(V2025_11_25.request_params_schema("sampling/createMessage"), @progress_params),
+    "elicitation/create" => Map.merge(V2025_11_25.request_params_schema("elicitation/create"), @progress_params),
     "roots/list" => :map
   }
 
@@ -187,56 +91,18 @@ defmodule Anubis.MCP.Message do
     mode: :strict
   )
 
-  @init_noti_params_schema :map
-  @cancel_noti_params_schema %{
-    "requestId" => {:required, {:either, {:string, :integer}}},
-    "reason" => :string
-  }
-  @progress_notif_params_schema %{
-    "progressToken" => {:required, {:either, {:string, :integer}}},
-    "progress" => {:required, {:either, {:float, :integer}}},
-    "total" => {:either, {:float, :integer}}
-  }
-
-  # 2025-03-26 progress notification schema with message field
-  @progress_notif_params_schema_2025 %{
-    "progressToken" => {:required, {:either, {:string, :integer}}},
-    "progress" => {:required, {:either, {:float, :integer}}},
-    "total" => {:either, {:float, :integer}},
-    "message" => :string
-  }
-  @logging_message_notif_params_schema %{
-    "level" => {:required, {:enum, @log_levels}},
-    "data" => {:required, :any},
-    "logger" => :string
-  }
-
-  @resource_updated_notif_params_schema %{
-    "uri" => {:required, :string}
-  }
-
-  @task_status_notif_params_schema %{
-    "taskId" => {:required, :string},
-    "status" => {:required, {:enum, ~w(working input_required completed failed cancelled)}},
-    "statusMessage" => :string,
-    "createdAt" => {:required, :string},
-    "lastUpdatedAt" => {:required, :string},
-    "ttl" => {:integer, {:gte, 0}},
-    "pollInterval" => :integer
-  }
-
   @notification_branch_specs %{
-    "notifications/initialized" => @init_noti_params_schema,
-    "notifications/cancelled" => @cancel_noti_params_schema,
-    "notifications/progress" => @progress_notif_params_schema,
-    "notifications/message" => @logging_message_notif_params_schema,
+    "notifications/initialized" => :map,
+    "notifications/cancelled" => V2025_11_25.notification_params_schema("notifications/cancelled"),
+    "notifications/progress" => V2025_11_25.notification_params_schema("notifications/progress"),
+    "notifications/message" => V2025_11_25.notification_params_schema("notifications/message"),
     "notifications/roots/list_changed" => :map,
     "notifications/log/message" => :map,
     "notifications/tools/list_changed" => :map,
     "notifications/prompts/list_changed" => :map,
     "notifications/resources/list_changed" => :map,
-    "notifications/resources/updated" => @resource_updated_notif_params_schema,
-    "notifications/tasks/status" => @task_status_notif_params_schema
+    "notifications/resources/updated" => V2025_11_25.notification_params_schema("notifications/resources/updated"),
+    "notifications/tasks/status" => V2025_11_25.notification_params_schema("notifications/tasks/status")
   }
 
   @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->

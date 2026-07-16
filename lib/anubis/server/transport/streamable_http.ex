@@ -82,7 +82,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl Transport
-  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18"]
+  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18", "2025-11-25"]
 
   @doc """
   Registers the calling process as the SSE handler for a session.
@@ -234,6 +234,18 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       session_id: session_id,
       handler_pid: inspect(pid)
     })
+
+    Telemetry.execute(
+      Telemetry.event_transport_sse_handler_registered(),
+      %{count: 1, system_time: System.system_time()},
+      %{
+        transport: :streamable_http,
+        server: state.server,
+        session_id: session_id,
+        handler_pid: pid,
+        handler_count: map_size(sse_handlers)
+      }
+    )
 
     new_state = %{state | sse_handlers: sse_handlers}
 

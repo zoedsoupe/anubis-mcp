@@ -42,18 +42,20 @@ defmodule Anubis.Logging do
         metadata
       )
 
-      if Anubis.Logging.should_log_details?(unquote(data)) do
-        Anubis.Logging.log(
-          level,
-          "[MCP message] #{unquote(direction)} #{unquote(type)} data: #{inspect(unquote(data))}",
-          metadata
-        )
-      else
-        Anubis.Logging.log(
-          level,
-          "[MCP message] #{unquote(direction)} #{unquote(type)} data (truncated): #{Anubis.Logging.truncate_data(unquote(data))}",
-          metadata
-        )
+      if Anubis.Logging.should_log?(level) do
+        if Anubis.Logging.should_log_details?(unquote(data)) do
+          Anubis.Logging.log(
+            level,
+            "[MCP message] #{unquote(direction)} #{unquote(type)} data: #{inspect(unquote(data))}",
+            metadata
+          )
+        else
+          Anubis.Logging.log(
+            level,
+            "[MCP message] #{unquote(direction)} #{unquote(type)} data (truncated): #{Anubis.Logging.truncate_data(unquote(data))}",
+            metadata
+          )
+        end
       end
     end
   end
@@ -73,7 +75,7 @@ defmodule Anubis.Logging do
 
       Anubis.Logging.log(level, "MCP server event: #{unquote(event)}", metadata)
 
-      if Anubis.Logging.should_log_details?(unquote(details)) do
+      if Anubis.Logging.should_log?(level) and Anubis.Logging.should_log_details?(unquote(details)) do
         Anubis.Logging.log(
           level,
           "MCP event details: #{inspect(unquote(details))}",
@@ -98,7 +100,7 @@ defmodule Anubis.Logging do
 
       Anubis.Logging.log(level, "MCP client event: #{unquote(event)}", metadata)
 
-      if Anubis.Logging.should_log_details?(unquote(details)) do
+      if Anubis.Logging.should_log?(level) and Anubis.Logging.should_log_details?(unquote(details)) do
         Anubis.Logging.log(
           level,
           "MCP event details: #{inspect(unquote(details))}",
@@ -123,7 +125,7 @@ defmodule Anubis.Logging do
 
       Anubis.Logging.log(level, "MCP transport event: #{unquote(event)}", metadata)
 
-      if Anubis.Logging.should_log_details?(unquote(details)) do
+      if Anubis.Logging.should_log?(level) and Anubis.Logging.should_log_details?(unquote(details)) do
         Anubis.Logging.log(
           level,
           "MCP transport details: #{inspect(unquote(details))}",
@@ -140,10 +142,10 @@ defmodule Anubis.Logging do
     if should_log?(level), do: log_by_level(level, message, metadata)
   end
 
-  defp should_log?(level) do
+  @doc false
+  def should_log?(level) do
     log? = Application.get_env(:anubis_mcp, :log, true)
-    config_level = Application.get_env(:logger, :level, :debug)
-    log? and Logger.compare_levels(level, config_level) != :lt
+    log? and Logger.compare_levels(level, Logger.level()) != :lt
   end
 
   @doc false

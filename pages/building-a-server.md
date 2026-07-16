@@ -1,117 +1,58 @@
 # Building a Server
 
-What if your Elixir application could become a capability that AI assistants can discover and use? Let's explore how to expose your application's features through MCP.
+An MCP server exposes parts of your application to AI clients. In Anubis a server is one module that declares identity and capabilities, plus one module per tool, resource, or prompt. This guide builds up each piece.
 
-## Your First Tool
-
-Remember our greeter from the introduction? Let's understand what's really happening:
-
-```elixir
-defmodule MyApp.Greeter do
-  @moduledoc "Greet someone warmly"
-
-  use Anubis.Server.Component, type: :tool
-
-  alias Anubis.Server.Response
-
-  schema do
-    field :name, :string, required: true
-  end
-
-  def execute(%{name: name}, frame) do
-    {:reply, Response.text(Response.tool(), "Hello #{name}! Welcome to the MCP world!"), frame}
-  end
-end
-```
-
-What makes this special? When an AI assistant connects to your server, it can:
-
-- Discover this tool exists
-- Understand what parameters it needs
-- Call it with the right data
-- Get a response back
-
-The `schema` block defines what the tool expects. The `execute` function does the work. That's it.
-
-## Creating Your Server
-
-Now let's build a server that exposes this tool:
+## The server module
 
 ```elixir
 defmodule MyApp.Server do
   use Anubis.Server,
     name: "my-app",
     version: "1.0.0",
-    capabilities: [:tools]
+    capabilities: [:tools, :resources, :prompts]
 
-  # Register our greeter tool
-  component MyApp.Greeter
+  component MyApp.ProductSearch
+  component MyApp.ConfigResource
+  component MyApp.BugReportPrompt
 end
 ```
 
-Add it to your supervision tree:
+The `name` and `version` identify your server to clients during the handshake. The `capabilities` list declares what the server offers. Available capabilities are `:tools`, `:resources`, `:prompts`, `:logging`, and `:completion`. Some accept options:
+
+```elixir
+use Anubis.Server,
+  name: "my-app",
+  version: "1.0.0",
+  capabilities: [
+    :tools,
+    {:resources, subscribe?: true},
+    {:prompts, list_changed?: true}
+  ]
+```
+
+Each `component` line registers a module. The component name defaults to the module name converted to snake case, so `MyApp.ProductSearch` becomes `product_search`. Pass `name:` to override it:
+
+```elixir
+component MyApp.ProductSearch, name: "search"
+```
+
+Start the server under your supervision tree with a transport:
 
 ```elixir
 children = [
-  # Start with STDIO for easy testing
   {MyApp.Server, transport: :stdio}
 ]
 ```
 
-How do you test this? Complete one file for reference:
+The [Transports](transports.md) guide covers STDIO, Streamable HTTP, and Phoenix integration. The rest of this guide is transport independent.
 
-```elixir
-Mix.install([{:anubis_mcp, "~> 0.17"}]) # x-release-please-version
+## Tools
 
-defmodule MyApp.Greeter do
-  @moduledoc "Greet someone warmly"
-
-  use Anubis.Server.Component, type: :tool
-
-  alias Anubis.Server.Response
-
-  schema do
-    field :name, :string, required: true
-  end
-
-  def execute(%{name: name}, frame) do
-    {:reply, Response.text(Response.tool(), "Hello #{name}! Welcome to the MCP world!"), frame}
-  end
-end
-
-defmodule MyApp.Server do
-  use Anubis.Server,
-    name: "my-app",
-    version: "1.0.0",
-    capabilities: [:tools]
-
-  # Register our greeter tool
-  component MyApp.Greeter
-end
-
-children = [{MyApp.Server, transport: :stdio}]
-{:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
-```
-
-Save it to `my_app.exs` and you can test it with the helper task:
-
-```bash
-mix anubis.stdio.interactive -c elixir --args=--no-halt,my_app.exs
-```
-
-Or you can add it to claude, assuming you have `claude-code` installed:
-
-```bash
-claude mcp add my-app -- elixir --no-halt my_app.exs
-```
-
-## Building Real Tools
-
-Let's create something more substantial. What if we built a tool that searches through your application's data?
+A tool is a module that declares an input schema and implements `execute/2`:
 
 ```elixir
 defmodule MyApp.ProductSearch do
-  @moduledoc "Search for products in our catalog"
+  @moduledoc "Search the product catalog"
 
   use Anubis.Server.Component, type: :tool
 
@@ -125,39 +66,72 @@ defmodule MyApp.ProductSearch do
 
   @impl true
   def execute(%{query: query} = params, frame) do
-    limit = params[:limit] || 10
-    category = params[:category]
-
     products =
-      MyApp.Catalog.search(query)
-      |> maybe_filter_by_category(category)
-      |> Enum.take(limit)
-      |> Enum.map(&format_product/1)
+      query
+      |> MyApp.Catalog.search()
+      |> maybe_filter(params[:category])
+      |> Enum.take(params.limit)
 
     {:reply, Response.json(Response.tool(), products), frame}
   end
 
-  defp maybe_filter_by_category(products, nil), do: products
-  defp maybe_filter_by_category(products, category) do
-    Enum.filter(products, &(&1.category == category))
-  end
+  defp maybe_filter(products, nil), do: products
+  defp maybe_filter(products, category), do: Enum.filter(products, &(&1.category == category))
+end
+```
 
-  defp format_product(product) do
-    %{
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      description: product.description
-    }
+The `schema` block does double duty. It generates the JSON Schema that clients see when they list tools, and it validates incoming parameters before `execute/2` runs. Your function receives an atom-keyed map that already passed validation.
+
+Fields support types (`:string`, `:integer`, `:number`, `:boolean`, `:enum`, `{:list, type}`), constraints (`required`, `default`, `min`, `max`, `min_length`, `max_length`, `regex`, `values`), and metadata (`description`, `format`). Nested structures use `embeds_one` and `embeds_many`:
+
+```elixir
+schema do
+  field :query, :string, required: true, description: "Full text search query"
+  field :sort, :enum, values: ["price", "name"], default: "name"
+
+  embeds_one :pagination do
+    field :page, :integer, min: 1, default: 1
+    field :per_page, :integer, min: 1, max: 100, default: 20
   end
 end
 ```
 
-Notice how we're using your existing business logic? The tool is just a thin wrapper that makes it accessible to AI.
+### Responses
 
-## Adding Resources
+Build tool responses with `Anubis.Server.Response`. Start from `Response.tool()` and pipe into content builders:
 
-Tools perform actions. Resources provide data. What if AI assistants could read your application's data directly?
+```elixir
+Response.text(Response.tool(), "plain text")
+
+Response.json(Response.tool(), %{count: 3, items: items})
+
+Response.tool()
+|> Response.structured(%{count: 3})
+
+Response.image(Response.tool(), base64_data, "image/png")
+
+Response.error(Response.tool(), "Query failed: timeout")
+```
+
+`Response.json/2` encodes the data and adds it as text content. `Response.structured/2` sets the `structuredContent` field defined by the protocol, which pairs with an `output_schema` block in the component if you want clients to validate your output.
+
+`Response.error/2` produces a tool-level error, which tells the model the call failed and why. Reserve it for domain failures the model could react to. For protocol-level failures return an `Anubis.MCP.Error` instead:
+
+```elixir
+def execute(params, frame) do
+  case MyApp.Catalog.search(params.query) do
+    {:ok, products} ->
+      {:reply, Response.json(Response.tool(), products), frame}
+
+    {:error, :backend_down} ->
+      {:error, Anubis.MCP.Error.execution("catalog backend unavailable"), frame}
+  end
+end
+```
+
+## Resources
+
+Resources give clients read access to data. Each resource has a URI and implements `read/2`:
 
 ```elixir
 defmodule MyApp.ConfigResource do
@@ -165,7 +139,8 @@ defmodule MyApp.ConfigResource do
 
   use Anubis.Server.Component,
     type: :resource,
-    uri: "config://app/settings"
+    uri: "config://app/settings",
+    mime_type: "application/json"
 
   alias Anubis.Server.Response
 
@@ -173,8 +148,7 @@ defmodule MyApp.ConfigResource do
   def read(_params, frame) do
     config = %{
       environment: Application.get_env(:my_app, :environment),
-      features: Application.get_env(:my_app, :feature_flags),
-      version: Application.spec(:my_app, :vsn) |> to_string()
+      version: to_string(Application.spec(:my_app, :vsn))
     }
 
     {:reply, Response.json(Response.resource(), config), frame}
@@ -182,22 +156,15 @@ defmodule MyApp.ConfigResource do
 end
 ```
 
-Resources have URIs. AI assistants can discover and read them:
+Clients discover resources through `resources/list` and fetch them by URI through `resources/read`. Text content goes through `Response.text/2`, binary content through `Response.blob/2`.
 
-```
-Client: list_resources()
-Server: [{uri: "config://app/settings", name: "Application Config", ...}]
-Client: read_resource("config://app/settings")
-Server: {contents: [{text: "{\n  \"environment\": \"production\",\n  ..."}]}
-```
+## Prompts
 
-## Creating Prompts
-
-Prompts are templates that help AI assistants interact with your users more effectively:
+Prompts are message templates. The client fetches one with arguments, and your module returns the messages to hand to the model:
 
 ```elixir
 defmodule MyApp.BugReportPrompt do
-  @moduledoc "Generate a structured bug report"
+  @moduledoc "Structure a bug report from user input"
 
   use Anubis.Server.Component, type: :prompt
 
@@ -205,415 +172,115 @@ defmodule MyApp.BugReportPrompt do
 
   schema do
     field :title, :string, required: true
-    field :severity, :enum, values: ["low", "medium", "high", "critical"]
-    field :steps_to_reproduce, :string
-    field :expected_behavior, :string
-    field :actual_behavior, :string
+    field :severity, :enum, values: ["low", "medium", "high"], default: "low"
   end
 
   @impl true
-  def get_messages(params, frame) do
-    content = build_report_content(params)
-
+  def get_messages(%{title: title, severity: severity}, frame) do
     response =
       Response.prompt()
-      |> Response.user_message(content)
-      |> Response.system_message("This is the Bug report prompt, user already have the data")
+      |> Response.user_message("""
+      File a bug report titled "#{title}" with severity #{severity}.
+      Ask me for reproduction steps if anything is unclear.
+      """)
 
     {:reply, response, frame}
   end
-
-  defp build_report_content(params) do
-    """
-    Please help me file a bug report for: #{params.title}
-
-    Severity: #{params.severity || "not specified"}
-
-    Steps to reproduce:
-    #{params.steps_to_reproduce || "not provided"}
-
-    Expected behavior:
-    #{params.expected_behavior || "not provided"}
-
-    Actual behavior:
-    #{params.actual_behavior || "not provided"}
-
-    Please format this as a proper bug report and suggest any missing information.
-    """
-  end
 end
 ```
 
-## Component Descriptions
+`Response.user_message/2`, `Response.assistant_message/2`, and `Response.system_message/2` append messages in order.
 
-How do AI assistants know what your components do? They read descriptions. Anubis makes this simple.
+## Descriptions
 
-### Using @moduledoc
-
-By default, all components use their `@moduledoc` as the description. This works for tools, resources, and prompts:
-
-```elixir
-defmodule MyApp.Calculator do
-  @moduledoc "Perform basic arithmetic operations on two numbers"
-
-  use Anubis.Server.Component, type: :tool
-
-  schema do
-    field :operation, :enum, required: true, values: ["add", "subtract", "multiply", "divide"]
-    field :a, :float, required: true
-    field :b, :float, required: true
-  end
-
-  @impl true
-  def execute(params, frame) do
-    # Implementation...
-  end
-end
-```
-
-When listed, this tool appears as:
-
-```text
-- calculator: Perform basic arithmetic operations on two numbers
-```
-
-The same pattern works for resources:
-
-```elixir
-defmodule MyApp.LogsResource do
-  @moduledoc "Application logs from the last 24 hours"
-
-  use Anubis.Server.Component,
-    type: :resource,
-    uri: "logs://app/recent"
-
-  @impl true
-  def read(_params, frame) do
-    # Implementation...
-  end
-end
-```
-
-And for prompts:
-
-```elixir
-defmodule MyApp.CodeReviewPrompt do
-  @moduledoc "Generate a thorough code review focusing on best practices"
-
-  use Anubis.Server.Component, type: :prompt
-
-  schema do
-    field :language, :string, required: true
-    field :code, :string, required: true
-  end
-
-  @impl true
-  def get_messages(params, frame) do
-    # Implementation...
-  end
-end
-```
-
-### Dynamic Descriptions with description/0
-
-What if your description needs to be dynamic? Maybe it includes runtime configuration or current state? Implement a `description/0` function:
+Clients pick tools by reading their descriptions, so treat them as part of your interface. By default a component's description is its `@moduledoc`. When the description depends on runtime state, implement `description/0` instead:
 
 ```elixir
 defmodule MyApp.WeatherTool do
-  @moduledoc "Weather information tool"
+  @moduledoc false
 
   use Anubis.Server.Component, type: :tool
-
-  schema do
-    field :city, :string, required: true
-  end
 
   @impl true
   def description do
     interval = Application.get_env(:my_app, :weather_cache_minutes, 15)
-    "Get current weather for any city (data updated every #{interval} minutes)"
-  end
-
-  @impl true
-  def execute(params, frame) do
-    # Implementation...
+    "Current weather for a city. Data refreshes every #{interval} minutes."
   end
 end
 ```
 
-Resources can use dynamic descriptions too:
+A good description says what the component does and when to use it, in a sentence or two. Field-level `description:` options serve the same purpose for parameters.
+
+## Server state and the frame
+
+Every callback receives a `%Anubis.Server.Frame{}`. The frame carries two things you will use often:
+
+- `frame.assigns` is your own state for the session, managed like assigns in a `Plug.Conn` or LiveView socket.
+- `frame.context` holds request context: the session id, the client info sent during the handshake, and for HTTP transports the request headers, remote IP, and validated auth claims.
+
+The `init/2` callback runs when a client starts the handshake and is the place to set up assigns:
 
 ```elixir
-defmodule MyApp.MetricsResource do
-  @moduledoc "System metrics resource"
+defmodule MyApp.Server do
+  use Anubis.Server,
+    name: "my-app",
+    version: "1.0.0",
+    capabilities: [:tools]
 
-  use Anubis.Server.Component,
-    type: :resource,
-    uri: "metrics://system"
-
-  @impl true
-  def description do
-    {uptime_ms, _} = :erlang.statistics(:wall_clock)
-    uptime_seconds = div(uptime_ms, 1000)
-    "Real-time system metrics (uptime: #{uptime_seconds}s)"
-  end
+  component MyApp.ProductSearch
 
   @impl true
-  def read(_params, frame) do
-    # Implementation...
+  def init(_client_info, frame) do
+    {:ok, assign(frame, allowed_categories: MyApp.Catalog.categories())}
   end
 end
 ```
 
-And prompts can too:
+Components then read and update the frame:
 
 ```elixir
-defmodule MyApp.AnalysisPrompt do
-  @moduledoc "Data analysis prompt"
+def execute(params, frame) do
+  categories = frame.assigns.allowed_categories
+  frame = assign(frame, :last_query, params.query)
 
-  use Anubis.Server.Component, type: :prompt
-
-  schema do
-    field :dataset, :string, required: true
-  end
-
-  @impl true
-  def description do
-    model = Application.get_env(:my_app, :analysis_model, "default")
-    "Analyze datasets using #{model} model"
-  end
-
-  @impl true
-  def get_messages(params, frame) do
-    # Implementation...
-  end
+  {:reply, Response.json(Response.tool(), search(params, categories)), frame}
 end
 ```
 
-What makes a good description? Think about what an AI assistant needs to know:
+Each connected client gets its own session process with its own frame, so assigns are naturally isolated per session.
 
-- **What** does this component do?
-- **When** should it be used?
-- **What** are its key capabilities or constraints?
+## Notifications
 
-Keep descriptions clear and concise. The better your descriptions, the better AI assistants can help your users.
-
-## Transport Options
-
-How do clients connect to your server? Let's explore your options:
-
-### STDIO (Development & CLIs)
-
-Perfect for CLI tools and development:
+Servers can push notifications to connected clients. Call these from inside server callbacks:
 
 ```elixir
-{MyApp.Server, transport: :stdio}
+Anubis.Server.send_tools_list_changed()
+Anubis.Server.send_resources_list_changed()
+Anubis.Server.send_prompts_list_changed()
+Anubis.Server.send_resource_updated(uri)
+Anubis.Server.send_log_message(:info, "reindex finished")
 ```
 
-Your server communicates through standard input/output. Great for:
-
-- Command-line tools
-- Development and testing
-- Subprocess isolation
-
-### HTTP (Web Applications)
-
-For web services that multiple clients connect to:
+The list-changed notifications require the matching capability option, for example `{:tools, list_changed?: true}`. A common pattern bridges application events into MCP notifications through `handle_info/2`:
 
 ```elixir
-{MyApp.Server, transport: {:streamable_http, port: 8080}}
-```
-
-This creates an HTTP endpoint at `http://localhost:8080/mcp`. Each client gets its own session.
-
-### Integration with Phoenix
-
-Already have a Phoenix app? Integrate MCP as a route:
-
-```elixir
-# In your Phoenix endpoint (lib/my_app_web/endpoint.ex)
-defmodule MyAppWeb.Endpoint do
-  use Phoenix.Endpoint, otp_app: :my_app
-
-  # Add the MCP plug before your router
-  plug Anubis.Server.Transport.StreamableHTTP.Plug,
-    server: MyApp.Server,
-    path: "/mcp"
-
-  # Your other plugs...
-  plug MyAppWeb.Router
+@impl true
+def init(_client_info, frame) do
+  Phoenix.PubSub.subscribe(MyApp.PubSub, "catalog")
+  {:ok, frame}
 end
 
-# In your application supervisor
-children = [
-  MyAppWeb.Endpoint,
-  {MyApp.Server, transport: :streamable_http}
-]
-```
-
-Now your MCP server is available at `http://localhost:4000/mcp`.
-
-## Error Handling
-
-What happens when things go wrong? Let's handle errors gracefully:
-
-```elixir
-defmodule MyApp.DatabaseQuery do
-  @moduledoc "Query the database"
-
-  use Anubis.Server.Component, type: :tool
-
-  alias Anubis.Server.Response
-
-  schema do
-    field :query, :string, required: true
-  end
-
-  @impl true
-  def execute(%{query: query}, frame) do
-    case MyApp.Repo.query(query) do
-      {:ok, result} ->
-        {:reply, Response.json(Response.tool(), format_result(result)), frame}
-
-      {:error, reason} ->
-        {:reply, Response.error(Response.tool(), "Query failed: #{to_string(reason)}"), frame}
-    end
-  end
+@impl true
+def handle_info({:catalog_updated, _}, frame) do
+  Anubis.Server.send_resources_list_changed()
+  {:noreply, frame}
 end
 ```
 
-Anubis automatically formats your error responses according to the MCP protocol.
+These functions message the current session process, so they only work inside callbacks. From an external process, send to the session PID directly.
 
-## Stateful Operations
+## Next steps
 
-Need to maintain state across calls? The frame provides context:
-
-```elixir
-defmodule MyApp.Conversation do
-  @moduledoc "Continue a conversation"
-
-  use Anubis.Server.Component, type: :tool
-
-  alias Anubis.Server.Response
-
-  schema do
-    field :message, :string, required: true
-  end
-
-  @impl true
-  def execute(%{message: message}, frame) do
-    session_id = frame.context.session_id
-    history = ConversationStore.get_history(session_id)
-
-    new_history = history ++ [message]
-    ConversationStore.save_history(session_id, new_history)
-
-    content = generate_response(new_history)
-
-    {:reply, Response.text(Response.tool(), content), frame}
-  end
-end
-```
-
-## Tool Annotations
-
-Need to add extra metadata to your tools? Annotations provide additional context:
-
-```elixir
-defmodule MyApp.DatabaseQuery do
-  @moduledoc "Query the application database"
-
-  use Anubis.Server.Component,
-    type: :tool,
-    annotations: %{
-      "x-api-version" => "2.0",
-      "x-rate-limit" => "10/minute",
-      "x-auth-required" => true
-    }
-
-  schema do
-    field :query, :string, required: true
-  end
-
-  @impl true
-  def execute(params, frame) do
-    # Implementation...
-  end
-end
-```
-
-These annotations are exposed in the tool definition, helping clients understand additional constraints or requirements.
-
-## Testing Your Server
-
-How do you know your server works correctly? Let's explore interactive testing first:
-
-### Interactive CLI Testing
-
-Anubis provides interactive `Mix` tasks for different transports if you need quick testing:
-
-```bash
-# Test STDIO server
-mix anubis.stdio.interactive --command elixir --args=--no-halt,my_app.exs
-
-# Test HTTP server
-mix anubis.streamable_http.interactive --base-url=http://localhost:8080 --header 'authorization: Bearer 123'
-
-# With verbose logging
-mix anubis.streamable_http.interactive --base-url=http://localhost:4000 -vvv
-```
-
-In the interactive session:
-
-```
-mcp> ping
-pong
-
-mcp> list_tools
-Available tools:
-- greeter: Greet someone warmly
-- product_search: Search for products in our catalog
-
-mcp> call_tool
-Tool name: greeter
-Tool arguments (JSON): {"name": "Alice"}
-Result: Hello Alice! Welcome to the MCP world!
-
-mcp> show_state
-Client State:
-  Protocol: 2025-06-18
-  Initialized: true
-  ...
-```
-
-### Unit Testing
-
-Now let's write some tests:
-
-```elixir
-defmodule MyApp.ServerTest do
-  use ExUnit.Case
-
-  alias Anubis.Server.{Frame, Response}
-
-  test "greeter tool works correctly" do
-    frame = %Frame{}
-
-    assert {:reply, %Response{} = response, ^frame} =
-             MyApp.Greeter.execute(%{name: "joe"}, frame)
-
-    assert response.type == :tool
-    assert [%{"type" => "Hello joe! Welcome to the MCP world!"}] = response.content
-  end
-end
-```
-
-## What's Next?
-
-You've seen how to expose your Elixir application's capabilities to AI assistants. What patterns interest you most?
-
-- Complex multi-step workflows?
-- Authentication and authorization?
-- Real-time updates and notifications?
-
-The server abstraction handles all the protocol complexity. You just focus on what your application does best.
+- [Transports](transports.md) shows how to serve this over STDIO or HTTP, including from a Phoenix app.
+- [Authorization](authorization.md) adds OAuth 2.1 bearer token validation and per-component scopes.
+- [Testing](testing.md) covers testing components without a running transport.

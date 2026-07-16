@@ -167,7 +167,8 @@ if Code.ensure_loaded?(Plug) do
         context = build_request_context(conn, Map.get(opts, :auth_claims))
 
         Logging.transport_event("parsed_messages", %{
-          message: message,
+          method: message["method"],
+          id: message["id"],
           session_id: session_id
         })
 
@@ -540,7 +541,7 @@ if Code.ensure_loaded?(Plug) do
         {:error, reason} ->
           Logging.transport_event(
             "parse_error",
-            %{body: body, reason: inspect(reason)},
+            %{body_size: byte_size(body), reason: inspect(reason)},
             level: :error
           )
 
