@@ -145,8 +145,7 @@ defmodule Anubis.Logging do
   @doc false
   def should_log?(level) do
     log? = Application.get_env(:anubis_mcp, :log, true)
-    config_level = Application.get_env(:logger, :level, :debug)
-    log? and Logger.compare_levels(level, config_level) != :lt
+    log? and Logger.compare_levels(level, Logger.level()) != :lt
   end
 
   @doc false

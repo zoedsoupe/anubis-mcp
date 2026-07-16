@@ -1492,7 +1492,9 @@ defmodule Anubis.Server.Session do
 
   @doc false
   @spec to_serializable(t()) :: map()
-  def to_serializable(%{session_id: session_id} = state) do
+  def to_serializable(%{session_id: session_id, server_module: module} = state) do
+    frame = maybe_serialize_assigns(module, state.frame)
+
     %{
       id: session_id,
       protocol_version: state.protocol_version,
@@ -1502,8 +1504,14 @@ defmodule Anubis.Server.Session do
       client_capabilities: state.client_capabilities,
       log_level: state.log_level,
       pending_requests: state.pending_requests,
-      frame: Frame.to_saved(state.frame)
+      frame: Frame.to_saved(frame)
     }
+  end
+
+  defp maybe_serialize_assigns(module, frame) do
+    if Anubis.exported?(module, :serialize_assigns, 1),
+      do: %{frame | assigns: module.serialize_assigns(frame.assigns)},
+      else: frame
   end
 
   @doc false
@@ -1601,6 +1609,12 @@ defmodule Anubis.Server.Session do
           Logging.log(:debug, "Successfully persisted session #{inspect(session_id)}", [])
 
         {:error, reason} ->
+          Telemetry.execute(
+            Telemetry.event_server_error(),
+            %{system_time: System.system_time()},
+            %{session_id: session_id, error: reason, operation: :persist_session}
+          )
+
           Logging.log(
             :warning,
             "Failed to persist session #{inspect(session_id)}",

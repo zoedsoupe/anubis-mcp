@@ -254,6 +254,22 @@ defmodule Anubis.Server do
               {:noreply, Frame.t()}
               | {:stop, reason :: term(), Frame.t()}
 
+  @doc """
+  Transforms `frame.assigns` into a JSON-safe map before session persistence.
+
+  `frame.assigns` is copied verbatim into the session store. Runtime values that
+  are not JSON-encodable (Ecto structs, `MapSet`, PIDs, functions, etc.) make
+  persistence fail. Implement this callback to project assigns down to the
+  JSON-safe subset you actually need persisted (e.g. `%{"user_id" => id}`),
+  avoiding storing full domain structs or PII.
+
+  On recovery, the restored frame is handed back to `handle_session_expired/2`,
+  where the host rehydrates runtime state from these persisted values.
+
+  Defaults to the identity function when not implemented.
+  """
+  @callback serialize_assigns(assigns :: map()) :: map()
+
   @optional_callbacks handle_notification: 2,
                       handle_info: 2,
                       handle_call: 3,
@@ -269,7 +285,8 @@ defmodule Anubis.Server do
                       handle_roots: 3,
                       handle_elicitation: 3,
                       server_instructions: 0,
-                      handle_session_expired: 2
+                      handle_session_expired: 2,
+                      serialize_assigns: 1
 
   @doc false
   defguard is_server_capability(capability) when capability in @server_capabilities
