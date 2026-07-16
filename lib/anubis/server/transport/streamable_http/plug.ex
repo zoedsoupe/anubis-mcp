@@ -216,7 +216,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_request_message(conn, message, session_id, context, opts) do
-      case find_or_create_session(opts, session_id, message) do
+      case find_or_create_session(opts, session_id, message, context) do
         {:ok, session_pid} ->
           if wants_sse?(conn) do
             handle_sse_request(conn, session_pid, message, session_id, context, opts)
@@ -333,7 +333,7 @@ if Code.ensure_loaded?(Plug) do
       mod.lookup_session(name, session_id)
     end
 
-    defp find_or_create_session(opts, session_id, message) do
+    defp find_or_create_session(opts, session_id, message, context) do
       case find_session(opts, session_id) do
         {:ok, pid} ->
           {:ok, pid}
@@ -342,14 +342,14 @@ if Code.ensure_loaded?(Plug) do
           start_new_session(opts, session_id)
 
         {:error, :not_found} ->
-          start_and_auto_initialize_session(opts, session_id)
+          start_and_auto_initialize_session(opts, session_id, context)
       end
     end
 
-    defp start_and_auto_initialize_session(opts, session_id) do
+    defp start_and_auto_initialize_session(opts, session_id, context) do
       case start_new_session(opts, session_id) do
         {:ok, pid} ->
-          case Session.auto_initialize(pid) do
+          case Session.auto_initialize(pid, context) do
             :ok ->
               Logging.transport_event("session_auto_reinitialized", %{
                 session_id: session_id
