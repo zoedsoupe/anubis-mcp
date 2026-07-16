@@ -2,7 +2,7 @@
   description = "Model Context Protocol SDK for Elixir";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11-small";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05-small";
     elixir-overlay.url = "github:zoedsoupe/elixir-overlay";
   };
 

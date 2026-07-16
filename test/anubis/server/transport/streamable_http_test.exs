@@ -173,6 +173,41 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       assert :ok = StreamableHTTP.send_message(transport, message, timeout: 5000)
     end
 
+    test "register_sse_handler/3 stores opaque metadata and reports counts", %{transport: transport} do
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s1", %{tenant: "acme", role: "admin"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s2", %{tenant: "acme", role: "member"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s3", %{tenant: "globex", role: "admin"})
+
+      assert StreamableHTTP.handler_count(transport) == 3
+      assert StreamableHTTP.handler_count(transport, &(&1[:tenant] == "acme")) == 2
+      assert StreamableHTTP.handler_count(transport, &(&1[:role] == "admin")) == 2
+      assert StreamableHTTP.handler_count(transport, fn _ -> false end) == 0
+    end
+
+    test "register_sse_handler/2 defaults to empty metadata", %{transport: transport} do
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s-empty")
+
+      assert StreamableHTTP.handler_count(transport) == 1
+      assert StreamableHTTP.handler_count(transport, &(&1 == %{})) == 1
+    end
+
+    test "send_message_to_subscribers delivers only to matching handlers", %{transport: transport} do
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "match-1", %{group: "a"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "match-2", %{group: "a"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "nomatch", %{group: "b"})
+
+      message = "hello group a"
+
+      assert :ok =
+               StreamableHTTP.send_message_to_subscribers(transport, &(&1[:group] == "a"), message)
+
+      # Two matching subscribers (both handled by this process) each receive it;
+      # the "b" subscriber must not.
+      assert_receive {:sse_message, ^message}
+      assert_receive {:sse_message, ^message}
+      refute_receive {:sse_message, _}, 50
+    end
+
     test "shutdown/1 gracefully shuts down", %{transport: transport} do
       assert Process.alive?(transport)
       assert :ok = StreamableHTTP.shutdown(transport)
