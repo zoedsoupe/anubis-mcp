@@ -26,6 +26,14 @@ if Code.ensure_loaded?(Plug) do
     - `:server` - The server process name (required)
     - `:session_header` - Custom header name for session ID (default: "mcp-session-id")
     - `:request_timeout` - Request timeout in milliseconds (default: 30000)
+    - `:subscriber_metadata` - A 1-arity function `(Plug.Conn.t() -> map())` called
+      when an SSE stream is opened. Its return value is stored verbatim as the
+      subscriber's opaque metadata (see
+      `Anubis.Server.Transport.StreamableHTTP.register_sse_handler/3`) and can later
+      be selected on with `send_message_to_subscribers/4` and `handler_count/2`.
+      Tag subscribers by tenant, user, feature scope, etc. derived from the request.
+      Defaults to `fn _conn -> %{} end`. Use a remote function capture
+      (`&MyApp.sse_metadata/1`) so it survives compile-time plug option escaping.
     """
 
     @behaviour Plug
@@ -58,12 +66,34 @@ if Code.ensure_loaded?(Plug) do
       server = Keyword.fetch!(opts, :server)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
+      subscriber_metadata = Keyword.get(opts, :subscriber_metadata, &default_subscriber_metadata/1)
 
       %{
         server: server,
         session_header: session_header,
-        timeout: request_timeout
+        timeout: request_timeout,
+        subscriber_metadata: subscriber_metadata
       }
+    end
+
+    defp default_subscriber_metadata(_conn), do: %{}
+
+    defp resolve_subscriber_metadata(opts, conn) do
+      fun = Map.get(opts, :subscriber_metadata, &default_subscriber_metadata/1)
+
+      case fun.(conn) do
+        metadata when is_map(metadata) ->
+          metadata
+
+        other ->
+          Logging.transport_event(
+            "invalid_subscriber_metadata",
+            %{returned: inspect(other)},
+            level: :warning
+          )
+
+          %{}
+      end
     end
 
     @impl Plug
@@ -111,8 +141,9 @@ if Code.ensure_loaded?(Plug) do
     defp handle_get(conn, %{transport: transport, session_header: session_header} = opts) do
       if wants_sse?(conn) do
         session_id = get_or_create_session_id(conn, session_header)
+        metadata = resolve_subscriber_metadata(opts, conn)
 
-        case StreamableHTTP.register_sse_handler(transport, session_id) do
+        case StreamableHTTP.register_sse_handler(transport, session_id, metadata) do
           :ok ->
             start_sse_streaming(conn, Map.put(opts, :session_id, session_id))
 
@@ -236,7 +267,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_request_message(conn, message, session_id, context, opts) do
-      case find_or_create_session(opts, session_id, message) do
+      case find_or_create_session(opts, session_id, message, context) do
         {:ok, session_pid} ->
           if wants_sse?(conn) do
             handle_sse_request(conn, session_pid, message, session_id, context, opts)
@@ -360,7 +391,7 @@ if Code.ensure_loaded?(Plug) do
       mod.lookup_session(name, session_id)
     end
 
-    defp find_or_create_session(opts, session_id, message) do
+    defp find_or_create_session(opts, session_id, message, context) do
       case find_session(opts, session_id) do
         {:ok, pid} ->
           {:ok, pid}
@@ -373,15 +404,15 @@ if Code.ensure_loaded?(Plug) do
           |> restore_session_from_store(session_id)
           |> case do
             {:ok, _} = ok -> ok
-            {:error, _} -> start_and_auto_initialize_session(opts, session_id)
+            {:error, _} -> start_and_auto_initialize_session(opts, session_id, context)
           end
       end
     end
 
-    defp start_and_auto_initialize_session(opts, session_id) do
+    defp start_and_auto_initialize_session(opts, session_id, context) do
       case start_new_session(opts, session_id) do
         {:ok, pid} ->
-          case Session.auto_initialize(pid) do
+          case Session.auto_initialize(pid, context) do
             :ok ->
               Logging.transport_event("session_auto_reinitialized", %{
                 session_id: session_id

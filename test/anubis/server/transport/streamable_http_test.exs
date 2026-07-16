@@ -89,6 +89,42 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       send(new_handler, :stop)
     end
 
+    test "a superseded handler is not proactively closed", %{transport: transport} do
+      session_id = "test-session-supersede"
+      test_pid = self()
+
+      old_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, self()})
+
+          receive do
+            :close_sse -> send(test_pid, {:closed, self()})
+          end
+        end)
+
+      assert_receive {:registered, ^old_handler}
+
+      new_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, self()})
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive {:registered, ^new_handler}
+
+      assert ^new_handler = StreamableHTTP.get_sse_handler(transport, session_id)
+
+      refute_receive {:closed, ^old_handler}, 200
+
+      send(old_handler, :close_sse)
+      send(new_handler, :stop)
+    end
+
     test "routes messages to sessions", %{transport: transport} do
       session_id = "test-session-789"
 
@@ -135,6 +171,41 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
     test "send_message/3 works", %{transport: transport} do
       message = "test message"
       assert :ok = StreamableHTTP.send_message(transport, message, timeout: 5000)
+    end
+
+    test "register_sse_handler/3 stores opaque metadata and reports counts", %{transport: transport} do
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s1", %{tenant: "acme", role: "admin"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s2", %{tenant: "acme", role: "member"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s3", %{tenant: "globex", role: "admin"})
+
+      assert StreamableHTTP.handler_count(transport) == 3
+      assert StreamableHTTP.handler_count(transport, &(&1[:tenant] == "acme")) == 2
+      assert StreamableHTTP.handler_count(transport, &(&1[:role] == "admin")) == 2
+      assert StreamableHTTP.handler_count(transport, fn _ -> false end) == 0
+    end
+
+    test "register_sse_handler/2 defaults to empty metadata", %{transport: transport} do
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "s-empty")
+
+      assert StreamableHTTP.handler_count(transport) == 1
+      assert StreamableHTTP.handler_count(transport, &(&1 == %{})) == 1
+    end
+
+    test "send_message_to_subscribers delivers only to matching handlers", %{transport: transport} do
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "match-1", %{group: "a"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "match-2", %{group: "a"})
+      assert :ok = StreamableHTTP.register_sse_handler(transport, "nomatch", %{group: "b"})
+
+      message = "hello group a"
+
+      assert :ok =
+               StreamableHTTP.send_message_to_subscribers(transport, &(&1[:group] == "a"), message)
+
+      # Two matching subscribers (both handled by this process) each receive it;
+      # the "b" subscriber must not.
+      assert_receive {:sse_message, ^message}
+      assert_receive {:sse_message, ^message}
+      refute_receive {:sse_message, _}, 50
     end
 
     test "shutdown/1 gracefully shuts down", %{transport: transport} do
