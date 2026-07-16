@@ -126,6 +126,7 @@ defmodule Anubis.Transport.SSE do
   - `:headers` - The headers to send with the HTTP requests.
   - `:transport_opts` - The underlying HTTP transport options to pass to the HTTP client. You can check on the [Mint docs](https://hexdocs.pm/mint/Mint.HTTP.html#connect/4-transport-options)
   - `:http_options` - The underlying HTTP client options to pass to the HTTP client. You can check on the [Finch docs](https://hexdocs.pm/finch/Finch.html#t:request_opt/0)
+  - `:finch_name` - The name of the `Finch` pool to use for requests (default `Anubis.Finch`). You must start this pool yourself.
   """
   @type option ::
           {:name, GenServer.name()}
@@ -134,6 +135,7 @@ defmodule Anubis.Transport.SSE do
           | {:headers, map()}
           | {:transport_opts, keyword}
           | {:http_options, Finch.request_opts()}
+          | {:finch_name, Finch.name()}
           | GenServer.option()
 
   defschema(:options_schema, %{
@@ -153,7 +155,8 @@ defmodule Anubis.Transport.SSE do
     ],
     headers: {:map, {:default, %{}}},
     transport_opts: {:any, {:default, []}},
-    http_options: {:any, {:default, []}}
+    http_options: {:any, {:default, []}},
+    finch_name: {:atom, {:default, Anubis.Finch}}
   })
 
   @impl Transport
@@ -228,7 +231,8 @@ defmodule Anubis.Transport.SSE do
         stream =
           SSE.connect(state.sse_url, state.headers,
             dest: self(),
-            transport_opts: state.transport_opts
+            transport_opts: state.transport_opts,
+            finch_name: state.finch_name
           )
 
         process_stream(stream, parent)
@@ -298,7 +302,7 @@ defmodule Anubis.Transport.SSE do
 
     {request, options} = make_message_request(message, state)
 
-    case HTTP.follow_redirect(request, options) do
+    case HTTP.follow_redirect(request, state.finch_name, options) do
       {:ok, %Finch.Response{status: status}} when status in 200..299 ->
         {:reply, :ok, state}
 

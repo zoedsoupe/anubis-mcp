@@ -176,5 +176,10 @@ defmodule Anubis.Protocol.V2024_11_05 do
   end
 
   def notification_params_schema("notifications/roots/list_changed"), do: :map
+
+  def notification_params_schema("notifications/resources/updated") do
+    %{"uri" => {:required, :string}}
+  end
+
   def notification_params_schema(_), do: :map
 end

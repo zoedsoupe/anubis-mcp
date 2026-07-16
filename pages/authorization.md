@@ -163,4 +163,4 @@ forward "/.well-known/oauth-protected-resource",
 | RFC 7662        | Token Introspection                                                   |
 | RFC 7519 + 7517 | JWT + JWKS verification                                               |
 
-Client-side OAuth flows (PKCE, discovery, token store, refresh) are out of scope — use a dedicated OAuth client library for those.
+Client-side OAuth flows (PKCE, discovery, token store, refresh) are out of scope. Use a dedicated OAuth client library for those.

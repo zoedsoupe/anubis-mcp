@@ -285,6 +285,24 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert response["result"] == %{}
     end
 
+    test "POST request does not log tool arguments", %{opts: opts, test_session_id: session_id} do
+      secret = "sk-secret-#{System.unique_integer([:positive])}"
+      request = build_request("tools/call", %{"name" => "echo", "arguments" => %{"token" => secret}})
+      {:ok, body} = Message.encode_request(request, 1)
+
+      log =
+        capture_log([level: :debug], fn ->
+          :post
+          |> conn("/", body)
+          |> put_req_header("content-type", "application/json")
+          |> put_req_header("accept", "application/json")
+          |> put_req_header("mcp-session-id", session_id)
+          |> StreamableHTTPPlug.call(opts)
+        end)
+
+      refute log =~ secret
+    end
+
     test "POST request with invalid JSON returns error", %{opts: opts} do
       conn =
         :post

@@ -42,17 +42,18 @@ if Code.ensure_loaded?(JOSE) do
 
     @spec validate_token(String.t(), map()) :: {:ok, map()} | {:error, term()}
     @impl true
-    def validate_token(token, %{validator: {_mod, opts}}) when is_binary(token) and is_list(opts) do
+    def validate_token(token, %{validator: {_mod, opts}} = context) when is_binary(token) and is_list(opts) do
       jwks_uri = Keyword.fetch!(opts, :jwks_uri)
+      finch_name = Map.get(context, :finch_name, Anubis.Finch)
 
-      with {:ok, jwks} <- fetch_jwks(jwks_uri),
+      with {:ok, jwks} <- fetch_jwks(jwks_uri, finch_name),
            {:ok, claims} <- verify_token(token, jwks),
            :ok <- maybe_validate_issuer(claims, opts) do
         {:ok, claims}
       end
     end
 
-    defp fetch_jwks(jwks_uri) do
+    defp fetch_jwks(jwks_uri, finch_name) do
       cache_key = {__MODULE__, :jwks, jwks_uri}
 
       case :persistent_term.get(cache_key, nil) do
@@ -60,18 +61,18 @@ if Code.ensure_loaded?(JOSE) do
           if System.os_time(:second) - cached_at < @jwks_ttl_seconds do
             {:ok, jwks}
           else
-            do_fetch_jwks(jwks_uri, cache_key)
+            do_fetch_jwks(jwks_uri, finch_name, cache_key)
           end
 
         _ ->
-          do_fetch_jwks(jwks_uri, cache_key)
+          do_fetch_jwks(jwks_uri, finch_name, cache_key)
       end
     end
 
-    defp do_fetch_jwks(jwks_uri, cache_key) do
+    defp do_fetch_jwks(jwks_uri, finch_name, cache_key) do
       request = Finch.build(:get, jwks_uri, [{"accept", "application/json"}])
 
-      case Finch.request(request, Anubis.Finch,
+      case Finch.request(request, finch_name,
              receive_timeout: @http_receive_timeout,
              pool_timeout: @http_pool_timeout
            ) do

@@ -142,6 +142,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   - `:transport_opts` - The underlying HTTP transport options.
   - `:http_options` - The underlying HTTP client options.
   - `:enable_sse` - Whether to establish a GET connection for server-initiated messages (default false).
+  - `:finch_name` - The name of the `Finch` pool to use for requests (default `Anubis.Finch`). You must start this pool yourself.
   """
   @type option ::
           {:name, GenServer.name()}
@@ -152,6 +153,7 @@ defmodule Anubis.Transport.StreamableHTTP do
           | {:transport_opts, keyword}
           | {:http_options, Finch.request_opts()}
           | {:enable_sse, boolean()}
+          | {:finch_name, Finch.name()}
           | GenServer.option()
 
   defschema(:options_schema, %{
@@ -162,7 +164,8 @@ defmodule Anubis.Transport.StreamableHTTP do
     headers: {:map, {:default, %{}}},
     transport_opts: {:any, {:default, []}},
     http_options: {:any, {:default, []}},
-    enable_sse: {:boolean, {:default, false}}
+    enable_sse: {:boolean, {:default, false}},
+    finch_name: {:atom, {:default, Anubis.Finch}}
   })
 
   @impl Transport
@@ -184,7 +187,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   @impl Transport
-  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18"]
+  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18", "2025-11-25"]
 
   @impl GenServer
   def init(opts) do
@@ -196,6 +199,7 @@ defmodule Anubis.Transport.StreamableHTTP do
       http_options: opts.http_options,
       session_id: nil,
       enable_sse: Map.get(opts, :enable_sse, false),
+      finch_name: opts.finch_name,
       sse_task: nil,
       last_event_id: nil,
       active_request: nil
@@ -332,7 +336,7 @@ defmodule Anubis.Transport.StreamableHTTP do
     request = HTTP.build(:post, url, headers, message)
 
     request
-    |> HTTP.follow_redirect(options)
+    |> HTTP.follow_redirect(state.finch_name, options)
     |> case do
       {:ok, %{status: status} = response} when status in 200..299 ->
         {:ok, response}
@@ -509,7 +513,7 @@ defmodule Anubis.Transport.StreamableHTTP do
     options = state.http_options
     request = HTTP.build(:get, URI.to_string(state.mcp_url), headers, nil)
 
-    process_sse_request(request, options, parent)
+    process_sse_request(request, state.finch_name, options, parent)
     send(parent, {:sse_closed, :normal})
   end
 
@@ -520,8 +524,8 @@ defmodule Anubis.Transport.StreamableHTTP do
     |> put_last_event_id_header(state.last_event_id)
   end
 
-  defp process_sse_request(request, options, parent) do
-    case HTTP.follow_redirect(request, options) do
+  defp process_sse_request(request, finch_name, options, parent) do
+    case HTTP.follow_redirect(request, finch_name, options) do
       {:ok, %{status: 200, headers: resp_headers, body: body}} ->
         handle_sse_response(resp_headers, body, parent)
 
@@ -552,7 +556,7 @@ defmodule Anubis.Transport.StreamableHTTP do
     request =
       HTTP.build(:delete, URI.to_string(state.mcp_url), headers, nil)
 
-    case HTTP.follow_redirect(request, options) do
+    case HTTP.follow_redirect(request, state.finch_name, options) do
       {:ok, %{status: status}} when status in [200, 405] ->
         :ok
 

@@ -1,7 +1,7 @@
 defmodule Anubis.MixProject do
   use Mix.Project
 
-  @version "1.6.2"
+  @version "1.8.0"
   @source_url "https://github.com/zoedsoupe/anubis-mcp"
 
   def project do
@@ -21,8 +21,7 @@ defmodule Anubis.MixProject do
         ignore_warnings: ".dialyzerignore.exs",
         plt_add_apps: [:mix, :ex_unit]
       ],
-      extra_applications: [:observer, :wx],
-      releases: releases()
+      extra_applications: [:observer, :wx]
     ]
   end
 
@@ -32,8 +31,7 @@ defmodule Anubis.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
-      mod: {Anubis.Application, []}
+      extra_applications: [:logger]
     ]
   end
 
@@ -51,7 +49,6 @@ defmodule Anubis.MixProject do
       {:telemetry, "~> 1.2"},
       {:redix, "~> 1.5", optional: true},
       {:gun, "~> 2.2", optional: true},
-      {:burrito, "~> 1.0", optional: true},
       {:plug, "~> 1.18", optional: true},
       {:jose, "~> 1.11.7", optional: true},
       {:mox, "~> 1.2", only: :test},
@@ -62,30 +59,6 @@ defmodule Anubis.MixProject do
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.3", only: [:dev, :test], runtime: false}
-    ]
-  end
-
-  # Define releases for standalone binaries
-  def releases do
-    [
-      anubis_mcp: [
-        steps: [:assemble, &Burrito.wrap/1],
-        applications: [
-          anubis_mcp: :permanent
-        ],
-        include_executables_for: [:unix, :windows],
-        burrito: [
-          targets: [
-            macos_intel: [os: :darwin, cpu: :x86_64],
-            macos_arm: [os: :darwin, cpu: :aarch64],
-            linux: [os: :linux, cpu: :x86_64],
-            windows: [os: :windows, cpu: :x86_64]
-          ]
-        ],
-        # Set the CLI module as the main entry point
-        default_release: true,
-        main_module: Anubis.CLI
-      ]
     ]
   end
 
@@ -116,10 +89,13 @@ defmodule Anubis.MixProject do
       extras: [
         "README.md",
         "pages/introduction.md",
-        "pages/building-a-client.md",
         "pages/building-a-server.md",
+        "pages/building-a-client.md",
+        "pages/transports.md",
+        "pages/authorization.md",
+        "pages/testing.md",
         "pages/recipes.md",
-        "pages/reference.md",
+        "pages/cheatsheet.cheatmd",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
         "LICENSE"
@@ -129,13 +105,16 @@ defmodule Anubis.MixProject do
           "README.md",
           "pages/introduction.md"
         ],
-        "Building with Anubis": [
+        Guides: [
+          "pages/building-a-server.md",
           "pages/building-a-client.md",
-          "pages/building-a-server.md"
+          "pages/transports.md",
+          "pages/authorization.md",
+          "pages/testing.md"
         ],
         "Patterns & Reference": [
           "pages/recipes.md",
-          "pages/reference.md"
+          "pages/cheatsheet.cheatmd"
         ],
         "Project Info": [
           "CHANGELOG.md",

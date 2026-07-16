@@ -28,16 +28,16 @@ defmodule Anubis.HTTP do
 
   @max_redirects 3
 
-  @spec follow_redirect(Finch.Request.t(), keyword(), non_neg_integer()) ::
+  @spec follow_redirect(Finch.Request.t(), Finch.name(), keyword(), non_neg_integer()) ::
           {:ok, Finch.Response.t()} | {:error, term()}
-  def follow_redirect(%Finch.Request{} = request, opts \\ [], attempts \\ @max_redirects) do
-    with {:ok, resp} <- Finch.request(request, Anubis.Finch, opts),
-         do: do_follow_redirect(request, resp, opts, attempts)
+  def follow_redirect(%Finch.Request{} = request, finch_name, opts \\ [], attempts \\ @max_redirects) do
+    with {:ok, resp} <- Finch.request(request, finch_name, opts),
+         do: do_follow_redirect(request, finch_name, resp, opts, attempts)
   end
 
-  defp do_follow_redirect(_req, _resp, _opts, 0), do: {:error, :max_redirects}
+  defp do_follow_redirect(_req, _finch, _resp, _opts, 0), do: {:error, :max_redirects}
 
-  defp do_follow_redirect(req, %Finch.Response{status: 307, headers: headers}, opts, attempts)
+  defp do_follow_redirect(req, finch_name, %Finch.Response{status: 307, headers: headers}, opts, attempts)
        when is_integer(attempts) do
     location = List.keyfind(headers, "location", 0)
 
@@ -49,8 +49,8 @@ defmodule Anubis.HTTP do
 
     {:ok, uri} = URI.new(location)
     req = %{req | host: uri.host, port: uri.port, path: uri.path, scheme: uri.scheme}
-    follow_redirect(req, opts, max(0, attempts - 1))
+    follow_redirect(req, finch_name, opts, max(0, attempts - 1))
   end
 
-  defp do_follow_redirect(_req, %Finch.Response{} = resp, _opts, _attempts), do: {:ok, resp}
+  defp do_follow_redirect(_req, _finch, %Finch.Response{} = resp, _opts, _attempts), do: {:ok, resp}
 end

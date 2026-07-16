@@ -63,6 +63,26 @@ defmodule Anubis.Server.Session.SerializationTest do
 
       assert {:ok, _json} = try_json_encode(serializable)
     end
+
+    test "applies serialize_assigns/1 so non-JSON assigns become persistable" do
+      defmodule AssignsServer do
+        @moduledoc false
+        def serialize_assigns(assigns) do
+          %{"tags" => assigns |> Map.fetch!(:tags) |> MapSet.to_list()}
+        end
+      end
+
+      frame = %Frame{assigns: %{tags: MapSet.new(["a", "b"])}}
+      state = build_state(server_module: AssignsServer, frame: frame)
+
+      # verbatim assigns would not survive JSON (MapSet has no encoder)
+      assert {:error, _} = try_json_encode(frame.assigns)
+
+      serializable = Session.to_serializable(state)
+
+      assert serializable.frame["assigns"] == %{"tags" => ["a", "b"]}
+      assert {:ok, _json} = try_json_encode(serializable)
+    end
   end
 
   describe "from_serializable/1" do

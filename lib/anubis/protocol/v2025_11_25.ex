@@ -33,6 +33,10 @@ defmodule Anubis.Protocol.V2025_11_25 do
     "cursor" => :string
   }
 
+  @task_augmentation_params %{
+    "ttl" => {:integer, {:gte, 0}}
+  }
+
   @task_status_notification_params %{
     "taskId" => {:required, :string},
     "status" => {:required, {:enum, ~w(working input_required completed failed cancelled)}},
@@ -66,6 +70,10 @@ defmodule Anubis.Protocol.V2025_11_25 do
   end
 
   def request_params_schema("tasks/list"), do: @tasks_list_params
+
+  def request_params_schema("tools/call") do
+    Map.put(V2025_06_18.request_params_schema("tools/call"), "task", @task_augmentation_params)
+  end
 
   def request_params_schema(method) do
     V2025_06_18.request_params_schema(method)
