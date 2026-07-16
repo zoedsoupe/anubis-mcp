@@ -565,56 +565,81 @@ defmodule Anubis.Server.SessionTest do
     end
   end
 
-  describe "supervisor shutdown lifecycle" do
-    test "terminate telemetry fires when stopped via DynamicSupervisor" do
-      handler_id = "session-terminate-#{System.unique_integer([:positive])}"
-      test_pid = self()
+  describe "terminate/2 on supervisor-initiated stop" do
+    defp start_supervised_session(server_module, session_id) do
+      transport_name = Registry.transport_name(server_module, StubTransport)
+      start_supervised!({StubTransport, name: transport_name}, id: :"transport_#{session_id}")
 
-      :ok =
-        :telemetry.attach(
-          handler_id,
-          [:anubis_mcp, :server, :terminate],
-          fn _event, _measurements, metadata, pid ->
-            send(pid, {:server_terminate, metadata})
-          end,
-          test_pid
+      task_sup = Registry.task_supervisor_name(server_module)
+      start_supervised!({Task.Supervisor, name: task_sup}, id: :"task_sup_#{session_id}")
+
+      session_sup = :"session_sup_#{session_id}"
+
+      start_supervised!(
+        {DynamicSupervisor, name: session_sup, strategy: :one_for_one},
+        id: :"dynsup_#{session_id}"
+      )
+
+      session_name = Registry.session_name(server_module, session_id)
+
+      {:ok, pid} =
+        DynamicSupervisor.start_child(
+          session_sup,
+          {Session,
+           [
+             session_id: session_id,
+             server_module: server_module,
+             name: session_name,
+             transport: [layer: StubTransport, name: transport_name],
+             task_supervisor: task_sup
+           ]}
         )
+
+      {session_sup, pid}
+    end
+
+    test "host terminate/2 fires when session is stopped via supervisor" do
+      test_pid = self()
+      handler_id = "test-term-host-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:test, :session, :closed],
+        fn _e, _m, meta, _c -> send(test_pid, {:host_terminated, meta}) end,
+        nil
+      )
 
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
-      sup_name = :"session_sup_#{System.unique_integer([:positive])}"
-      start_supervised!({DynamicSupervisor, name: sup_name, strategy: :one_for_one}, id: sup_name)
+      session_id = "term-host-#{System.unique_integer([:positive])}"
+      {session_sup, pid} = start_supervised_session(StubTerminateServer, session_id)
 
-      transport_name = Registry.transport_name(StubServer, StubTransport)
-      task_sup = Registry.task_supervisor_name(StubServer)
-      start_supervised!({StubTransport, name: transport_name}, id: :trap_exit_transport)
-      start_supervised!({Task.Supervisor, name: task_sup}, id: :trap_exit_task_sup)
+      assert Process.alive?(pid)
+      :ok = DynamicSupervisor.terminate_child(session_sup, pid)
 
-      session_id = "supervisor-stop-#{System.unique_integer([:positive])}"
-      session_name = Registry.session_name(StubServer, session_id)
+      assert_receive {:host_terminated, %{reason: :shutdown}}, 500
+      refute Process.alive?(pid)
+    end
 
-      child_spec = %{
-        id: Session,
-        start:
-          {Session, :start_link,
-           [
-             [
-               session_id: session_id,
-               server_module: StubServer,
-               name: session_name,
-               transport: [layer: StubTransport, name: transport_name],
-               task_supervisor: task_sup
-             ]
-           ]}
-      }
+    test "library :terminate telemetry fires when session is stopped via supervisor" do
+      test_pid = self()
+      handler_id = "test-term-lib-#{System.unique_integer([:positive])}"
 
-      {:ok, session_pid} = DynamicSupervisor.start_child(sup_name, child_spec)
-      assert Process.alive?(session_pid)
+      :telemetry.attach(
+        handler_id,
+        [:anubis_mcp, :server, :terminate],
+        fn _e, _m, meta, _c -> send(test_pid, {:lib_terminate, meta}) end,
+        nil
+      )
 
-      assert :ok = DynamicSupervisor.terminate_child(sup_name, session_pid)
-      refute Process.alive?(session_pid)
+      on_exit(fn -> :telemetry.detach(handler_id) end)
 
-      assert_receive {:server_terminate, %{session_id: ^session_id}}, 1_000
+      session_id = "term-lib-#{System.unique_integer([:positive])}"
+      {session_sup, pid} = start_supervised_session(StubTerminateServer, session_id)
+
+      :ok = DynamicSupervisor.terminate_child(session_sup, pid)
+
+      assert_receive {:lib_terminate, %{session_id: ^session_id}}, 500
     end
   end
 end

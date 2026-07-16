@@ -498,6 +498,10 @@ defmodule Anubis.Server.Session do
     {:noreply, state}
   end
 
+  def handle_info({:EXIT, _pid, _reason}, state) do
+    {:noreply, state}
+  end
+
   def handle_info(event, %{in_flight: f} = state) when not is_nil(f) do
     {:noreply, defer_callback(state, {:info, event})}
   end
