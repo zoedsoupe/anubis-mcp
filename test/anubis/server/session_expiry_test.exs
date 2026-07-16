@@ -126,4 +126,110 @@ defmodule Anubis.Server.SessionExpiryTest do
       refute state.initialized
     end
   end
+
+  describe "auto_initialize/2 threads request context" do
+    test "recovered frame carries live request assigns (no store)" do
+      session_id = "auto-ctx-assigns-#{System.unique_integer([:positive])}"
+      session = start_session(StubSessionRecoveryServer, session_id)
+
+      context = %{assigns: %{current_user: %{id: 7}}, type: :http}
+
+      assert :ok = Session.auto_initialize(session, context)
+
+      state = :sys.get_state(session)
+      assert state.frame.assigns[:seen_assigns][:current_user] == %{id: 7}
+      assert state.frame.assigns[:current_user] == %{id: 7}
+    end
+
+    test "recovered frame.context carries headers, remote_ip and auth" do
+      session_id = "auto-ctx-context-#{System.unique_integer([:positive])}"
+      session = start_session(StubSessionRecoveryServer, session_id)
+
+      context = %{
+        assigns: %{},
+        type: :http,
+        req_headers: [{"authorization", "Bearer abc"}],
+        remote_ip: {127, 0, 0, 1},
+        auth: %{"sub" => "user-7"}
+      }
+
+      assert :ok = Session.auto_initialize(session, context)
+
+      state = :sys.get_state(session)
+      seen = state.frame.assigns[:seen_context]
+      assert seen.headers["authorization"] == "Bearer abc"
+      assert seen.remote_ip == {127, 0, 0, 1}
+      assert seen.auth == %{"sub" => "user-7"}
+    end
+
+    test "backwards-compat: auto_initialize/1 still works with empty assigns" do
+      session_id = "auto-ctx-compat-#{System.unique_integer([:positive])}"
+      session = start_session(StubServer, session_id)
+
+      assert :ok = Session.auto_initialize(session)
+
+      state = :sys.get_state(session)
+      assert state.initialized
+      assert state.frame.assigns == %{}
+    end
+
+    test "live assigns replace stale store assigns (string-vs-atom key divergence)" do
+      {:ok, _} = MockSessionStore.start_link([])
+      MockSessionStore.reset!()
+
+      Application.put_env(:anubis_mcp, :session_store, enabled: true, adapter: MockSessionStore)
+      on_exit(fn -> Application.delete_env(:anubis_mcp, :session_store) end)
+
+      session_id = "auto-ctx-store-#{System.unique_integer([:positive])}"
+
+      MockSessionStore.save(
+        session_id,
+        %{
+          "id" => session_id,
+          "client_info" => %{"name" => "real-client", "version" => "2.0"},
+          "frame" => %{
+            "assigns" => %{"current_user" => %{"id" => "stale"}},
+            "pagination_limit" => nil
+          }
+        },
+        []
+      )
+
+      session = start_session(StubSessionRecoveryServer, session_id)
+
+      context = %{assigns: %{current_user: %{id: 7}}, type: :http}
+      assert :ok = Session.auto_initialize(session, context)
+
+      state = :sys.get_state(session)
+      assert state.frame.assigns[:current_user] == %{id: 7}
+      refute Map.has_key?(state.frame.assigns, "current_user")
+    end
+
+    test "store-only recovery preserved when request carries no assigns" do
+      {:ok, _} = MockSessionStore.start_link([])
+      MockSessionStore.reset!()
+
+      Application.put_env(:anubis_mcp, :session_store, enabled: true, adapter: MockSessionStore)
+      on_exit(fn -> Application.delete_env(:anubis_mcp, :session_store) end)
+
+      session_id = "auto-ctx-store-only-#{System.unique_integer([:positive])}"
+
+      MockSessionStore.save(
+        session_id,
+        %{
+          "id" => session_id,
+          "client_info" => %{"name" => "real-client", "version" => "2.0"},
+          "frame" => %{"assigns" => %{"key" => "value"}, "pagination_limit" => nil}
+        },
+        []
+      )
+
+      session = start_session(StubSessionRecoveryServer, session_id)
+
+      assert :ok = Session.auto_initialize(session, %{assigns: %{}, type: :http})
+
+      state = :sys.get_state(session)
+      assert state.frame.assigns["key"] == "value"
+    end
+  end
 end
