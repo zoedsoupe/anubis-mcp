@@ -141,14 +141,16 @@ defmodule Anubis.Server.Supervisor do
 
             build_http_children(
               server,
-              registry_mod,
-              registry_opts,
-              sup_mod,
-              layer,
-              transport_opts,
-              task_supervisor,
-              task_store_child,
-              extra_children
+              %{
+                registry_mod: registry_mod,
+                registry_opts: registry_opts,
+                sup_mod: sup_mod,
+                layer: layer,
+                transport_opts: transport_opts,
+                task_supervisor: task_supervisor,
+                task_store_child: task_store_child,
+                extra_children: extra_children
+              }
             )
         end
 
@@ -309,17 +311,16 @@ defmodule Anubis.Server.Supervisor do
   end
 
   # For HTTP transports: session supervisor (DynamicSupervisor or pluggable) + registry
-  defp build_http_children(
-         server,
-         registry_mod,
-         registry_opts,
-         sup_mod,
-         layer,
-         transport_opts,
-         task_supervisor,
-         task_store_child,
-         extra_children
-       ) do
+  defp build_http_children(server, %{
+         registry_mod: registry_mod,
+         registry_opts: registry_opts,
+         sup_mod: sup_mod,
+         layer: layer,
+         transport_opts: transport_opts,
+         task_supervisor: task_supervisor,
+         task_store_child: task_store_child,
+         extra_children: extra_children
+       }) do
     session_sup_name = Registry.session_supervisor_name(server)
     naming_registry = Registry.naming_registry_name(Registry.registry_name(server))
 
