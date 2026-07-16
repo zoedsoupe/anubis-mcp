@@ -49,6 +49,12 @@ defmodule Anubis.MCP.MessageTest do
 
       assert {:error, :method_not_found} = Message.decode(json)
     end
+
+    test "returns method_not_found for unknown MCP notification methods" do
+      json = ~s({"jsonrpc":"2.0","method":"notifications/unknown"}\n)
+
+      assert {:error, :method_not_found} = Message.decode(json)
+    end
   end
 
   describe "validate_message/1" do

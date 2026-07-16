@@ -601,6 +601,8 @@ if Code.ensure_loaded?(Plug) do
     defp extract_request_id(%{"id" => request_id}), do: request_id
     defp extract_request_id(_), do: nil
 
+    defp extract_request_id_from_body(%{"id" => request_id}), do: request_id
+
     defp extract_request_id_from_body(body) when is_binary(body) do
       case JSON.decode(body) do
         {:ok, %{"id" => request_id}} -> request_id
