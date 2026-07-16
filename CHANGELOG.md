@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.9.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.8.0...v1.9.0) (2026-07-16)
+
+
+### Features
+
+* **streamable_http:** add spec resumability (Last-Event-ID replay) ([#216](https://github.com/zoedsoupe/anubis-mcp/issues/216)) ([78e33b4](https://github.com/zoedsoupe/anubis-mcp/commit/78e33b4b575d1159cc5a7cbcf395ef248055aeda))
+* support pre_initialized sessions for cross-pod restore ([#187](https://github.com/zoedsoupe/anubis-mcp/issues/187)) ([13be0d7](https://github.com/zoedsoupe/anubis-mcp/commit/13be0d7e938a2c4de36f565530412178cbdeac60))
+
+
+### Bug Fixes
+
+* **session:** return encodable JSON-RPC errors when init/2 fails ([#211](https://github.com/zoedsoupe/anubis-mcp/issues/211)) ([f9af7cc](https://github.com/zoedsoupe/anubis-mcp/commit/f9af7ccf4b213e74afb0c111b97f9448b9990c01))
+* **streamable_http:** emit telemetry on SSE handler registration ([#217](https://github.com/zoedsoupe/anubis-mcp/issues/217)) ([4a4c528](https://github.com/zoedsoupe/anubis-mcp/commit/4a4c5289cb1aeee65cac3345a4f34660fe74207f))
+* **streamable_http:** restore session from store on notif/resp registry miss ([#221](https://github.com/zoedsoupe/anubis-mcp/issues/221)) ([d757b39](https://github.com/zoedsoupe/anubis-mcp/commit/d757b39464c40f642dae279388a543e295eeab46))
+* **streamable_http:** return correct JSON-RPC error codes for parse failures ([#222](https://github.com/zoedsoupe/anubis-mcp/issues/222)) ([1867994](https://github.com/zoedsoupe/anubis-mcp/commit/1867994cfbedbe056f72043819c9c564520606f0))
+
 ## [1.8.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.7.0...v1.8.0) (2026-07-16)
 
 This release focuses on simplifying the runtime footprint and giving consumers more control over networking.
