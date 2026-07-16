@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.7.0...v1.8.0) (2026-07-16)
+
+This release focuses on simplifying the runtime footprint and giving consumers more control over networking.
+
+**⚠️ Breaking change:** the `Application` callback and the bundled CLI have been removed. If you relied on `anubis_mcp` starting supervision trees or processes automatically via `application/0`, you'll now need to start the relevant components explicitly in your own supervision tree. See the updated [README](https://github.com/zoedsoupe/anubis-mcp#readme) and [Introduction guide](https://github.com/zoedsoupe/anubis-mcp/blob/main/pages/introduction.md) for the new setup.
+
+Alongside that, the Finch HTTP pool is now injectable, so you can plug in your own pool configuration (name, size, pool options) instead of relying on a globally started pool - handy for apps that already manage their own Finch instances or need per-tenant pools.
+
+On the housekeeping side, example apps moved out of `lib/` into a dedicated root-level folder to keep the library package lean, and CI now publishes the Hex package using Elixir 1.20.2.
+
+### Features
+
+* add a serialize_assigns callback for server ([1059119](https://github.com/zoedsoupe/anubis-mcp/commit/10591197d5d25f090832790154af1a31974a681d)), closes [#199](https://github.com/zoedsoupe/anubis-mcp/issues/199)
+* drop Application callback + CLI, make Finch pool injectable ([#224](https://github.com/zoedsoupe/anubis-mcp/issues/224)) ([b92a131](https://github.com/zoedsoupe/anubis-mcp/commit/b92a1319ac89f8faf15f3676f41e8183336f8869))
+
+
+### Bug Fixes
+
+* correctly append 2025-11-25 version to http transport ([889fa79](https://github.com/zoedsoupe/anubis-mcp/commit/889fa79244ec78fde8aeb5782c076163b1123a6e)), closes [#220](https://github.com/zoedsoupe/anubis-mcp/issues/220)
+* correctly truncate tools args ([4e9288c](https://github.com/zoedsoupe/anubis-mcp/commit/4e9288cf5b2741cb2f3aa85a12769aedd9ad74ad))
+* dedup protocol schema definitions ([a0314a2](https://github.com/zoedsoupe/anubis-mcp/commit/a0314a2844572375e05234c09f42f32603e98d80)), closes [#157](https://github.com/zoedsoupe/anubis-mcp/issues/157)
+
+
+### Documentation
+
+* revamp and rewrite ([0f459bb](https://github.com/zoedsoupe/anubis-mcp/commit/0f459bb209f8160c0339d0ce14fc53a4f8d5576a))
+
+
+### Miscellaneous Chores
+
+* move example apps to dedicated root folder ([631a929](https://github.com/zoedsoupe/anubis-mcp/commit/631a929a9778ea19cb862a4077512947bff8887c))
+* remove dead llms.txt ([1e115b5](https://github.com/zoedsoupe/anubis-mcp/commit/1e115b5653567e5d066f20b7db3e598bad882262))
+
+
+### Continuous Integration
+
+* use elixir 1.20.2 to publish hex pkg ([a4d5f3c](https://github.com/zoedsoupe/anubis-mcp/commit/a4d5f3c6bfd06015a1c205390a80005ebe9c73ba))
+
 ## [1.7.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.2...v1.7.0) (2026-07-16)
 
 
