@@ -235,6 +235,18 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       handler_pid: inspect(pid)
     })
 
+    Telemetry.execute(
+      Telemetry.event_transport_sse_handler_registered(),
+      %{count: 1, system_time: System.system_time()},
+      %{
+        transport: :streamable_http,
+        server: state.server,
+        session_id: session_id,
+        handler_pid: pid,
+        handler_count: map_size(sse_handlers)
+      }
+    )
+
     new_state = %{state | sse_handlers: sse_handlers}
 
     # Start keepalive when first SSE handler is registered
