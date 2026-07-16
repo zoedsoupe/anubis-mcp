@@ -132,7 +132,7 @@ defmodule Mix.Interactive.CLI do
 
   defp run_stdio_interactive(opts) do
     cmd = opts[:command] || "mcp"
-    args = String.split(opts[:args] || "run,priv/dev/echo/index.py", ",", trim: true)
+    args = String.split(opts[:args] || "run,examples/echo/index.py", ",", trim: true)
 
     IO.puts(UI.header("ANUBIS MCP STDIO INTERACTIVE"))
 
@@ -364,7 +364,7 @@ defmodule Mix.Interactive.CLI do
     #{colors.info}STDIO TRANSPORT OPTIONS:#{colors.reset}
       #{colors.command}-c, --command CMD#{colors.reset}      Command to execute [default: mcp]
       #{colors.command}--args ARGS#{colors.reset}            Comma-separated arguments for the command
-                               [default: run,priv/dev/echo/index.py]
+                               [default: run,examples/echo/index.py]
 
     #{colors.info}EXAMPLES:#{colors.reset}
       # Connect to a local SSE server

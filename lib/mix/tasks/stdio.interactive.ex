@@ -7,7 +7,7 @@ defmodule Mix.Tasks.Anubis.Stdio.Interactive do
   ## Options
 
   * `--command` / `-c` - Command to execute for the STDIO transport (default: "mcp")
-  * `--args` / `-a` - Comma-separated arguments for the command (default: "run,priv/dev/echo/index.py")
+  * `--args` / `-a` - Comma-separated arguments for the command (default: "run,examples/echo/index.py")
   * `--env` / `-e` - Environment variable to pass (repeatable: `--env KEY=VALUE --env OTHER=VAL`)
   * `--cwd` - Working directory for the spawned process
   * `--verbose` / `-v` - Verbosity level (repeatable for more verbosity)
@@ -59,7 +59,7 @@ defmodule Mix.Tasks.Anubis.Stdio.Interactive do
     cmd = parsed[:command] || "mcp"
 
     args =
-      String.split(parsed[:args] || "run,priv/dev/echo/index.py", ",", trim: true)
+      String.split(parsed[:args] || "run,examples/echo/index.py", ",", trim: true)
 
     env =
       parsed

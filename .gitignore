@@ -26,12 +26,12 @@ hermes_mcp-*.tar
 /priv/plts/
 
 # Python specific
-/priv/dev/**/__pycache__/
-/priv/dev/**/.venv/
+/examples/**/__pycache__/
+/examples/**/.venv/
 
 # golang specific
 /.gopath/
-/priv/dev/calculator/calculator
+/examples/calculator/calculator
 
 /.context/
 
