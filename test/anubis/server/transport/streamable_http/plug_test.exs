@@ -316,6 +316,92 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert body["error"]["code"] == -32_700
     end
 
+    test "POST request with missing method returns invalid request error", %{opts: opts} do
+      payload = ~s({"jsonrpc":"2.0","id":1,"params":{}})
+
+      conn =
+        :post
+        |> conn("/", payload)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["error"]["code"] == -32_600
+      assert body["id"] == 1
+    end
+
+    test "POST request with unknown method returns method not found error", %{opts: opts} do
+      payload = ~s({"jsonrpc":"2.0","id":1,"method":"unknown/method","params":{}})
+
+      conn =
+        :post
+        |> conn("/", payload)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["error"]["code"] == -32_601
+      assert body["id"] == 1
+    end
+
+    test "pre-parsed body with unknown method preserves request id in error", %{opts: opts} do
+      conn =
+        :post
+        |> conn("/")
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> Map.put(:body_params, %{
+          "jsonrpc" => "2.0",
+          "id" => 42,
+          "method" => "unknown/method",
+          "params" => %{}
+        })
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["error"]["code"] == -32_601
+      assert body["id"] == 42
+    end
+
+    test "pre-parsed body with missing method preserves request id in error", %{opts: opts} do
+      conn =
+        :post
+        |> conn("/")
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> Map.put(:body_params, %{
+          "jsonrpc" => "2.0",
+          "id" => 7,
+          "params" => %{}
+        })
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["error"]["code"] == -32_600
+      assert body["id"] == 7
+    end
+
+    test "POST request with JSON-RPC batch array returns invalid request error", %{opts: opts} do
+      payload = ~s([{"jsonrpc":"2.0","id":1,"method":"tools/list"}])
+
+      conn =
+        :post
+        |> conn("/", payload)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["error"]["code"] == -32_600
+    end
+
     test "parallel POST-with-SSE responses do not bleed across HTTP connections",
          %{opts: opts, transport: transport, test_session_id: session_id} do
       build_post = fn arg, request_id ->

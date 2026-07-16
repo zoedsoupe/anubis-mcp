@@ -75,6 +75,8 @@ defmodule Anubis.MCP.Message do
     "roots/list" => :map
   }
 
+  @known_request_methods @request_branch_specs
+
   @request_branches Map.new(@request_branch_specs, fn {method, params_schema} ->
                       {method,
                        %{
@@ -104,6 +106,8 @@ defmodule Anubis.MCP.Message do
     "notifications/resources/updated" => V2025_11_25.notification_params_schema("notifications/resources/updated"),
     "notifications/tasks/status" => V2025_11_25.notification_params_schema("notifications/tasks/status")
   }
+
+  @known_notification_methods @notification_branch_specs
 
   @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->
                            {method,
@@ -334,16 +338,16 @@ defmodule Anubis.MCP.Message do
   defp decode_line(line) do
     case JSON.decode(line) do
       {:ok, message} when is_map(message) -> [message]
-      {:ok, _} -> [:invalid]
-      {:error, _} -> [:invalid]
+      {:ok, _} -> [{:invalid, :invalid_request}]
+      {:error, _} -> [{:invalid, :parse_error}]
     end
   end
 
   defp validate_all_messages(messages) do
     messages
     |> Enum.reduce_while({:ok, []}, fn
-      :invalid, _acc ->
-        {:halt, {:error, :invalid_message}}
+      {:invalid, reason}, _acc ->
+        {:halt, {:error, reason}}
 
       message, {:ok, acc} ->
         case validate_message(message) do
@@ -361,9 +365,57 @@ defmodule Anubis.MCP.Message do
   Validates a decoded JSON message to ensure it complies with the MCP schema.
   """
   def validate_message(message) when is_map(message) do
-    with {:error, _} <- mcp_message_schema(message) do
-      {:error, :invalid_message}
+    with :ok <- validate_jsonrpc_envelope(message),
+         {:ok, validated} <- mcp_message_schema(message) do
+      {:ok, validated}
+    else
+      {:error, reason} when reason in [:invalid_request, :parse_error, :method_not_found] ->
+        {:error, reason}
+
+      {:error, _} ->
+        classify_schema_failure(message)
     end
+  end
+
+  defp classify_schema_failure(message) do
+    method = Map.get(message, "method")
+
+    cond do
+      jsonrpc_request_envelope?(message) and is_binary(method) and
+          not Map.has_key?(@known_request_methods, method) ->
+        {:error, :method_not_found}
+
+      is_notification(message) and is_binary(method) and
+          not Map.has_key?(@known_notification_methods, method) ->
+        {:error, :method_not_found}
+
+      true ->
+        {:error, :invalid_request}
+    end
+  end
+
+  defp validate_jsonrpc_envelope(message) when is_map(message) do
+    cond do
+      Map.get(message, "jsonrpc") != "2.0" ->
+        {:error, :invalid_request}
+
+      is_request(message) ->
+        if is_binary(message["method"]), do: :ok, else: {:error, :invalid_request}
+
+      is_notification(message) ->
+        if is_binary(message["method"]), do: :ok, else: {:error, :invalid_request}
+
+      is_response(message) or is_error(message) ->
+        :ok
+
+      true ->
+        {:error, :invalid_request}
+    end
+  end
+
+  defp jsonrpc_request_envelope?(message) when is_map(message) do
+    Map.get(message, "jsonrpc") == "2.0" and is_request(message) and
+      is_binary(message["method"])
   end
 
   @doc """

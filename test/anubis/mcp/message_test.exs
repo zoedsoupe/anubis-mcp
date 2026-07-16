@@ -29,13 +29,31 @@ defmodule Anubis.MCP.MessageTest do
     test "returns error for invalid JSON" do
       json = ~s({"jsonrpc":"2.0","method":broken}\n)
 
-      assert {:error, _} = Message.decode(json)
+      assert {:error, :parse_error} = Message.decode(json)
     end
 
     test "returns error for non-compliant message" do
       json = ~s({"method":"unknown_method","id":1}\n)
 
-      assert {:error, :invalid_message} = Message.decode(json)
+      assert {:error, :invalid_request} = Message.decode(json)
+    end
+
+    test "returns invalid_request for JSON-RPC batch arrays" do
+      json = ~s([{"jsonrpc":"2.0","id":1,"method":"tools/list"}]\n)
+
+      assert {:error, :invalid_request} = Message.decode(json)
+    end
+
+    test "returns method_not_found for unknown MCP methods" do
+      json = ~s({"jsonrpc":"2.0","id":1,"method":"unknown/method","params":{}}\n)
+
+      assert {:error, :method_not_found} = Message.decode(json)
+    end
+
+    test "returns method_not_found for unknown MCP notification methods" do
+      json = ~s({"jsonrpc":"2.0","method":"notifications/unknown"}\n)
+
+      assert {:error, :method_not_found} = Message.decode(json)
     end
   end
 
@@ -227,7 +245,7 @@ defmodule Anubis.MCP.MessageTest do
         "id" => 1
       }
 
-      assert {:error, :invalid_message} = Message.validate_message(msg)
+      assert {:error, :method_not_found} = Message.validate_message(msg)
     end
 
     test "rejects message with missing required fields" do
@@ -244,7 +262,7 @@ defmodule Anubis.MCP.MessageTest do
         }
       }
 
-      assert {:error, :invalid_message} = Message.validate_message(msg)
+      assert {:error, :invalid_request} = Message.validate_message(msg)
     end
   end
 
