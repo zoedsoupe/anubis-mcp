@@ -259,7 +259,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_notification_message(conn, message, session_id, context, opts) do
-      case find_session(opts, session_id) do
+      case find_or_restore_session(opts, session_id, context) do
         {:ok, session_pid} ->
           GenServer.cast(session_pid, {:mcp_notification, message, context})
 
@@ -273,7 +273,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_response_message(conn, message, session_id, context, opts) do
-      case find_session(opts, session_id) do
+      case find_or_restore_session(opts, session_id, context) do
         {:ok, session_pid} ->
           GenServer.cast(session_pid, {:mcp_response, message, context})
 
@@ -402,6 +402,37 @@ if Code.ensure_loaded?(Plug) do
 
     defp find_session(%{registry_mod: mod, registry_name: name}, session_id) do
       mod.lookup_session(name, session_id)
+    end
+
+    # Notifications and responses arrive on a session that already exists, but in
+    # a multi-instance (horizontally scaled) deployment the request may be routed
+    # to a node whose local registry has never seen it. The request path already
+    # recovers via `find_or_create_session/4`; mirror that for notifications and
+    # responses so a session persisted to the configured `Session.Store` on one
+    # node is restored on another instead of 404ing. When no store is configured
+    # (single node), behaviour is unchanged: a registry miss stays a 404.
+    defp find_or_restore_session(opts, session_id, context) do
+      case find_session(opts, session_id) do
+        {:ok, pid} ->
+          {:ok, pid}
+
+        {:error, :not_found} ->
+          if session_in_store?(session_id) do
+            start_and_auto_initialize_session(opts, session_id, context)
+          else
+            {:error, :not_found}
+          end
+      end
+    end
+
+    defp session_in_store?(session_id) do
+      case Anubis.get_session_store_adapter() do
+        nil ->
+          false
+
+        store ->
+          match?({:ok, _}, store.load(session_id, []))
+      end
     end
 
     defp find_or_create_session(opts, session_id, message, context) do
