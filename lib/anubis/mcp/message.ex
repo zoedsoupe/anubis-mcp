@@ -75,7 +75,7 @@ defmodule Anubis.MCP.Message do
     "roots/list" => :map
   }
 
-  @known_request_methods MapSet.new(Map.keys(@request_branch_specs))
+  @known_request_methods @request_branch_specs
 
   @request_branches Map.new(@request_branch_specs, fn {method, params_schema} ->
                       {method,
@@ -107,7 +107,7 @@ defmodule Anubis.MCP.Message do
     "notifications/tasks/status" => V2025_11_25.notification_params_schema("notifications/tasks/status")
   }
 
-  @known_notification_methods MapSet.new(Map.keys(@notification_branch_specs))
+  @known_notification_methods @notification_branch_specs
 
   @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->
                            {method,
@@ -382,11 +382,11 @@ defmodule Anubis.MCP.Message do
 
     cond do
       jsonrpc_request_envelope?(message) and is_binary(method) and
-          not MapSet.member?(@known_request_methods, method) ->
+          not Map.has_key?(@known_request_methods, method) ->
         {:error, :method_not_found}
 
       is_notification(message) and is_binary(method) and
-          not MapSet.member?(@known_notification_methods, method) ->
+          not Map.has_key?(@known_notification_methods, method) ->
         {:error, :method_not_found}
 
       true ->
