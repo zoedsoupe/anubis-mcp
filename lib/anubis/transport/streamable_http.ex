@@ -545,7 +545,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   defp delete_session(state) do
-    headers = put_session_header(%{}, state.session_id)
+    headers = put_session_header(state.headers, state.session_id)
 
     options = state.http_options
 
