@@ -276,11 +276,6 @@ Errors are automatically formatted according to MCP protocol. You can return:
 
 ## Useful Mix Tasks
 
-**Interactive Testing:**
-
-- `mix anubis.stdio.interactive Module` - Test with STDIO
-- `mix anubis.streamable_http.interactive Module` - Test with HTTP
-
 **Development:**
 
 - `mix compile --force` - Recompile all components

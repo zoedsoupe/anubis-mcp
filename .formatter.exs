@@ -21,7 +21,7 @@ test = [
   inputs: [
     "{mix,.formatter}.exs",
     "{config,lib,test}/**/*.{ex,exs}",
-    "priv/dev/upcase/{lib,config,test}/*.{ex,exs}"
+    "examples/upcase/{lib,config,test}/*.{ex,exs}"
   ],
   locals_without_parens: locals ++ test,
   export: locals

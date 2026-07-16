@@ -93,13 +93,7 @@ children = [{MyApp.Server, transport: :stdio}]
 {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
 ```
 
-Save it to `my_app.exs` and you can test it with the helper task:
-
-```bash
-mix anubis.stdio.interactive -c elixir --args=--no-halt,my_app.exs
-```
-
-Or you can add it to claude, assuming you have `claude-code` installed:
+Save it to `my_app.exs` and add it to claude, assuming you have `claude-code` installed:
 
 ```bash
 claude mcp add my-app -- elixir --no-halt my_app.exs
@@ -545,46 +539,6 @@ end
 These annotations are exposed in the tool definition, helping clients understand additional constraints or requirements.
 
 ## Testing Your Server
-
-How do you know your server works correctly? Let's explore interactive testing first:
-
-### Interactive CLI Testing
-
-Anubis provides interactive `Mix` tasks for different transports if you need quick testing:
-
-```bash
-# Test STDIO server
-mix anubis.stdio.interactive --command elixir --args=--no-halt,my_app.exs
-
-# Test HTTP server
-mix anubis.streamable_http.interactive --base-url=http://localhost:8080 --header 'authorization: Bearer 123'
-
-# With verbose logging
-mix anubis.streamable_http.interactive --base-url=http://localhost:4000 -vvv
-```
-
-In the interactive session:
-
-```
-mcp> ping
-pong
-
-mcp> list_tools
-Available tools:
-- greeter: Greet someone warmly
-- product_search: Search for products in our catalog
-
-mcp> call_tool
-Tool name: greeter
-Tool arguments (JSON): {"name": "Alice"}
-Result: Hello Alice! Welcome to the MCP world!
-
-mcp> show_state
-Client State:
-  Protocol: 2025-06-18
-  Initialized: true
-  ...
-```
 
 ### Unit Testing
 

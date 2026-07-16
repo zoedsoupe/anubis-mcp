@@ -2,14 +2,14 @@
 /deps/
 /node_modules/
 
-/priv/dev/upcase/_build/
-/priv/dev/upcase/deps/
+/examples/upcase/_build/
+/examples/upcase/deps/
 
-/priv/dev/ascii/_build/
-/priv/dev/ascii/deps/
+/examples/ascii/_build/
+/examples/ascii/deps/
 
-/priv/dev/echo-elixir/_build/
-/priv/dev/echo-elixir/deps/
+/examples/echo-elixir/_build/
+/examples/echo-elixir/deps/
 
-/priv/dev/client/_build/
-/priv/dev/client/deps/
+/examples/client/_build/
+/examples/client/deps/

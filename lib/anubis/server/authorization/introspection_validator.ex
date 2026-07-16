@@ -29,15 +29,16 @@ defmodule Anubis.Server.Authorization.IntrospectionValidator do
 
   @spec validate_token(String.t(), map()) :: {:ok, map()} | {:error, term()}
   @impl true
-  def validate_token(token, %{validator: {_mod, opts}}) when is_binary(token) and is_list(opts) do
+  def validate_token(token, %{validator: {_mod, opts}} = context) when is_binary(token) and is_list(opts) do
     endpoint = Keyword.fetch!(opts, :introspection_endpoint)
+    finch_name = Map.get(context, :finch_name, Anubis.Finch)
 
     headers = build_headers(opts)
     request_body = URI.encode_query(%{"token" => token, "token_type_hint" => "access_token"})
 
     request = Finch.build(:post, endpoint, headers, request_body)
 
-    case Finch.request(request, Anubis.Finch,
+    case Finch.request(request, finch_name,
            receive_timeout: @http_receive_timeout,
            pool_timeout: @http_pool_timeout
          ) do

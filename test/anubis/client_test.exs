@@ -2246,7 +2246,7 @@ defmodule Anubis.ClientTest do
 
       # Split in the middle to simulate chunked port delivery
       split_point = div(byte_size(full_message), 2)
-      <<chunk1::binary-size(split_point), chunk2::binary>> = full_message
+      <<chunk1::binary-size(^split_point), chunk2::binary>> = full_message
 
       # Send chunks separately — first chunk has no newline, so it should buffer
       GenServer.cast(client, {:response, chunk1})
