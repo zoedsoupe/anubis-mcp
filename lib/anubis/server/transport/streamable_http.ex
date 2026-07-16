@@ -219,13 +219,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   def handle_call({:register_sse_handler, session_id, pid, metadata}, _from, state) do
     sse_handlers =
       case Map.get(state.sse_handlers, session_id) do
-        {^pid, old_ref, _meta} ->
+        {_pid, old_ref, _meta} ->
           Process.demonitor(old_ref, [:flush])
-          state.sse_handlers
-
-        {old_pid, old_ref, _meta} ->
-          Process.demonitor(old_ref, [:flush])
-          send(old_pid, :close_sse)
           state.sse_handlers
 
         nil ->
