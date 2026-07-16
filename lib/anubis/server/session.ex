@@ -675,7 +675,8 @@ defmodule Anubis.Server.Session do
       | protocol_version: protocol_version,
         protocol_module: protocol_module,
         client_info: client_info,
-        client_capabilities: client_capabilities
+        client_capabilities: client_capabilities,
+        initialized: true
     }
 
     maybe_persist_session(state)

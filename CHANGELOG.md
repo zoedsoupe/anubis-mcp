@@ -4,166 +4,143 @@ All notable changes to this project are documented in this file.
 
 ## [1.6.2](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.1...v1.6.2) (2026-06-09)
 
-
 ### Bug Fixes
 
-* forward :headers to SSE GET request ([#180](https://github.com/zoedsoupe/anubis-mcp/issues/180)) ([bb3280f](https://github.com/zoedsoupe/anubis-mcp/commit/bb3280f127084c627983b0c6b1ab4c87ec23c879))
-* macros for Elixir 1.20 type checker compatibility ([48c9478](https://github.com/zoedsoupe/anubis-mcp/commit/48c947840e3bc60bc516d2a68cdacf6d2222b4b7))
-* **streamable_http:** always advertise both content types on POST ([#178](https://github.com/zoedsoupe/anubis-mcp/issues/178)) ([66abc13](https://github.com/zoedsoupe/anubis-mcp/commit/66abc132e5c43993e260793eef1cb32ba152be26))
+- forward :headers to SSE GET request ([#180](https://github.com/zoedsoupe/anubis-mcp/issues/180)) ([bb3280f](https://github.com/zoedsoupe/anubis-mcp/commit/bb3280f127084c627983b0c6b1ab4c87ec23c879))
+- macros for Elixir 1.20 type checker compatibility ([48c9478](https://github.com/zoedsoupe/anubis-mcp/commit/48c947840e3bc60bc516d2a68cdacf6d2222b4b7))
+- **streamable_http:** always advertise both content types on POST ([#178](https://github.com/zoedsoupe/anubis-mcp/issues/178)) ([66abc13](https://github.com/zoedsoupe/anubis-mcp/commit/66abc132e5c43993e260793eef1cb32ba152be26))
 
 ## [1.6.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.6.0...v1.6.1) (2026-05-23)
 
-
 ### Bug Fixes
 
-* Echo request id in "Server not initialized" error ([#168](https://github.com/zoedsoupe/anubis-mcp/issues/168)) ([226b71e](https://github.com/zoedsoupe/anubis-mcp/commit/226b71ef92bd90216d79cd4998636b147763bf4b))
+- Echo request id in "Server not initialized" error ([#168](https://github.com/zoedsoupe/anubis-mcp/issues/168)) ([226b71e](https://github.com/zoedsoupe/anubis-mcp/commit/226b71ef92bd90216d79cd4998636b147763bf4b))
 
 ## [1.6.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.5.0...v1.6.0) (2026-05-18)
 
-
 ### Features
 
-* add OAuth 2.1 authorization for MCP servers ([#158](https://github.com/zoedsoupe/anubis-mcp/issues/158)) ([a12a8f6](https://github.com/zoedsoupe/anubis-mcp/commit/a12a8f6ba9db8498a212f566898b66c99631993e))
-* add Registry.PG for distributed session tracking via :pg ([#160](https://github.com/zoedsoupe/anubis-mcp/issues/160)) ([512e103](https://github.com/zoedsoupe/anubis-mcp/commit/512e1033aa6f868b33658395e6fe1f0e28c8faf8))
+- add OAuth 2.1 authorization for MCP servers ([#158](https://github.com/zoedsoupe/anubis-mcp/issues/158)) ([a12a8f6](https://github.com/zoedsoupe/anubis-mcp/commit/a12a8f6ba9db8498a212f566898b66c99631993e))
+- add Registry.PG for distributed session tracking via :pg ([#160](https://github.com/zoedsoupe/anubis-mcp/issues/160)) ([512e103](https://github.com/zoedsoupe/anubis-mcp/commit/512e1033aa6f868b33658395e6fe1f0e28c8faf8))
 
 ## [1.5.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.4.0...v1.5.0) (2026-05-09)
 
-
 ### Features
 
-* MCP Tasks (2025-11-25) — server-receiver for tools/call ([#98](https://github.com/zoedsoupe/anubis-mcp/issues/98)) ([#155](https://github.com/zoedsoupe/anubis-mcp/issues/155)) ([51348f1](https://github.com/zoedsoupe/anubis-mcp/commit/51348f1a6e2b069fbe91c1cd50ce4610303de393))
-
+- MCP Tasks (2025-11-25) — server-receiver for tools/call ([#98](https://github.com/zoedsoupe/anubis-mcp/issues/98)) ([#155](https://github.com/zoedsoupe/anubis-mcp/issues/155)) ([51348f1](https://github.com/zoedsoupe/anubis-mcp/commit/51348f1a6e2b069fbe91c1cd50ce4610303de393))
 
 ### Bug Fixes
 
-* drop compile-connected deps from component/1 macro ([#154](https://github.com/zoedsoupe/anubis-mcp/issues/154)) ([1e368b9](https://github.com/zoedsoupe/anubis-mcp/commit/1e368b906092b863362737a90f83ae5a35fd078f))
-
+- drop compile-connected deps from component/1 macro ([#154](https://github.com/zoedsoupe/anubis-mcp/issues/154)) ([1e368b9](https://github.com/zoedsoupe/anubis-mcp/commit/1e368b906092b863362737a90f83ae5a35fd078f))
 
 ### Continuous Integration
 
-* fix flaky test ([939fd76](https://github.com/zoedsoupe/anubis-mcp/commit/939fd769813a85170e3b59153a4b8e7f5804150e))
+- fix flaky test ([939fd76](https://github.com/zoedsoupe/anubis-mcp/commit/939fd769813a85170e3b59153a4b8e7f5804150e))
 
 ## [1.4.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.3.1...v1.4.0) (2026-05-08)
 
-
 ### Features
 
-* add resource subscription capability implementation ([#152](https://github.com/zoedsoupe/anubis-mcp/issues/152)) ([10a09cf](https://github.com/zoedsoupe/anubis-mcp/commit/10a09cf89ffbd26651138c74961c442b6257cc40))
-* dispatch session requests in supervised tasks ([#153](https://github.com/zoedsoupe/anubis-mcp/issues/153)) ([f0496b4](https://github.com/zoedsoupe/anubis-mcp/commit/f0496b41a40eb6fabd4e015ec3f0ed35575efd44))
-
+- add resource subscription capability implementation ([#152](https://github.com/zoedsoupe/anubis-mcp/issues/152)) ([10a09cf](https://github.com/zoedsoupe/anubis-mcp/commit/10a09cf89ffbd26651138c74961c442b6257cc40))
+- dispatch session requests in supervised tasks ([#153](https://github.com/zoedsoupe/anubis-mcp/issues/153)) ([f0496b4](https://github.com/zoedsoupe/anubis-mcp/commit/f0496b41a40eb6fabd4e015ec3f0ed35575efd44))
 
 ### Tests
 
-* cut suite from 62s to 8s ([#149](https://github.com/zoedsoupe/anubis-mcp/issues/149)) ([e5a86f5](https://github.com/zoedsoupe/anubis-mcp/commit/e5a86f592778b85d790a9ca41e577b56a2b3744d))
+- cut suite from 62s to 8s ([#149](https://github.com/zoedsoupe/anubis-mcp/issues/149)) ([e5a86f5](https://github.com/zoedsoupe/anubis-mcp/commit/e5a86f592778b85d790a9ca41e577b56a2b3744d))
 
 ## [1.3.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.3.0...v1.3.1) (2026-05-04)
 
-
 ### Bug Fixes
 
-* log sse_keepalive_failed at :warning, matching sse_send_failed ([#145](https://github.com/zoedsoupe/anubis-mcp/issues/145)) ([f8dbc43](https://github.com/zoedsoupe/anubis-mcp/commit/f8dbc43e2fc0fd9debd5851aebcb31ab459459bd))
-
+- log sse_keepalive_failed at :warning, matching sse_send_failed ([#145](https://github.com/zoedsoupe/anubis-mcp/issues/145)) ([f8dbc43](https://github.com/zoedsoupe/anubis-mcp/commit/f8dbc43e2fc0fd9debd5851aebcb31ab459459bd))
 
 ### Miscellaneous Chores
 
-* change setup-zig version on ci ([f77a844](https://github.com/zoedsoupe/anubis-mcp/commit/f77a844cd0c706db3240f1c655a7277969940244))
-
+- change setup-zig version on ci ([f77a844](https://github.com/zoedsoupe/anubis-mcp/commit/f77a844cd0c706db3240f1c655a7277969940244))
 
 ### Code Refactoring
 
-* delegate JSON Schema to Peri, retire :mcp_field ([#146](https://github.com/zoedsoupe/anubis-mcp/issues/146)) ([9c674fd](https://github.com/zoedsoupe/anubis-mcp/commit/9c674fd44499a3a0c6ed271748ec7fb44fb4c914))
+- delegate JSON Schema to Peri, retire :mcp_field ([#146](https://github.com/zoedsoupe/anubis-mcp/issues/146)) ([9c674fd](https://github.com/zoedsoupe/anubis-mcp/commit/9c674fd44499a3a0c6ed271748ec7fb44fb4c914))
 
 ## [1.3.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.2.0...v1.3.0) (2026-04-29)
 
-
 ### Features
 
-* **elicitation:** MCP 2025-06-18 elicitation support ([#139](https://github.com/zoedsoupe/anubis-mcp/issues/139)) ([8ab36e2](https://github.com/zoedsoupe/anubis-mcp/commit/8ab36e2f051984a9dc841e7f97e58542e5746800))
-* resource templates with RFC 6570 URI matching ([#141](https://github.com/zoedsoupe/anubis-mcp/issues/141)) ([aaee374](https://github.com/zoedsoupe/anubis-mcp/commit/aaee37489887cd8725821a73b80f71ad21c626e2))
-
+- **elicitation:** MCP 2025-06-18 elicitation support ([#139](https://github.com/zoedsoupe/anubis-mcp/issues/139)) ([8ab36e2](https://github.com/zoedsoupe/anubis-mcp/commit/8ab36e2f051984a9dc841e7f97e58542e5746800))
+- resource templates with RFC 6570 URI matching ([#141](https://github.com/zoedsoupe/anubis-mcp/issues/141)) ([aaee374](https://github.com/zoedsoupe/anubis-mcp/commit/aaee37489887cd8725821a73b80f71ad21c626e2))
 
 ### Bug Fixes
 
-* scope POST-with-SSE response to originating conn ([#144](https://github.com/zoedsoupe/anubis-mcp/issues/144)) ([5593006](https://github.com/zoedsoupe/anubis-mcp/commit/5593006ce6bbdcd9e6ce74aff1820247c807a463))
+- scope POST-with-SSE response to originating conn ([#144](https://github.com/zoedsoupe/anubis-mcp/issues/144)) ([5593006](https://github.com/zoedsoupe/anubis-mcp/commit/5593006ce6bbdcd9e6ce74aff1820247c807a463))
 
 ## [1.2.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.1.1...v1.2.0) (2026-04-24)
 
-
 ### Features
 
-* pluggable session supervisor and :via tuple session naming ([#133](https://github.com/zoedsoupe/anubis-mcp/issues/133)) ([0a1aadc](https://github.com/zoedsoupe/anubis-mcp/commit/0a1aadc3b00be036980920a2c0e0a8ce55d2b392))
-
+- pluggable session supervisor and :via tuple session naming ([#133](https://github.com/zoedsoupe/anubis-mcp/issues/133)) ([0a1aadc](https://github.com/zoedsoupe/anubis-mcp/commit/0a1aadc3b00be036980920a2c0e0a8ce55d2b392))
 
 ### Bug Fixes
 
-* correct SSE task lifecycle bugs in StreamableHTTP transport ([#130](https://github.com/zoedsoupe/anubis-mcp/issues/130)) ([3a34382](https://github.com/zoedsoupe/anubis-mcp/commit/3a343828f3d6974fdbdeb9ab1589b9a52a56ad4f))
-* defer streamable_http plug opts fetching to runtime ([#137](https://github.com/zoedsoupe/anubis-mcp/issues/137)) ([ad29215](https://github.com/zoedsoupe/anubis-mcp/commit/ad2921549529eac26488bdcf7be5c876c548e618))
-* handle session expiry gracefully with optional callback and store restore ([#134](https://github.com/zoedsoupe/anubis-mcp/issues/134)) ([a42f462](https://github.com/zoedsoupe/anubis-mcp/commit/a42f4625f466ea46a490014d82c11ab8fde042dc))
-* prevent lost SSE responses when client connection closes ([#132](https://github.com/zoedsoupe/anubis-mcp/issues/132)) ([f961fa0](https://github.com/zoedsoupe/anubis-mcp/commit/f961fa0719d795eeb2a629ae5764cbb8b29a4c1b))
-* replace opaque KeyError with ArgumentError for missing :client_info ([#135](https://github.com/zoedsoupe/anubis-mcp/issues/135)) ([fc9444c](https://github.com/zoedsoupe/anubis-mcp/commit/fc9444cdab045e0275570dfb4f0ff6dcf1a42eb0))
-* server stdio test againts custom io device ([#136](https://github.com/zoedsoupe/anubis-mcp/issues/136)) ([4b567d9](https://github.com/zoedsoupe/anubis-mcp/commit/4b567d99fa1dced884ddc89b6798a540e643ba2c))
+- correct SSE task lifecycle bugs in StreamableHTTP transport ([#130](https://github.com/zoedsoupe/anubis-mcp/issues/130)) ([3a34382](https://github.com/zoedsoupe/anubis-mcp/commit/3a343828f3d6974fdbdeb9ab1589b9a52a56ad4f))
+- defer streamable_http plug opts fetching to runtime ([#137](https://github.com/zoedsoupe/anubis-mcp/issues/137)) ([ad29215](https://github.com/zoedsoupe/anubis-mcp/commit/ad2921549529eac26488bdcf7be5c876c548e618))
+- handle session expiry gracefully with optional callback and store restore ([#134](https://github.com/zoedsoupe/anubis-mcp/issues/134)) ([a42f462](https://github.com/zoedsoupe/anubis-mcp/commit/a42f4625f466ea46a490014d82c11ab8fde042dc))
+- prevent lost SSE responses when client connection closes ([#132](https://github.com/zoedsoupe/anubis-mcp/issues/132)) ([f961fa0](https://github.com/zoedsoupe/anubis-mcp/commit/f961fa0719d795eeb2a629ae5764cbb8b29a4c1b))
+- replace opaque KeyError with ArgumentError for missing :client_info ([#135](https://github.com/zoedsoupe/anubis-mcp/issues/135)) ([fc9444c](https://github.com/zoedsoupe/anubis-mcp/commit/fc9444cdab045e0275570dfb4f0ff6dcf1a42eb0))
+- server stdio test againts custom io device ([#136](https://github.com/zoedsoupe/anubis-mcp/issues/136)) ([4b567d9](https://github.com/zoedsoupe/anubis-mcp/commit/4b567d99fa1dced884ddc89b6798a540e643ba2c))
 
 ## [1.1.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.1.0...v1.1.1) (2026-04-22)
 
-
 ### Bug Fixes
 
-* buffer chunked STDIO responses before decoding in client ([#127](https://github.com/zoedsoupe/anubis-mcp/issues/127)) ([eff7f24](https://github.com/zoedsoupe/anubis-mcp/commit/eff7f248084077e081d57122648963a1ab24e35e))
-
+- buffer chunked STDIO responses before decoding in client ([#127](https://github.com/zoedsoupe/anubis-mcp/issues/127)) ([eff7f24](https://github.com/zoedsoupe/anubis-mcp/commit/eff7f248084077e081d57122648963a1ab24e35e))
 
 ### Miscellaneous Chores
 
-* capture log from stdio transports processes ([fbcca0a](https://github.com/zoedsoupe/anubis-mcp/commit/fbcca0a1204e4e1602d8abe277af03f067338d10))
-* encapsulate transport_parse_state into the Client.State struct ([602d74c](https://github.com/zoedsoupe/anubis-mcp/commit/602d74c7045e3087db4424ba55d61cfcf2c7f663))
-* suppress SSE deprecation warnings ([05565fc](https://github.com/zoedsoupe/anubis-mcp/commit/05565fc030c449909bbdcb72d67773b9edefea9c))
-* supress SSE deprecation warnings ([8334779](https://github.com/zoedsoupe/anubis-mcp/commit/833477912037a02972fff410aa646c9df7059f09))
-
+- capture log from stdio transports processes ([fbcca0a](https://github.com/zoedsoupe/anubis-mcp/commit/fbcca0a1204e4e1602d8abe277af03f067338d10))
+- encapsulate transport_parse_state into the Client.State struct ([602d74c](https://github.com/zoedsoupe/anubis-mcp/commit/602d74c7045e3087db4424ba55d61cfcf2c7f663))
+- suppress SSE deprecation warnings ([05565fc](https://github.com/zoedsoupe/anubis-mcp/commit/05565fc030c449909bbdcb72d67773b9edefea9c))
+- supress SSE deprecation warnings ([8334779](https://github.com/zoedsoupe/anubis-mcp/commit/833477912037a02972fff410aa646c9df7059f09))
 
 ### Tests
 
-* fix the stdio cast message from server using a buffer ([76d7ecd](https://github.com/zoedsoupe/anubis-mcp/commit/76d7ecd52d8fc469615f4febe151d0cda11b3713))
+- fix the stdio cast message from server using a buffer ([76d7ecd](https://github.com/zoedsoupe/anubis-mcp/commit/76d7ecd52d8fc469615f4febe151d0cda11b3713))
 
 ## [1.1.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.0.0...v1.1.0) (2026-04-13)
 
-
 ### Features
 
-* Add Client.await_ready/2 to block until MCP handshake completes ([#117](https://github.com/zoedsoupe/anubis-mcp/issues/117)) ([4c48647](https://github.com/zoedsoupe/anubis-mcp/commit/4c48647192c3304e012049669729008d7177940e))
-* add instructions field to initialize response ([#122](https://github.com/zoedsoupe/anubis-mcp/issues/122)) ([8103b7c](https://github.com/zoedsoupe/anubis-mcp/commit/8103b7c5cbc12ace1e302edd059e42c0a04618f1))
-
+- Add Client.await_ready/2 to block until MCP handshake completes ([#117](https://github.com/zoedsoupe/anubis-mcp/issues/117)) ([4c48647](https://github.com/zoedsoupe/anubis-mcp/commit/4c48647192c3304e012049669729008d7177940e))
+- add instructions field to initialize response ([#122](https://github.com/zoedsoupe/anubis-mcp/issues/122)) ([8103b7c](https://github.com/zoedsoupe/anubis-mcp/commit/8103b7c5cbc12ace1e302edd059e42c0a04618f1))
 
 ### Documentation
 
-* correct supervision tree setup ([#118](https://github.com/zoedsoupe/anubis-mcp/issues/118)) ([ae2560a](https://github.com/zoedsoupe/anubis-mcp/commit/ae2560a8a7fd85847557ac21fc978e15dc5f7995))
+- correct supervision tree setup ([#118](https://github.com/zoedsoupe/anubis-mcp/issues/118)) ([ae2560a](https://github.com/zoedsoupe/anubis-mcp/commit/ae2560a8a7fd85847557ac21fc978e15dc5f7995))
 
 ## [1.0.0](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.1...v1.0.0) (2026-03-16)
 
-
 ### ⚠ BREAKING CHANGES
 
-* remove client base module and client macro ([#110](https://github.com/zoedsoupe/anubis-mcp/issues/110))
-* **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96))
+- remove client base module and client macro ([#110](https://github.com/zoedsoupe/anubis-mcp/issues/110))
+- **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96))
 
 ### Features
 
-* add _meta support to Tool struct and JSON encoder ([#108](https://github.com/zoedsoupe/anubis-mcp/issues/108)) ([6ac49d1](https://github.com/zoedsoupe/anubis-mcp/commit/6ac49d181baed767defe9fc5138c6d41caa26f20))
-
+- add _meta support to Tool struct and JSON encoder ([#108](https://github.com/zoedsoupe/anubis-mcp/issues/108)) ([6ac49d1](https://github.com/zoedsoupe/anubis-mcp/commit/6ac49d181baed767defe9fc5138c6d41caa26f20))
 
 ### Bug Fixes
 
-* **phase-5:** remove dead code and update docs ([#104](https://github.com/zoedsoupe/anubis-mcp/issues/104)) ([eea86af](https://github.com/zoedsoupe/anubis-mcp/commit/eea86af23dcb805a7770894c6a6a897700c38dfe))
-* regression for input/output server schema ([85f8ebb](https://github.com/zoedsoupe/anubis-mcp/commit/85f8ebb7439c51ab5cb0df974e08720833f534e9))
-* remove client base module and client macro ([#110](https://github.com/zoedsoupe/anubis-mcp/issues/110)) ([1f9f13c](https://github.com/zoedsoupe/anubis-mcp/commit/1f9f13cf2c44294391dd580030a1210dcd349fd5))
-* server examples and sse server transport ([944bafb](https://github.com/zoedsoupe/anubis-mcp/commit/944bafb01c29afa36a82eddc81c6e1c6d0278a9c))
-* session serializion errors ([#112](https://github.com/zoedsoupe/anubis-mcp/issues/112)) ([cb8c0e3](https://github.com/zoedsoupe/anubis-mcp/commit/cb8c0e31ad831484425e378951a85591c8cbf29f)), closes [#60](https://github.com/zoedsoupe/anubis-mcp/issues/60)
-* Start SSE keepalive when first handler is registered ([#83](https://github.com/zoedsoupe/anubis-mcp/issues/83)) ([c3c01e9](https://github.com/zoedsoupe/anubis-mcp/commit/c3c01e975f57ef421783f963adf717b522b5c724))
-* stdio server transport working ([#111](https://github.com/zoedsoupe/anubis-mcp/issues/111)) ([b331281](https://github.com/zoedsoupe/anubis-mcp/commit/b33128172db3f4ec3766cb4c7125f83bc3a85dd7))
-
+- **phase-5:** remove dead code and update docs ([#104](https://github.com/zoedsoupe/anubis-mcp/issues/104)) ([eea86af](https://github.com/zoedsoupe/anubis-mcp/commit/eea86af23dcb805a7770894c6a6a897700c38dfe))
+- regression for input/output server schema ([85f8ebb](https://github.com/zoedsoupe/anubis-mcp/commit/85f8ebb7439c51ab5cb0df974e08720833f534e9))
+- remove client base module and client macro ([#110](https://github.com/zoedsoupe/anubis-mcp/issues/110)) ([1f9f13c](https://github.com/zoedsoupe/anubis-mcp/commit/1f9f13cf2c44294391dd580030a1210dcd349fd5))
+- server examples and sse server transport ([944bafb](https://github.com/zoedsoupe/anubis-mcp/commit/944bafb01c29afa36a82eddc81c6e1c6d0278a9c))
+- session serializion errors ([#112](https://github.com/zoedsoupe/anubis-mcp/issues/112)) ([cb8c0e3](https://github.com/zoedsoupe/anubis-mcp/commit/cb8c0e31ad831484425e378951a85591c8cbf29f)), closes [#60](https://github.com/zoedsoupe/anubis-mcp/issues/60)
+- Start SSE keepalive when first handler is registered ([#83](https://github.com/zoedsoupe/anubis-mcp/issues/83)) ([c3c01e9](https://github.com/zoedsoupe/anubis-mcp/commit/c3c01e975f57ef421783f963adf717b522b5c724))
+- stdio server transport working ([#111](https://github.com/zoedsoupe/anubis-mcp/issues/111)) ([b331281](https://github.com/zoedsoupe/anubis-mcp/commit/b33128172db3f4ec3766cb4c7125f83bc3a85dd7))
 
 ### Code Refactoring
 
-* **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96)) ([badb0f0](https://github.com/zoedsoupe/anubis-mcp/commit/badb0f0111521f8bd5a5dba32574c25e1b589c91))
-* **phase-4:** client extraction of handlers ([#100](https://github.com/zoedsoupe/anubis-mcp/issues/100)) ([08b98c0](https://github.com/zoedsoupe/anubis-mcp/commit/08b98c03e50d698a781507ee63a4a6c5f8cdcb5e))
+- **phase-3:** server re-implementation and simplification ([#96](https://github.com/zoedsoupe/anubis-mcp/issues/96)) ([badb0f0](https://github.com/zoedsoupe/anubis-mcp/commit/badb0f0111521f8bd5a5dba32574c25e1b589c91))
+- **phase-4:** client extraction of handlers ([#100](https://github.com/zoedsoupe/anubis-mcp/issues/100)) ([08b98c0](https://github.com/zoedsoupe/anubis-mcp/commit/08b98c03e50d698a781507ee63a4a6c5f8cdcb5e))
 
 ## [0.17.1](https://github.com/zoedsoupe/anubis-mcp/compare/v0.17.0...v0.17.1) (2026-02-28)
 
