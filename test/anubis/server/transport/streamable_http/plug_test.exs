@@ -395,6 +395,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       registry_name = Registry.registry_name(StubServer)
       start_supervised!({Registry.Local, name: registry_name})
 
+      naming_registry = Registry.naming_registry_name(registry_name)
+      start_supervised!({Elixir.Registry, keys: :unique, name: naming_registry})
+
       session_config = setup_session_config(registry_mod: Registry.Local)
       on_exit(&cleanup_session_config/0)
 
