@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.10.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.9.0...v1.10.0) (2026-07-17)
+
+
+### Features
+
+* add _meta field and refresh persisted session TTL ([677a186](https://github.com/zoedsoupe/anubis-mcp/commit/677a1860fe6274fc50484e12ec6df3e33aafccab))
+
+
+### Bug Fixes
+
+* **streamable_http:** route session messages to owning SSE handler ([#229](https://github.com/zoedsoupe/anubis-mcp/issues/229)) ([3288c46](https://github.com/zoedsoupe/anubis-mcp/commit/3288c46b08f78ee79b742423ae4070f62e98c1d2))
+
 ## [1.9.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.8.0...v1.9.0) (2026-07-16)
 
 
