@@ -509,11 +509,16 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   defp run_sse_task(parent, state) do
-    headers = build_sse_headers(state)
-    options = state.http_options
-    request = HTTP.build(:get, URI.to_string(state.mcp_url), headers, nil)
+    opts =
+      state.http_options
+      |> Keyword.put(:dest, self())
+      |> Keyword.put(:finch_name, state.finch_name)
 
-    process_sse_request(request, state.finch_name, options, parent)
+    state.mcp_url
+    |> URI.to_string()
+    |> SSE.connect(build_sse_headers(state), opts)
+    |> Enum.each(&send(parent, {:sse_event, &1}))
+
     send(parent, {:sse_closed, :normal})
   end
 
@@ -522,30 +527,6 @@ defmodule Anubis.Transport.StreamableHTTP do
     |> Map.put("accept", "text/event-stream")
     |> put_session_header(state.session_id)
     |> put_last_event_id_header(state.last_event_id)
-  end
-
-  defp process_sse_request(request, finch_name, options, parent) do
-    case HTTP.follow_redirect(request, finch_name, options) do
-      {:ok, %{status: 200, headers: resp_headers, body: body}} ->
-        handle_sse_response(resp_headers, body, parent)
-
-      {:ok, %{status: 405}} ->
-        Logging.transport_event(
-          "sse_not_supported",
-          "Server returned 405 for GET request"
-        )
-
-      error ->
-        Logging.transport_event("sse_connection_failed", %{error: error}, level: :warning)
-    end
-  end
-
-  defp handle_sse_response(headers, body, parent) do
-    if get_content_type(headers) == "text/event-stream" do
-      body
-      |> SSE.Parser.run()
-      |> Enum.each(fn event -> send(parent, {:sse_event, event}) end)
-    end
   end
 
   defp delete_session(state) do

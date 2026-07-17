@@ -14,6 +14,30 @@ defmodule Anubis.Transport.StreamableHTTPTest do
     {:ok, bypass: bypass}
   end
 
+  defp await_pushed_notification(timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_await_pushed_notification(deadline)
+  end
+
+  defp do_await_pushed_notification(deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    if remaining > 0 do
+      receive do
+        {:stub_client_response, data} ->
+          if is_binary(data) and String.contains?(data, "notifications/message") do
+            true
+          else
+            do_await_pushed_notification(deadline)
+          end
+      after
+        remaining -> false
+      end
+    else
+      false
+    end
+  end
+
   describe "start_link/1" do
     test "successfully starts with valid options", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
@@ -285,6 +309,55 @@ defmodule Anubis.Transport.StreamableHTTPTest do
         Message.encode_request(%{"method" => "ping", "params" => %{}}, "2")
 
       assert :ok = StreamableHTTP.send_message(transport, second_message, timeout: 5000)
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+
+    test "forwards server-pushed events while the SSE GET is held open", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+      session_id = "test-session-sse-push"
+
+      Bypass.stub(bypass, "POST", "/mcp", fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.put_resp_header("mcp-session-id", session_id)
+        |> Plug.Conn.resp(200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      Bypass.stub(bypass, "DELETE", "/mcp", fn conn -> Plug.Conn.resp(conn, 200, "") end)
+
+      Bypass.stub(bypass, "GET", "/mcp", fn conn ->
+        conn = Plug.Conn.put_resp_header(conn, "content-type", "text/event-stream")
+        conn = Plug.Conn.send_chunked(conn, 200)
+
+        {:ok, conn} =
+          Plug.Conn.chunk(conn, """
+          data: {"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"pushed"}}
+
+          """)
+
+        Process.sleep(2_000)
+        conn
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          enable_sse: true,
+          transport_opts: @test_http_opts
+        )
+
+      :ok = StubClient.subscribe()
+
+      {:ok, ping} = Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
+      assert :ok = StreamableHTTP.send_message(transport, ping, timeout: 5000)
+
+      # Well inside the server's 2s hold: a buffering read could only deliver on close.
+      assert await_pushed_notification(500), "server-pushed notification was never forwarded"
 
       StreamableHTTP.shutdown(transport)
       StubClient.clear_messages()
