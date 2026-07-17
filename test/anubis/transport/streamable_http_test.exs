@@ -14,9 +14,6 @@ defmodule Anubis.Transport.StreamableHTTPTest do
     {:ok, bypass: bypass}
   end
 
-  # Waits for a StubClient response carrying a server-pushed notification,
-  # ignoring unrelated responses (e.g. the POST reply) that also reach the
-  # subscriber. Returns false if none arrives within `timeout`.
   defp await_pushed_notification(timeout) do
     deadline = System.monotonic_time(:millisecond) + timeout
     do_await_pushed_notification(deadline)
@@ -322,7 +319,6 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, stub_client} = StubClient.start_link()
       session_id = "test-session-sse-push"
 
-      # POST establishes the session, which starts the SSE GET.
       Bypass.stub(bypass, "POST", "/mcp", fn conn ->
         conn
         |> Plug.Conn.put_resp_header("content-type", "application/json")
@@ -332,10 +328,6 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       Bypass.stub(bypass, "DELETE", "/mcp", fn conn -> Plug.Conn.resp(conn, 200, "") end)
 
-      # A held-open SSE GET that pushes a server-initiated notification and then
-      # keeps the connection open. The event must reach the client while the
-      # stream is still open — a buffering read only yields it once the stream
-      # closes, which for a real SSE stream never happens.
       Bypass.stub(bypass, "GET", "/mcp", fn conn ->
         conn = Plug.Conn.put_resp_header(conn, "content-type", "text/event-stream")
         conn = Plug.Conn.send_chunked(conn, 200)
@@ -364,9 +356,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping} = Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
       assert :ok = StreamableHTTP.send_message(transport, ping, timeout: 5000)
 
-      # Must arrive well inside the server's hold, proving the event is streamed
-      # rather than delivered when the connection closes. The POST response also
-      # reaches the subscriber, so wait specifically for the pushed notification.
+      # Well inside the server's 2s hold: a buffering read could only deliver on close.
       assert await_pushed_notification(500), "server-pushed notification was never forwarded"
 
       StreamableHTTP.shutdown(transport)

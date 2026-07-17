@@ -509,13 +509,14 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   defp run_sse_task(parent, state) do
+    opts =
+      state.http_options
+      |> Keyword.put(:dest, self())
+      |> Keyword.put(:finch_name, state.finch_name)
+
     state.mcp_url
     |> URI.to_string()
-    |> SSE.connect(build_sse_headers(state),
-      dest: self(),
-      finch_name: state.finch_name,
-      transport_opts: state.transport_opts
-    )
+    |> SSE.connect(build_sse_headers(state), opts)
     |> Enum.each(&send(parent, {:sse_event, &1}))
 
     send(parent, {:sse_closed, :normal})
