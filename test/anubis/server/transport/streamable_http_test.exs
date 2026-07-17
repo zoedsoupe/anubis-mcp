@@ -146,6 +146,49 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       end)
     end
 
+    test "send_message with session_id routes to that session only", %{transport: transport} do
+      session_a = "session-a-#{System.unique_integer([:positive])}"
+      session_b = "session-b-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      pid_a =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_a)
+          send(test_pid, {:handler_ready, :a})
+
+          receive do
+            {:sse_message, msg} -> send(test_pid, {:got, :a, msg})
+          end
+        end)
+
+      pid_b =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_b)
+          send(test_pid, {:handler_ready, :b})
+
+          receive do
+            {:sse_message, msg} -> send(test_pid, {:got, :b, msg})
+          end
+        end)
+
+      assert_receive {:handler_ready, :a}
+      assert_receive {:handler_ready, :b}
+
+      message = "session-scoped message"
+
+      assert :ok =
+               StreamableHTTP.send_message(transport, message,
+                 timeout: 5000,
+                 session_id: session_a
+               )
+
+      assert_receive {:got, :a, ^message}
+      refute_receive {:got, :b, _}, 200
+
+      StreamableHTTP.unregister_sse_handler(transport, session_a, pid_a)
+      StreamableHTTP.unregister_sse_handler(transport, session_b, pid_b)
+    end
+
     test "cleans up handlers when they crash", %{transport: transport} do
       session_id = "test-session-crash"
       test_pid = self()
