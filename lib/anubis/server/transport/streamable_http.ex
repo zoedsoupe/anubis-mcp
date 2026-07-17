@@ -80,7 +80,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl Transport
   def send_message(transport, message, opts) when is_binary(message) do
-    timeout = opts[:timeout]
+    timeout = Keyword.get(opts, :timeout, 5000)
 
     case Keyword.get(opts, :session_id) do
       nil ->
