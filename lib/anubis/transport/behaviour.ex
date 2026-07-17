@@ -12,7 +12,7 @@ defmodule Anubis.Transport.Behaviour do
 
   @callback start_link(keyword()) :: GenServer.on_start()
   @callback send_message(t(), message(), list(opt)) :: :ok | {:error, reason()}
-            when opt: {:timeout, pos_integer()}
+            when opt: {:timeout, pos_integer()} | {:session_id, String.t()}
   @callback shutdown(t()) :: :ok | {:error, reason()}
 
   @doc """

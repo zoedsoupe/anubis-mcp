@@ -80,7 +80,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl Transport
   def send_message(transport, message, opts) when is_binary(message) do
-    GenServer.call(transport, {:send_message, message}, opts[:timeout])
+    timeout = opts[:timeout]
+
+    case Keyword.get(opts, :session_id) do
+      nil ->
+        GenServer.call(transport, {:send_message, message}, timeout)
+
+      session_id when is_binary(session_id) ->
+        GenServer.call(transport, {:route_to_session, session_id, message}, timeout)
+    end
   end
 
   @impl Transport
