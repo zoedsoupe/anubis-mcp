@@ -66,6 +66,46 @@ defmodule Anubis.SSE.ParserTest do
     assert Enum.empty?(Parser.run(sse))
   end
 
+  describe "feed/2" do
+    test "returns no events until a chunk completes an SSE block" do
+      sse = "data: hello world\n\n"
+      {split_at, _} = sse |> String.graphemes() |> Enum.split(10)
+      part1 = Enum.join(split_at)
+      part2 = String.replace_prefix(sse, part1, "")
+
+      assert {[], remainder} = Parser.feed("", part1)
+      assert remainder == part1
+
+      assert {[event], ""} = Parser.feed(remainder, part2)
+      assert event.data == "hello world"
+    end
+
+    test "reassembles MCP events split across multiple chunks" do
+      assert {:ok, msg} = Message.encode_request(%{"method" => "ping"}, "req-123")
+      sse = "event: message\r\ndata: #{msg}\r\n\r\n"
+
+      split_at = String.length("event: message\r\ndata: {\"id\"")
+      part1 = binary_part(sse, 0, split_at)
+      part2 = binary_part(sse, split_at, byte_size(sse) - split_at)
+
+      assert {[], buffer} = Parser.feed("", part1)
+      assert {[event], ""} = Parser.feed(buffer, part2)
+      assert event.event == "message"
+
+      assert {:ok, [req]} = Message.decode(event.data)
+      assert req["id"] == "req-123"
+      assert req["method"] == "ping"
+    end
+
+    test "emits multiple complete events from one chunk and keeps the remainder" do
+      sse = "data: first\n\ndata: second\n\npartial"
+
+      assert {events, remainder} = Parser.feed("", sse)
+      assert Enum.map(events, & &1.data) == ["first", "second"]
+      assert remainder == "partial"
+    end
+  end
+
   describe "handles MCP message event correctly" do
     test "handles MCP endpoint event correctly" do
       sse = "event: endpoint\r\ndata: /messages/?session_id=123\r\n\r\n"
