@@ -35,20 +35,21 @@ defmodule Anubis.SSE.Parser do
         block = binary_part(data, 0, start)
         rest = binary_part(data, start + len, byte_size(data) - start - len)
 
-        acc =
-          if String.trim(block) == "" do
-            acc
-          else
-            case parse_event(block) do
-              %Event{data: ""} -> acc
-              event -> [event | acc]
-            end
-          end
-
-        consume(rest, acc)
+        consume(rest, append_parsed_event(acc, block))
 
       nil ->
         {Enum.reverse(acc), data}
+    end
+  end
+
+  defp append_parsed_event(acc, block) do
+    if String.trim(block) == "" do
+      acc
+    else
+      case parse_event(block) do
+        %Event{data: ""} -> acc
+        event -> [event | acc]
+      end
     end
   end
 
