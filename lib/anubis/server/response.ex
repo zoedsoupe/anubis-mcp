@@ -407,7 +407,12 @@ defmodule Anubis.Server.Response do
       iex> Response.prompt() |> Response.user_message("What's the weather?")
       %Response{
         type: :prompt,
-        messages: [%{"role" => "user", "content" => "What's the weather?"}]
+        messages: [
+          %{
+            "role" => "user",
+            "content" => %{"type" => "text", "text" => "What's the weather?"}
+          }
+        ]
       }
   """
   @spec user_message(t, term) :: t
@@ -428,7 +433,12 @@ defmodule Anubis.Server.Response do
       iex> Response.prompt() |> Response.assistant_message("Let me check the weather for you.")
       %Response{
         type: :prompt,
-        messages: [%{"role" => "assistant", "content" => "Let me check the weather for you."}]
+        messages: [
+          %{
+            "role" => "assistant",
+            "content" => %{"type" => "text", "text" => "Let me check the weather for you."}
+          }
+        ]
       }
   """
   @spec assistant_message(t, term) :: t
@@ -440,7 +450,10 @@ defmodule Anubis.Server.Response do
   end
 
   @doc """
-  Add a system message to a prompt response.
+  Add a system-style instruction to a prompt response.
+
+  MCP `PromptMessage` only allows `user` or `assistant` roles, so this helper
+  emits a `user` message. Prefer `user_message/2` for new code.
 
   ## Parameters
 
@@ -452,12 +465,17 @@ defmodule Anubis.Server.Response do
       iex> Response.prompt() |> Response.system_message("You are a helpful weather assistant.")
       %Response{
         type: :prompt,
-        messages: [%{"role" => "system", "content" => "You are a helpful weather assistant."}]
+        messages: [
+          %{
+            "role" => "user",
+            "content" => %{"type" => "text", "text" => "You are a helpful weather assistant."}
+          }
+        ]
       }
   """
   @spec system_message(t, term) :: t
   def system_message(%{type: :prompt} = r, content) do
-    add_message(r, %{"role" => "system", "content" => build_message_content(content)})
+    user_message(r, content)
   end
 
   @doc """
@@ -647,7 +665,11 @@ defmodule Anubis.Server.Response do
       %{"content" => [%{"type" => "text", "text" => "Hello"}], "isError" => false}
       
       iex> Response.prompt() |> Response.user_message("Hi") |> Response.to_protocol()
-      %{"messages" => [%{"role" => "user", "content" => "Hi"}]}
+      %{
+        "messages" => [
+          %{"role" => "user", "content" => %{"type" => "text", "text" => "Hi"}}
+        ]
+      }
       
       iex> Response.resource() |> Response.text("data") |> Response.to_protocol()
       %{"text" => "data"}
@@ -695,7 +717,8 @@ defmodule Anubis.Server.Response do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp build_message_content(text) when is_binary(text), do: text
+  defp build_message_content(text) when is_binary(text), do: %{"type" => "text", "text" => text}
+
   defp build_message_content(content), do: content
 
   @annotations_schema %{

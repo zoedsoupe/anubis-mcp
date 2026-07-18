@@ -316,8 +316,14 @@ defmodule Anubis.Server.ResponseTest do
 
       assert result == %{
                "messages" => [
-                 %{"role" => "user", "content" => "What's the weather?"},
-                 %{"role" => "assistant", "content" => "Let me check..."}
+                 %{
+                   "role" => "user",
+                   "content" => %{"type" => "text", "text" => "What's the weather?"}
+                 },
+                 %{
+                   "role" => "assistant",
+                   "content" => %{"type" => "text", "text" => "Let me check..."}
+                 }
                ]
              }
     end
@@ -332,7 +338,31 @@ defmodule Anubis.Server.ResponseTest do
       assert result == %{
                "description" => "Weather assistant",
                "messages" => [
-                 %{"role" => "system", "content" => "You are a weather expert"}
+                 %{
+                   "role" => "user",
+                   "content" => %{"type" => "text", "text" => "You are a weather expert"}
+                 }
+               ]
+             }
+    end
+
+    test "wraps prompt message content per MCP PromptMessage schema" do
+      result =
+        Response.prompt()
+        |> Response.system_message("You are a helpful assistant.")
+        |> Response.user_message("What is failing?")
+        |> Response.to_protocol()
+
+      assert result == %{
+               "messages" => [
+                 %{
+                   "role" => "user",
+                   "content" => %{"type" => "text", "text" => "You are a helpful assistant."}
+                 },
+                 %{
+                   "role" => "user",
+                   "content" => %{"type" => "text", "text" => "What is failing?"}
+                 }
                ]
              }
     end
