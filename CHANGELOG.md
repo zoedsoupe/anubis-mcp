@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.10.1](https://github.com/zoedsoupe/anubis-mcp/compare/v1.10.0...v1.10.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **prompts:** wrap prompt content objects and map system_message to user role ([#234](https://github.com/zoedsoupe/anubis-mcp/issues/234)) ([2451bb7](https://github.com/zoedsoupe/anubis-mcp/commit/2451bb7b80ad3c9fb24ca6b4d3014cb19cc81abb))
+
 ## [1.10.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.9.0...v1.10.0) (2026-07-17)
 
 
