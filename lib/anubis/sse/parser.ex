@@ -3,6 +3,8 @@ defmodule Anubis.SSE.Parser do
 
   alias Anubis.SSE.Event
 
+  @event_separator ~r/(?:\r\n){2}|\n\n/
+
   @doc """
   Parses a string containing one or more SSE events.
 
@@ -11,9 +13,44 @@ defmodule Anubis.SSE.Parser do
   """
   def run(sse_data) when is_binary(sse_data) do
     sse_data
-    |> String.split(~r/\r?\n\r?\n/, trim: true)
+    |> String.split(@event_separator, trim: true)
     |> Enum.map(&parse_event/1)
     |> Enum.reject(&(&1.data == ""))
+  end
+
+  @doc """
+  Incrementally parses SSE bytes from a streaming transport.
+
+  `buffer` holds any trailing partial event from prior chunks. Returns
+  complete events and the remaining bytes to carry into the next chunk.
+  """
+  @spec feed(String.t(), String.t()) :: {[Event.t()], String.t()}
+  def feed(buffer, chunk) when is_binary(buffer) and is_binary(chunk) do
+    consume(buffer <> chunk, [])
+  end
+
+  defp consume(data, acc) do
+    case Regex.run(@event_separator, data, return: :index) do
+      [{start, len}] ->
+        block = binary_part(data, 0, start)
+        rest = binary_part(data, start + len, byte_size(data) - start - len)
+
+        consume(rest, append_parsed_event(acc, block))
+
+      nil ->
+        {Enum.reverse(acc), data}
+    end
+  end
+
+  defp append_parsed_event(acc, block) do
+    if String.trim(block) == "" do
+      acc
+    else
+      case parse_event(block) do
+        %Event{data: ""} -> acc
+        event -> [event | acc]
+      end
+    end
   end
 
   defp parse_event(event_block) do

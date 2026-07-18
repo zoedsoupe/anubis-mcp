@@ -49,7 +49,7 @@ defmodule Anubis.SSE do
       task = spawn_stream_task(req, ref, finch_name, opts)
 
       Stream.resource(
-        fn -> {ref, task} end,
+        fn -> {ref, task, ""} end,
         &process_task_stream/1,
         &shutdown_task/1
       )
@@ -127,28 +127,36 @@ defmodule Anubis.SSE do
     {:cont, acc}
   end
 
-  defp process_task_stream({ref, _task} = state) do
+  defp process_task_stream({ref, task, buffer}) do
     receive do
       {:chunk, {:data, data}, ^ref} ->
-        {Parser.run(data), state}
+        {events, remainder} = Parser.feed(buffer, data)
+        {events, {ref, task, remainder}}
 
       {:chunk, {:status, status}, ^ref} ->
         Anubis.Logging.transport_event("sse_status", status)
-        {[], state}
+        {[], {ref, task, buffer}}
 
       {:chunk, {:headers, headers}, ^ref} ->
         Anubis.Logging.transport_event("sse_headers", headers)
-        {[], state}
+        {[], {ref, task, buffer}}
 
       {:chunk, :halted, ^ref} ->
         Anubis.Logging.transport_event("sse_halted", "Transport will be restarted")
-        {[{:error, :halted}], state}
+
+        trailing_events =
+          case buffer do
+            "" -> []
+            remainder -> Parser.run(remainder)
+          end
+
+        {trailing_events ++ [{:error, :halted}], {ref, task, ""}}
 
       {:chunk, unknown, ^ref} ->
         Anubis.Logging.transport_event("sse_unknown_chunk", unknown)
-        {[], state}
+        {[], {ref, task, buffer}}
     end
   end
 
-  defp shutdown_task({_ref, task}), do: Task.shutdown(task)
+  defp shutdown_task({_ref, task, _buffer}), do: Task.shutdown(task)
 end
