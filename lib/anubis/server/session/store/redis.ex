@@ -43,12 +43,12 @@ if Code.ensure_loaded?(Redix) do
     ## Architecture
 
     This module is a `Supervisor` whose children are the Redix connection pool
-    plus an internal state server (`#{__MODULE__}.Server`) that answers the
+    plus an internal state server that answers the
     `Anubis.Server.Session.Store` behaviour calls. Because the pool lives *inside*
     the supervision tree (rather than being started from `init/1`), a restart of
-    the enclosing `Anubis.Server.Supervisor` (which runs `:one_for_all`) tears the
-    whole subtree down synchronously — releasing every registered name before the
-    store is restarted. Restarts are therefore race-free: no `{:already_started}`.
+    the enclosing server supervisor (which runs `:one_for_all`) tears the whole
+    subtree down synchronously — releasing every registered name before the store
+    is restarted. Restarts are therefore race-free: no `{:already_started}`.
     """
 
     @behaviour Anubis.Server.Session.Store
@@ -64,6 +64,27 @@ if Code.ensure_loaded?(Redix) do
 
     # Client API
 
+    @doc """
+    Starts the Redis session store supervisor.
+
+    Supervises the Redix connection pool and the internal state server. `opts`
+    is the `:session_store` keyword config documented in the moduledoc
+    (`:redis_url`, `:pool_size`, `:ttl`, `:namespace`, `:connection_name`,
+    `:redix_opts`).
+
+    ## Examples
+
+        {:ok, _pid} =
+          Anubis.Server.Session.Store.Redis.start_link(
+            redis_url: "redis://localhost:6379/0",
+            namespace: "anubis:sessions"
+          )
+
+    The store operations (`save/3`, `load/2`, `delete/2`, `list_active/1`,
+    `update_ttl/3`, `update/3`, `cleanup_expired/1`) follow the
+    `Anubis.Server.Session.Store` behaviour; see its callback docs for the
+    request/response contract.
+    """
     @impl Store
     @spec start_link(keyword()) :: Supervisor.on_start()
     def start_link(opts) do
