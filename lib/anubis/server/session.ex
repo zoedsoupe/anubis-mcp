@@ -129,6 +129,16 @@ defmodule Anubis.Server.Session do
     GenServer.start_link(__MODULE__, Map.new(opts), name: name)
   end
 
+  @doc false
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      restart: :temporary,
+      type: :worker
+    }
+  end
+
   @doc """
   Auto-initializes a session without a client initialize handshake.
 
