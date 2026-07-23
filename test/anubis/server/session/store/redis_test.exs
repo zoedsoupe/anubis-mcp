@@ -48,16 +48,7 @@ if Code.ensure_loaded?(Redix) do
 
     describe ":one_for_all restart cascade" do
       test "store subtree is replaced by a fresh instance when a sibling crashes", %{config: config} do
-        {:ok, parent} =
-          Supervisor.start_link(
-            [
-              %{id: :sibling, start: {Agent, :start_link, [fn -> 0 end]}},
-              {Redis, config}
-            ],
-            strategy: :one_for_all
-          )
-
-        on_exit(fn -> stop_supervisor(parent) end)
+        parent = start_one_for_all!(config)
 
         store_before = wait_for_pid(Redis)
         ref = Process.monitor(store_before)
@@ -103,16 +94,7 @@ if Code.ensure_loaded?(Redix) do
           end
         end)
 
-        {:ok, parent} =
-          Supervisor.start_link(
-            [
-              %{id: :sibling, start: {Agent, :start_link, [fn -> 0 end]}},
-              {Redis, config}
-            ],
-            strategy: :one_for_all
-          )
-
-        on_exit(fn -> stop_supervisor(parent) end)
+        parent = start_one_for_all!(config)
 
         wait_for_pid(Redis)
         session_id = "roundtrip_#{System.unique_integer([:positive])}"
@@ -125,6 +107,20 @@ if Code.ensure_loaded?(Redix) do
         # The data lives in Redis; the freshly restarted pool must still serve it.
         assert {:ok, %{"id" => ^session_id}} = eventually_ok(fn -> Redis.load(session_id) end)
       end
+    end
+
+    defp start_one_for_all!(config) do
+      {:ok, parent} =
+        Supervisor.start_link(
+          [
+            %{id: :sibling, start: {Agent, :start_link, [fn -> 0 end]}},
+            {Redis, config}
+          ],
+          strategy: :one_for_all
+        )
+
+      on_exit(fn -> stop_supervisor(parent) end)
+      parent
     end
 
     defp stop_supervisor(pid) do
