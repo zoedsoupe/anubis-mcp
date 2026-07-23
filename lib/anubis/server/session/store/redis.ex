@@ -61,7 +61,13 @@ if Code.ensure_loaded?(Redix) do
 
     @impl Store
     def start_link(opts) do
-      GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+      # Idempotent under a :one_for_all supervisor restart: if a prior instance
+      # is still registered under our name, adopt it instead of crashing with
+      # {:error, {:already_started, pid}}.
+      case GenServer.start_link(__MODULE__, opts, name: __MODULE__) do
+        {:error, {:already_started, pid}} -> {:ok, pid}
+        other -> other
+      end
     end
 
     @impl Store
@@ -137,12 +143,7 @@ if Code.ensure_loaded?(Redix) do
       # Start connections under a supervisor
       case Supervisor.start_link(children, strategy: :one_for_one, name: supervisor_name) do
         {:ok, _pid} ->
-          state = %State{
-            conn_name: conn_name,
-            namespace: namespace,
-            ttl: ttl,
-            pool_size: pool_size
-          }
+          state = build_state(conn_name, namespace, ttl, pool_size)
 
           Logging.log(:info, "Redis session store started successfully",
             namespace: namespace,
@@ -158,6 +159,15 @@ if Code.ensure_loaded?(Redix) do
           })
 
           {:ok, state}
+
+        {:error, {:already_started, _pid}} ->
+          # A racing :one_for_all restart re-ran init/1 before the prior pool
+          # supervisor released its fixed name. The live pool is still usable
+          # (connections are name-addressed via get_connection/1), so adopt it
+          # instead of crashing with {:stop, {:already_started, _}}.
+          Logging.log(:debug, "Reusing live Redis session store pool", namespace: namespace)
+
+          {:ok, build_state(conn_name, namespace, ttl, pool_size)}
 
         {:error, reason} = error ->
           Logging.log(:error, "Failed to start Redis session store", reason: inspect(reason))
@@ -299,6 +309,15 @@ if Code.ensure_loaded?(Redix) do
     end
 
     # Private functions
+
+    defp build_state(conn_name, namespace, ttl, pool_size) do
+      %State{
+        conn_name: conn_name,
+        namespace: namespace,
+        ttl: ttl,
+        pool_size: pool_size
+      }
+    end
 
     defp validate_redix_opts(nil), do: []
 
