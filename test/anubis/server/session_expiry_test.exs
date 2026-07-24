@@ -336,4 +336,14 @@ defmodule Anubis.Server.SessionExpiryTest do
       refute state.initialized
     end
   end
+
+  describe "child_spec/1" do
+    test "uses restart: :temporary so idle expiry does not respawn an empty session" do
+      spec = Session.child_spec(session_id: "spec-test")
+
+      assert spec.restart == :temporary
+      assert spec.type == :worker
+      assert spec.start == {Session, :start_link, [[session_id: "spec-test"]]}
+    end
+  end
 end
