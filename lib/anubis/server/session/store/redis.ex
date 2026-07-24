@@ -91,42 +91,114 @@ if Code.ensure_loaded?(Redix) do
       Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
     end
 
+    @doc """
+    Persists `state` for `session_id`, expiring after the store TTL.
+
+    Pass `opts[:ttl]` (milliseconds) to override the configured TTL for this
+    write. Implements `c:Anubis.Server.Session.Store.save/3`.
+
+    ## Examples
+
+        :ok = Anubis.Server.Session.Store.Redis.save("sess-1", %{initialized: true})
+        :ok = Anubis.Server.Session.Store.Redis.save("sess-1", %{}, ttl: 60_000)
+    """
     @impl Store
     @spec save(Store.session_id(), Store.session_state(), Store.opts()) :: :ok | Store.error()
     def save(session_id, state, opts \\ []) do
       GenServer.call(__MODULE__.Server, {:save, session_id, state, opts})
     end
 
+    @doc """
+    Loads the persisted state for `session_id`.
+
+    Returns `{:error, :not_found}` when the key is absent or has expired.
+    Implements `c:Anubis.Server.Session.Store.load/2`.
+
+    ## Examples
+
+        {:ok, state} = Anubis.Server.Session.Store.Redis.load("sess-1")
+        {:error, :not_found} = Anubis.Server.Session.Store.Redis.load("missing")
+    """
     @impl Store
     @spec load(Store.session_id(), Store.opts()) :: {:ok, Store.session_state()} | Store.error()
     def load(session_id, opts \\ []) do
       GenServer.call(__MODULE__.Server, {:load, session_id, opts})
     end
 
+    @doc """
+    Deletes any persisted state for `session_id`.
+
+    Idempotent — returns `:ok` even when nothing was stored. Implements
+    `c:Anubis.Server.Session.Store.delete/2`.
+
+    ## Examples
+
+        :ok = Anubis.Server.Session.Store.Redis.delete("sess-1")
+    """
     @impl Store
     @spec delete(Store.session_id(), Store.opts()) :: :ok | Store.error()
     def delete(session_id, opts \\ []) do
       GenServer.call(__MODULE__.Server, {:delete, session_id, opts})
     end
 
+    @doc """
+    Lists the session ids currently held in the store's namespace.
+
+    Implements `c:Anubis.Server.Session.Store.list_active/1`.
+
+    ## Examples
+
+        {:ok, ids} = Anubis.Server.Session.Store.Redis.list_active()
+    """
     @impl Store
     @spec list_active(Store.opts()) :: {:ok, [Store.session_id()]} | Store.error()
     def list_active(opts \\ []) do
       GenServer.call(__MODULE__.Server, {:list_active, opts})
     end
 
+    @doc """
+    Refreshes the expiry of `session_id` to `ttl_ms` milliseconds from now.
+
+    Returns `{:error, :not_found}` when the session is absent. Implements
+    `c:Anubis.Server.Session.Store.update_ttl/3`.
+
+    ## Examples
+
+        :ok = Anubis.Server.Session.Store.Redis.update_ttl("sess-1", 1_800_000)
+    """
     @impl Store
     @spec update_ttl(Store.session_id(), pos_integer(), Store.opts()) :: :ok | Store.error()
     def update_ttl(session_id, ttl_ms, opts \\ []) do
       GenServer.call(__MODULE__.Server, {:update_ttl, session_id, ttl_ms, opts})
     end
 
+    @doc """
+    Merges `updates` into the persisted state for `session_id`.
+
+    Read-modify-write with last-write-wins semantics; returns
+    `{:error, :not_found}` when the session is absent. Implements
+    `c:Anubis.Server.Session.Store.update/3`.
+
+    ## Examples
+
+        :ok = Anubis.Server.Session.Store.Redis.update("sess-1", %{log_level: "debug"})
+    """
     @impl Store
     @spec update(Store.session_id(), map(), Store.opts()) :: :ok | Store.error()
     def update(session_id, updates, opts \\ []) do
       GenServer.call(__MODULE__.Server, {:update, session_id, updates, opts})
     end
 
+    @doc """
+    No-op for Redis — expiry is handled natively by Redis TTLs.
+
+    Always returns `{:ok, 0}`. Implements
+    `c:Anubis.Server.Session.Store.cleanup_expired/1`.
+
+    ## Examples
+
+        {:ok, 0} = Anubis.Server.Session.Store.Redis.cleanup_expired()
+    """
     @impl Store
     @spec cleanup_expired(Store.opts()) :: {:ok, non_neg_integer()} | Store.error()
     def cleanup_expired(opts \\ []) do
