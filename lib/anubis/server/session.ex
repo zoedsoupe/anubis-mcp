@@ -800,7 +800,7 @@ defmodule Anubis.Server.Session do
     tool_name = get_in(request, ["params", "name"])
 
     :telemetry.span(
-      Telemetry.event_server_tool_call(),
+      [:anubis_mcp | Telemetry.event_server_tool_call()],
       %{tool: tool_name},
       fn -> {module.handle_request(request, frame), %{tool: tool_name}} end
     )
