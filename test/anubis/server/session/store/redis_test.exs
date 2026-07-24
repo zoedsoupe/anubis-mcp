@@ -119,7 +119,14 @@ if Code.ensure_loaded?(Redix) do
           strategy: :one_for_all
         )
 
-      on_exit(fn -> stop_supervisor(parent) end)
+      on_exit(fn ->
+        stop_supervisor(parent)
+        # The parent is linked to the (now-dead) test process, so teardown may be
+        # racing; wait for the global names to clear before the next test starts.
+        await_unregistered(Redis)
+        await_unregistered(Redis.Server)
+      end)
+
       parent
     end
 
@@ -127,6 +134,20 @@ if Code.ensure_loaded?(Redix) do
       Supervisor.stop(pid)
     catch
       :exit, _ -> :ok
+    end
+
+    defp await_unregistered(name, retries \\ 50) do
+      cond do
+        is_nil(Process.whereis(name)) ->
+          :ok
+
+        retries <= 0 ->
+          :ok
+
+        true ->
+          Process.sleep(20)
+          await_unregistered(name, retries - 1)
+      end
     end
 
     defp child_pid(sup, id) do
