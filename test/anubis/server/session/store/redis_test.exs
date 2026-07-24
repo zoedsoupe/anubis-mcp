@@ -142,7 +142,7 @@ if Code.ensure_loaded?(Redix) do
           :ok
 
         retries <= 0 ->
-          :ok
+          flunk("#{inspect(name)} remained registered after teardown")
 
         true ->
           Process.sleep(20)
