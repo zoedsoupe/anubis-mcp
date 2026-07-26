@@ -3,8 +3,10 @@ defmodule Anubis.SSE.Parser do
 
   alias Anubis.SSE.Event
 
-  @line_ending ~r/\r\n|\r|\n/
-  @event_terminator ~r/(?:\r\n|\r|\n){2}/
+  # CRLF must be matched before bare \r or \n so a single \r\n is one line ending,
+  # not two. Event terminators are explicit double-newline forms from the SSE spec.
+  @line_ending ~r/\r\n|\n|\r/
+  @event_terminator ~r/\r\n\r\n|\n\n|\r\r/
 
   @doc """
   Parses a string containing one or more SSE events.
