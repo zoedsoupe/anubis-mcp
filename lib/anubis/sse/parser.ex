@@ -4,9 +4,9 @@ defmodule Anubis.SSE.Parser do
   alias Anubis.SSE.Event
 
   # CRLF must be matched before bare \r or \n so a single \r\n is one line ending,
-  # not two. Event terminators are explicit double-newline forms from the SSE spec.
+  # not two. A blank line is any two consecutive SSE line endings (CRLF, LF, or CR).
   @line_ending ~r/\r\n|\n|\r/
-  @event_terminator ~r/\r\n\r\n|\n\n|\r\r/
+  @event_terminator ~r/(?:\r\n|\n|\r){2}/
 
   @doc """
   Parses a string containing one or more SSE events.
@@ -32,7 +32,7 @@ defmodule Anubis.SSE.Parser do
       iex> Anubis.SSE.Parser.feed("", "data: hello")
       {[], "data: hello"}
 
-      iex> Anubis.SSE.Parser.feed("data: hello", "\\n\\n")
+      iex> Anubis.SSE.Parser.feed("data: hello", "\n\n")
       {[%Anubis.SSE.Event{data: "hello", event: "message", id: nil, retry: nil}], ""}
 
   """

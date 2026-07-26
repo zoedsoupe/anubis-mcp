@@ -102,6 +102,17 @@ defmodule Anubis.SSE.ParserTest do
     assert third.data == "partial event"
   end
 
+  test "run/1 and feed/2 accept mixed blank-line SSE terminators" do
+    sse = "data: mixed\r\n\n"
+
+    assert [event] = Parser.run(sse)
+    assert event.data == "mixed"
+
+    assert {[], "data: partial"} = Parser.feed("", "data: partial")
+    assert {[event], ""} = Parser.feed("data: partial", "\r\n\n")
+    assert event.data == "partial"
+  end
+
   test "run/1 and feed/2 parse bare-CR SSE line endings" do
     sse = "data: cr-only\r\r"
 
