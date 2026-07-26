@@ -16,6 +16,35 @@ defmodule Anubis.SSE.Parser do
     |> Enum.reject(&(&1.data == ""))
   end
 
+  @doc """
+  Incrementally parses SSE data from a streaming transport.
+
+  Returns complete events and any trailing bytes that do not yet end with a
+  blank-line event terminator.
+  """
+  @spec feed(String.t(), String.t()) :: {[Event.t()], String.t()}
+  def feed(buffer, chunk) when is_binary(buffer) and is_binary(chunk) do
+    data = buffer <> chunk
+
+    case String.split(data, ~r/\r?\n\r?\n/) do
+      [] ->
+        {[], ""}
+
+      [incomplete] ->
+        {[], incomplete}
+
+      parts ->
+        {complete_parts, [remainder]} = Enum.split(parts, -1)
+
+        events =
+          complete_parts
+          |> Enum.map(&parse_event/1)
+          |> Enum.reject(&(&1.data == ""))
+
+        {events, remainder}
+    end
+  end
+
   defp parse_event(event_block) do
     event_block
     |> String.split(~r/\r?\n/)
