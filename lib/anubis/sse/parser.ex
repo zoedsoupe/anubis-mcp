@@ -3,6 +3,9 @@ defmodule Anubis.SSE.Parser do
 
   alias Anubis.SSE.Event
 
+  @line_ending ~r/\r\n|\r|\n/
+  @event_terminator ~r/(?:\r\n|\r|\n){2}/
+
   @doc """
   Parses a string containing one or more SSE events.
 
@@ -11,7 +14,7 @@ defmodule Anubis.SSE.Parser do
   """
   def run(sse_data) when is_binary(sse_data) do
     sse_data
-    |> String.split(~r/\r?\n\r?\n/, trim: true)
+    |> String.split(@event_terminator, trim: true)
     |> Enum.map(&parse_event/1)
     |> Enum.reject(&(&1.data == ""))
   end
@@ -21,12 +24,21 @@ defmodule Anubis.SSE.Parser do
 
   Returns complete events and any trailing bytes that do not yet end with a
   blank-line event terminator.
+
+  ## Examples
+
+      iex> Anubis.SSE.Parser.feed("", "data: hello")
+      {[], "data: hello"}
+
+      iex> Anubis.SSE.Parser.feed("data: hello", "\\n\\n")
+      {[%Anubis.SSE.Event{data: "hello", event: "message", id: nil, retry: nil}], ""}
+
   """
   @spec feed(String.t(), String.t()) :: {[Event.t()], String.t()}
   def feed(buffer, chunk) when is_binary(buffer) and is_binary(chunk) do
     data = buffer <> chunk
 
-    case String.split(data, ~r/\r?\n\r?\n/) do
+    case String.split(data, @event_terminator) do
       [] ->
         {[], ""}
 
@@ -47,7 +59,7 @@ defmodule Anubis.SSE.Parser do
 
   defp parse_event(event_block) do
     event_block
-    |> String.split(~r/\r?\n/)
+    |> String.split(@line_ending)
     |> Enum.reduce(%Event{}, &parse_event_line/2)
   end
 

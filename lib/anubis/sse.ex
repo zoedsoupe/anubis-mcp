@@ -78,6 +78,8 @@ defmodule Anubis.SSE do
 
       case Finch.stream_while(req, finch_name, nil, on_chunk, http) do
         {:ok, _acc} ->
+          send(dest, {:chunk, :stream_closed, ref})
+
           Anubis.Logging.transport_event("sse_reconnect", %{
             reason: "success",
             attempt: attempt,
@@ -88,6 +90,8 @@ defmodule Anubis.SSE do
           loop_sse_stream(req, ref, dest, finch_name, opts, attempt + 1)
 
         {:error, exc, _acc} ->
+          send(dest, {:chunk, :stream_closed, ref})
+
           Anubis.Logging.transport_event(
             "sse_reconnect",
             %{
@@ -129,6 +133,9 @@ defmodule Anubis.SSE do
 
   defp process_task_stream({ref, task, buffer} = state) do
     receive do
+      {:chunk, :stream_closed, ^ref} ->
+        {[], {ref, task, ""}}
+
       {:chunk, {:data, data}, ^ref} ->
         {events, remainder} = Parser.feed(buffer, data)
         {events, {ref, task, remainder}}

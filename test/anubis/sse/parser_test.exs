@@ -102,6 +102,17 @@ defmodule Anubis.SSE.ParserTest do
     assert third.data == "partial event"
   end
 
+  test "run/1 and feed/2 parse bare-CR SSE line endings" do
+    sse = "data: cr-only\r\r"
+
+    assert [event] = Parser.run(sse)
+    assert event.data == "cr-only"
+
+    assert {[], "data: partial"} = Parser.feed("", "data: partial")
+    assert {[event], ""} = Parser.feed("data: partial", "\r\r")
+    assert event.data == "partial"
+  end
+
   describe "handles MCP message event correctly" do
     test "handles MCP endpoint event correctly" do
       sse = "event: endpoint\r\ndata: /messages/?session_id=123\r\n\r\n"
