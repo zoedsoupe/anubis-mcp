@@ -75,8 +75,8 @@ defmodule Anubis.SSE.ParserTest do
   end
 
   test "feed/2 reassembles an event split across multiple chunks" do
-    first = "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"ping\""
-    second = ",\"params\":{},\"id\":1}\r\n\r\n"
+    first = ~s(event: message\r\ndata: {"jsonrpc":"2.0","method":"ping")
+    second = ~s(,"params":{},"id":1}\r\n\r\n)
 
     assert {[], partial} = Parser.feed("", first)
     assert partial == first
