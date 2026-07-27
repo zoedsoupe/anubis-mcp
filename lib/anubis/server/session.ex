@@ -802,13 +802,20 @@ defmodule Anubis.Server.Session do
     :telemetry.span(
       Telemetry.event_server_tool_call(),
       %{tool: tool_name},
-      fn -> {module.handle_request(request, frame), %{tool: tool_name}} end
+      fn ->
+        result = module.handle_request(request, frame)
+        {result, %{tool: tool_name, is_error: tool_call_error?(result)}}
+      end
     )
   end
 
   defp do_handle_request(module, request, frame, _method) do
     module.handle_request(request, frame)
   end
+
+  defp tool_call_error?({:error, _reason, _frame}), do: true
+  defp tool_call_error?({:reply, %{"isError" => true}, _frame}), do: true
+  defp tool_call_error?(_result), do: false
 
   # Async dispatch helpers
 
