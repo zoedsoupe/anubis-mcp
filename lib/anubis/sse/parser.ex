@@ -4,9 +4,10 @@ defmodule Anubis.SSE.Parser do
   alias Anubis.SSE.Event
 
   # CRLF must be matched before bare \r or \n so a single \r\n is one line ending,
-  # not two. A blank line is any two consecutive SSE line endings (CRLF, LF, or CR).
+  # not two. A blank line is two SSE line endings; each alternative must be atomic so
+  # a lone CRLF between content lines cannot satisfy the terminator.
   @line_ending ~r/\r\n|\n|\r/
-  @event_terminator ~r/(?:\r\n|\n|\r){2}/
+  @event_terminator ~r/\r\r|\n\n|(?:\r\n){2}|\r\n\n|\n\r\n/
 
   @doc """
   Parses a string containing one or more SSE events.
