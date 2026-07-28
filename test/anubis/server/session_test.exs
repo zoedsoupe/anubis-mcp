@@ -107,7 +107,7 @@ defmodule Anubis.Server.SessionTest do
 
       :telemetry.attach(
         handler_id,
-        [:anubis_mcp, :server, :response],
+        [:anubis_mcp | Anubis.Telemetry.event_server_response()],
         fn _e, _m, meta, _c -> send(test_pid, {:server_response, meta}) end,
         nil
       )
