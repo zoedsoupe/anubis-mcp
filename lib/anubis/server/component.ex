@@ -84,9 +84,9 @@ defmodule Anubis.Server.Component do
       def __scopes__, do: unquote(scopes)
 
       if unquote(type) == :tool do
-        if title = unquote(title) do
+        if unquote(title) do
           @impl true
-          def title, do: title
+          def title, do: unquote(title)
         end
 
         @impl true
@@ -113,9 +113,9 @@ defmodule Anubis.Server.Component do
       end
 
       if unquote(type) == :prompt do
-        if title = unquote(title) do
+        if unquote(title) do
           @impl true
-          def title, do: title
+          def title, do: unquote(title)
         end
 
         @impl true
@@ -142,9 +142,9 @@ defmodule Anubis.Server.Component do
         @impl true
         def name, do: unquote(name)
 
-        if title = unquote(title) do
+        if unquote(title) do
           @impl true
-          def title, do: title
+          def title, do: unquote(title)
         end
 
         @impl true
