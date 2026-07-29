@@ -675,6 +675,75 @@ defmodule Anubis.Server.SessionTest do
     end
   end
 
+  describe "tool_call telemetry :is_error metadata" do
+    setup do
+      test_pid = self()
+      handler_id = "test-tool-call-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        # NOTE: currently unprefixed (missing the :anubis_mcp namespace) — see #243/#244.
+        [:server, :tool_call, :stop],
+        fn _e, _m, meta, _c -> send(test_pid, {:tool_call_stop, meta}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      transport_name = Registry.transport_name(TasksStubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+      task_sup = Registry.task_supervisor_name(TasksStubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      session_id = "tool-call-telemetry-#{System.unique_integer([:positive])}"
+      session_name = Registry.session_name(TasksStubServer, session_id)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: TasksStubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup}
+        )
+
+      init_msg = init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, init_msg, %{}})
+
+      init_notification = build_notification("notifications/initialized", %{})
+      assert :ok = GenServer.cast(session, {:mcp_notification, init_notification, %{}})
+
+      %{session: session}
+    end
+
+    test "is_error is false for a successful tool call", %{session: session} do
+      request = build_request("tools/call", %{"name" => "no_tasks", "arguments" => %{}}, 1)
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert_receive {:tool_call_stop, %{tool: "no_tasks", is_error: false}}, 500
+    end
+
+    test "is_error is true when the tool itself reports a CallToolResult error", %{session: session} do
+      request =
+        build_request(
+          "tools/call",
+          %{"name" => "always_fails", "arguments" => %{"reason" => "boom"}},
+          2
+        )
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert_receive {:tool_call_stop, %{tool: "always_fails", is_error: true}}, 500
+    end
+
+    test "is_error is true when the tool is not found (protocol-level error)", %{session: session} do
+      request = build_request("tools/call", %{"name" => "nonexistent_tool"}, 3)
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert_receive {:tool_call_stop, %{tool: "nonexistent_tool", is_error: true}}, 500
+    end
+  end
+
   describe "terminate/2 on supervisor-initiated stop" do
     defp start_supervised_session(server_module, session_id) do
       transport_name = Registry.transport_name(server_module, StubTransport)
