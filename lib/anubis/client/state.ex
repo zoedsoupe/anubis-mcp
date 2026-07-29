@@ -324,6 +324,24 @@ defmodule Anubis.Client.State do
   end
 
   @doc """
+  Stores the protocol version negotiated during initialization.
+
+  A `nil` or non-binary version leaves the state unchanged, so the
+  configured version is kept when the server omits the field.
+
+  ## Parameters
+
+    * `state` - The current client state
+    * `protocol_version` - The protocol version received from initialization
+  """
+  @spec update_protocol_version(t(), String.t() | nil) :: t()
+  def update_protocol_version(state, protocol_version) when is_binary(protocol_version) do
+    %{state | protocol_version: protocol_version}
+  end
+
+  def update_protocol_version(state, _protocol_version), do: state
+
+  @doc """
   Returns a list of all pending requests.
 
   ## Parameters

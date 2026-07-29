@@ -1493,15 +1493,14 @@ defmodule Anubis.Client do
 
       {_request, state} ->
         state =
-          State.update_server_info(
-            state,
-            result["capabilities"],
-            result["serverInfo"]
-          )
+          state
+          |> State.update_server_info(result["capabilities"], result["serverInfo"])
+          |> State.update_protocol_version(result["protocolVersion"])
 
         Logging.client_event("initialized", %{
           server_info: result["serverInfo"],
-          capabilities: result["capabilities"]
+          capabilities: result["capabilities"],
+          protocol_version: state.protocol_version
         })
 
         :ok = send_notification(state, "notifications/initialized")
