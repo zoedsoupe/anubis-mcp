@@ -15,15 +15,14 @@ defmodule Anubis.Server.Session do
 
   import Peri
 
-  alias Anubis.MCP.ElicitationSchema
   alias Anubis.MCP.Error
-  alias Anubis.MCP.ID
   alias Anubis.MCP.Message
   alias Anubis.Server
   alias Anubis.Server.Context
   alias Anubis.Server.Frame
   alias Anubis.Server.Handlers
   alias Anubis.Server.Handlers.Tasks, as: TasksHandler
+  alias Anubis.Server.Session.ServerRequests
   alias Anubis.Server.Task, as: McpTask
   alias Anubis.Telemetry
 
@@ -366,11 +365,11 @@ defmodule Anubis.Server.Session do
 
   defp process_mcp_response(decoded, state) do
     cond do
-      Message.is_response(decoded) and server_request?(decoded["id"], state) ->
-        handle_server_request_response(decoded, state)
+      Message.is_response(decoded) and ServerRequests.server_request?(decoded["id"], state) ->
+        ServerRequests.handle_response(decoded, state, &prepare_frame/1)
 
-      Message.is_error(decoded) and server_request?(decoded["id"], state) ->
-        handle_server_request_error(decoded, state)
+      Message.is_error(decoded) and ServerRequests.server_request?(decoded["id"], state) ->
+        ServerRequests.handle_error(decoded, state)
 
       true ->
         Logging.server_event(
@@ -419,8 +418,8 @@ defmodule Anubis.Server.Session do
 
   @impl GenServer
   def handle_info({:send_notification, method, params}, state) do
-    with {:ok, notification} <- encode_notification(method, params),
-         :ok <- send_to_transport(state.transport, notification, transport_opts(state)) do
+    with {:ok, notification} <- ServerRequests.encode_notification(method, params),
+         :ok <- ServerRequests.send_to_transport(state.transport, notification, ServerRequests.transport_opts(state)) do
       {:noreply, state}
     else
       {:error, err} ->
@@ -452,30 +451,27 @@ defmodule Anubis.Server.Session do
   end
 
   def handle_info({:send_sampling_request, params, timeout}, state) do
-    request_id = ID.generate_request_id()
-    handle_sampling_request_send(request_id, params, timeout, state)
+    ServerRequests.send_request(:sampling, params, timeout, state)
   end
 
   def handle_info({:sampling_request_timeout, request_id}, state) do
-    handle_sampling_timeout(request_id, state)
+    ServerRequests.handle_timeout(:sampling, request_id, state)
   end
 
   def handle_info({:send_roots_request, timeout}, state) do
-    request_id = ID.generate_request_id()
-    handle_roots_request_send(request_id, timeout, state)
+    ServerRequests.send_request(:roots, %{}, timeout, state)
   end
 
   def handle_info({:roots_request_timeout, request_id}, state) do
-    handle_roots_timeout(request_id, state)
+    ServerRequests.handle_timeout(:roots, request_id, state)
   end
 
   def handle_info({:send_elicitation_request, params, requested_schema, timeout}, state) do
-    request_id = ID.generate_request_id()
-    handle_elicitation_request_send(request_id, params, requested_schema, timeout, state)
+    ServerRequests.send_request(:elicitation, params, timeout, state, %{requested_schema: requested_schema})
   end
 
   def handle_info({:elicitation_request_timeout, request_id}, state) do
-    handle_elicitation_timeout(request_id, state)
+    ServerRequests.handle_timeout(:elicitation, request_id, state)
   end
 
   def handle_info({ref, callback_result}, %{in_flight: %{ref: ref} = inflight} = state) do
@@ -638,12 +634,12 @@ defmodule Anubis.Server.Session do
 
   defp handle_single_request(decoded, transport_context, from, state) do
     cond do
-      Message.is_response(decoded) and server_request?(decoded["id"], state) ->
-        {:noreply, new_state} = handle_server_request_response(decoded, state)
+      Message.is_response(decoded) and ServerRequests.server_request?(decoded["id"], state) ->
+        {:noreply, new_state} = ServerRequests.handle_response(decoded, state, &prepare_frame/1)
         {:reply, {:ok, nil}, new_state}
 
-      Message.is_error(decoded) and server_request?(decoded["id"], state) ->
-        {:noreply, new_state} = handle_server_request_error(decoded, state)
+      Message.is_error(decoded) and ServerRequests.server_request?(decoded["id"], state) ->
+        {:noreply, new_state} = ServerRequests.handle_error(decoded, state)
         {:reply, {:ok, nil}, new_state}
 
       Message.is_ping(decoded) ->
@@ -1164,363 +1160,6 @@ defmodule Anubis.Server.Session do
 
   defp encode_reply(message) when is_map(message) do
     JSON.encode!(message)
-  end
-
-  # Transport helpers
-
-  defp encode_notification(method, params) do
-    notification = Message.build_notification(method, params)
-    Logging.message("outgoing", "notification", nil, notification)
-    Message.encode_notification(notification)
-  end
-
-  defp transport_opts(state) do
-    [timeout: state.timeout, session_id: state.session_id]
-  end
-
-  defp send_to_transport(nil, _data, _opts) do
-    {:error, Error.transport(:no_transport, %{message: "No transport configured"})}
-  end
-
-  defp send_to_transport(%{layer: layer, name: name}, data, opts) do
-    with {:error, reason} <- layer.send_message(name, data, opts) do
-      {:error, Error.transport(:send_failure, %{original_reason: reason})}
-    end
-  end
-
-  # Sampling request helpers
-
-  defp handle_sampling_request_send(request_id, params, timeout, state) do
-    timer_ref =
-      Process.send_after(self(), {:sampling_request_timeout, request_id}, timeout)
-
-    request_info = %{
-      method: "sampling/createMessage",
-      session_id: state.session_id,
-      timer_ref: timer_ref
-    }
-
-    state = put_in(state.server_requests[request_id], request_info)
-
-    with :ok <- validate_client_capability(state, "sampling"),
-         {:ok, request_data} <-
-           encode_request("sampling/createMessage", params, request_id),
-         :ok <- send_to_transport(state.transport, request_data, transport_opts(state)) do
-      Logging.server_event("sent_sampling_request", %{request_id: request_id})
-      {:noreply, state}
-    else
-      {:error, error} ->
-        Process.cancel_timer(timer_ref)
-
-        state = %{
-          state
-          | server_requests: Map.delete(state.server_requests, request_id)
-        }
-
-        Logging.server_event(
-          "failed_send_sampling_request",
-          %{request_id: request_id, error: error},
-          level: :error
-        )
-
-        {:noreply, state}
-    end
-  end
-
-  defp validate_client_capability(state, capability) do
-    if Map.has_key?(state.client_capabilities || %{}, capability) do
-      :ok
-    else
-      {:error, "Client does not support #{capability} capability"}
-    end
-  end
-
-  defp handle_sampling_timeout(request_id, state) do
-    case Map.pop(state.server_requests, request_id) do
-      {nil, _} ->
-        {:noreply, state}
-
-      {_request_info, updated_requests} ->
-        Logging.server_event("sampling_request_timeout", %{request_id: request_id}, level: :warning)
-
-        {:noreply, %{state | server_requests: updated_requests}}
-    end
-  end
-
-  defp encode_request(method, params, request_id) do
-    request = %{
-      "method" => method,
-      "params" => params
-    }
-
-    Logging.message("outgoing", "request", request_id, request)
-    Message.encode_request(request, request_id)
-  end
-
-  defp server_request?(request_id, %{server_requests: requests}) when is_binary(request_id) do
-    Map.has_key?(requests, request_id)
-  end
-
-  defp server_request?(_, _), do: false
-
-  defp handle_server_request_response(%{"id" => request_id, "result" => result}, state) do
-    {request_info, updated_requests} = Map.pop(state.server_requests, request_id)
-    Process.cancel_timer(request_info.timer_ref)
-
-    state = %{state | server_requests: updated_requests}
-
-    case request_info.method do
-      "sampling/createMessage" ->
-        handle_sampling(result, request_id, state)
-
-      "roots/list" ->
-        handle_roots(result["roots"] || [], request_id, state)
-
-      "elicitation/create" ->
-        handle_elicitation(result, request_id, request_info, state)
-
-      _ ->
-        {:noreply, state}
-    end
-  end
-
-  defp handle_server_request_error(%{"id" => request_id, "error" => error}, state) do
-    {request_info, updated_requests} = Map.pop(state.server_requests, request_id)
-    Process.cancel_timer(request_info.timer_ref)
-
-    state = %{state | server_requests: updated_requests}
-
-    Logging.server_event(
-      "server_request_error",
-      %{
-        request_id: request_id,
-        method: request_info.method,
-        error: error
-      },
-      level: :error
-    )
-
-    {:noreply, state}
-  end
-
-  defp handle_sampling(result, request_id, %{server_module: module} = state) do
-    if Anubis.exported?(module, :handle_sampling, 3) do
-      frame = prepare_frame(state)
-
-      case module.handle_sampling(result, request_id, frame) do
-        {:noreply, new_frame} ->
-          {:noreply, %{state | frame: new_frame}}
-
-        {:stop, reason, new_frame} ->
-          {:stop, reason, %{state | frame: new_frame}}
-      end
-    else
-      {:noreply, state}
-    end
-  end
-
-  # Roots request helpers
-
-  defp handle_roots_request_send(request_id, timeout, state) do
-    timer_ref =
-      Process.send_after(self(), {:roots_request_timeout, request_id}, timeout)
-
-    request_info = %{
-      id: request_id,
-      method: "roots/list",
-      session_id: state.session_id,
-      timer_ref: timer_ref
-    }
-
-    state = put_in(state.server_requests[request_id], request_info)
-
-    with :ok <- validate_client_capability(state, "roots"),
-         {:ok, request_data} <- encode_request("roots/list", %{}, request_id),
-         :ok <- send_to_transport(state.transport, request_data, transport_opts(state)) do
-      Logging.server_event("sent_roots_request", %{request_id: request_id})
-      {:noreply, state}
-    else
-      {:error, error} ->
-        Process.cancel_timer(timer_ref)
-
-        state = %{
-          state
-          | server_requests: Map.delete(state.server_requests, request_id)
-        }
-
-        Logging.server_event(
-          "failed_send_roots_request",
-          %{request_id: request_id, error: error},
-          level: :error
-        )
-
-        {:noreply, state}
-    end
-  end
-
-  defp handle_roots_timeout(request_id, state) when is_binary(request_id) do
-    state.server_requests
-    |> Map.pop(request_id)
-    |> handle_roots_timeout(state)
-  end
-
-  defp handle_roots_timeout({nil, _}, state), do: {:noreply, state}
-
-  defp handle_roots_timeout({%{id: request_id}, requests}, state) do
-    with {:ok, notification} <-
-           encode_notification("notifications/cancelled", %{
-             "requestId" => request_id,
-             "reason" => "timeout"
-           }),
-         :ok <- send_to_transport(state.transport, notification, transport_opts(state)) do
-      Logging.server_event(
-        "roots_request_timeout_cancelled",
-        %{request_id: request_id}
-      )
-    end
-
-    Logging.server_event("roots_request_timeout", %{request_id: request_id}, level: :warning)
-
-    {:noreply, %{state | server_requests: requests}}
-  end
-
-  defp handle_roots(roots, request_id, %{server_module: module} = state) do
-    if Anubis.exported?(module, :handle_roots, 3) do
-      frame = prepare_frame(state)
-
-      case module.handle_roots(roots, request_id, frame) do
-        {:noreply, new_frame} ->
-          {:noreply, %{state | frame: new_frame}}
-
-        {:stop, reason, new_frame} ->
-          {:stop, reason, %{state | frame: new_frame}}
-      end
-    else
-      {:noreply, state}
-    end
-  end
-
-  # Elicitation request helpers
-
-  defp handle_elicitation_request_send(request_id, params, requested_schema, timeout, state) do
-    timer_ref =
-      Process.send_after(self(), {:elicitation_request_timeout, request_id}, timeout)
-
-    request_info = %{
-      id: request_id,
-      method: "elicitation/create",
-      session_id: state.session_id,
-      timer_ref: timer_ref,
-      requested_schema: requested_schema
-    }
-
-    state = put_in(state.server_requests[request_id], request_info)
-
-    with :ok <- validate_client_capability(state, "elicitation"),
-         {:ok, request_data} <-
-           encode_request("elicitation/create", params, request_id),
-         :ok <- send_to_transport(state.transport, request_data, transport_opts(state)) do
-      Logging.server_event("sent_elicitation_request", %{request_id: request_id})
-      {:noreply, state}
-    else
-      {:error, error} ->
-        Process.cancel_timer(timer_ref)
-
-        state = %{
-          state
-          | server_requests: Map.delete(state.server_requests, request_id)
-        }
-
-        Logging.server_event(
-          "failed_send_elicitation_request",
-          %{request_id: request_id, error: error},
-          level: :error
-        )
-
-        {:noreply, state}
-    end
-  end
-
-  defp handle_elicitation_timeout(request_id, state) when is_binary(request_id) do
-    state.server_requests
-    |> Map.pop(request_id)
-    |> handle_elicitation_timeout(state)
-  end
-
-  defp handle_elicitation_timeout({nil, _}, state), do: {:noreply, state}
-
-  defp handle_elicitation_timeout({%{id: request_id}, requests}, state) do
-    with {:ok, notification} <-
-           encode_notification("notifications/cancelled", %{
-             "requestId" => request_id,
-             "reason" => "timeout"
-           }),
-         :ok <- send_to_transport(state.transport, notification, transport_opts(state)) do
-      Logging.server_event(
-        "elicitation_request_timeout_cancelled",
-        %{request_id: request_id}
-      )
-    end
-
-    Logging.server_event(
-      "elicitation_request_timeout",
-      %{request_id: request_id},
-      level: :warning
-    )
-
-    {:noreply, %{state | server_requests: requests}}
-  end
-
-  defp handle_elicitation(result, request_id, request_info, state) do
-    case sanitize_elicitation_result(result, request_info) do
-      {:ok, sanitized} ->
-        dispatch_elicitation(sanitized, request_id, state)
-
-      {:error, reason} ->
-        Logging.server_event(
-          "invalid_elicitation_response",
-          %{request_id: request_id, reason: reason},
-          level: :error
-        )
-
-        {:noreply, state}
-    end
-  end
-
-  defp sanitize_elicitation_result(%{"action" => "accept", "content" => content} = result, %{requested_schema: schema})
-       when is_map(content) do
-    case ElicitationSchema.validate_content(content, schema) do
-      :ok -> {:ok, result}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp sanitize_elicitation_result(%{"action" => "accept"}, _info) do
-    {:error, "accept action missing content"}
-  end
-
-  defp sanitize_elicitation_result(%{"action" => action} = result, _info) when action in ~w(decline cancel) do
-    {:ok, result}
-  end
-
-  defp sanitize_elicitation_result(_result, _info) do
-    {:error, "elicitation result missing valid action"}
-  end
-
-  defp dispatch_elicitation(result, request_id, %{server_module: module} = state) do
-    if Anubis.exported?(module, :handle_elicitation, 3) do
-      frame = prepare_frame(state)
-
-      case module.handle_elicitation(result, request_id, frame) do
-        {:noreply, new_frame} ->
-          {:noreply, %{state | frame: new_frame}}
-
-        {:stop, reason, new_frame} ->
-          {:stop, reason, %{state | frame: new_frame}}
-      end
-    else
-      {:noreply, state}
-    end
   end
 
   # Session serialization
@@ -2188,8 +1827,8 @@ defmodule Anubis.Server.Session do
       {:ok, %McpTask{} = task} ->
         params = McpTask.to_protocol(task)
 
-        with {:ok, notification} <- encode_notification("notifications/tasks/status", params) do
-          send_to_transport(state.transport, notification, transport_opts(state))
+        with {:ok, notification} <- ServerRequests.encode_notification("notifications/tasks/status", params) do
+          ServerRequests.send_to_transport(state.transport, notification, ServerRequests.transport_opts(state))
         end
 
       _ ->
