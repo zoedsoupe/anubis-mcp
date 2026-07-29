@@ -390,6 +390,66 @@ defmodule Anubis.Transport.StreamableHTTPTest do
     end
   end
 
+  describe "protocol version header" do
+    test "sends negotiated version on requests after initialize", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+      test_pid = self()
+
+      Bypass.stub(bypass, "POST", "/mcp", fn conn ->
+        send(test_pid, {:protocol_version_header, Plug.Conn.get_req_header(conn, "mcp-protocol-version")})
+
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        {:ok, %{"id" => id}} = JSON.decode(body)
+
+        result =
+          if id == "1" do
+            %{"protocolVersion" => "2025-06-18", "serverInfo" => %{"name" => "t", "version" => "1"}}
+          else
+            %{}
+          end
+
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.resp(200, JSON.encode!(%{"jsonrpc" => "2.0", "id" => id, "result" => result}))
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          transport_opts: @test_http_opts
+        )
+
+      {:ok, init_message} =
+        Message.encode_request(
+          %{
+            "method" => "initialize",
+            "params" => %{
+              "protocolVersion" => "2025-06-18",
+              "clientInfo" => %{"name" => "t", "version" => "1"},
+              "capabilities" => %{}
+            }
+          },
+          "1"
+        )
+
+      assert :ok = StreamableHTTP.send_message(transport, init_message, timeout: 5000)
+      assert_receive {:protocol_version_header, []}
+
+      state = :sys.get_state(transport)
+      assert state.protocol_version == "2025-06-18"
+
+      {:ok, ping_message} = Message.encode_request(%{"method" => "ping", "params" => %{}}, "2")
+      assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
+      assert_receive {:protocol_version_header, ["2025-06-18"]}
+
+      StreamableHTTP.shutdown(transport)
+      StubClient.clear_messages()
+    end
+  end
+
   describe "headers and options" do
     test "passes custom headers to requests", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"

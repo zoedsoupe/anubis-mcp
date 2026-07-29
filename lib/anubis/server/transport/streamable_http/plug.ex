@@ -116,11 +116,45 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_request(conn, opts) do
-      case conn.method do
-        "GET" -> handle_get(conn, opts)
-        "POST" -> handle_post(conn, opts)
-        "DELETE" -> handle_delete(conn, opts)
-        _ -> send_error(conn, 405, "Method not allowed")
+      case validate_protocol_version_header(conn, opts) do
+        :ok ->
+          case conn.method do
+            "GET" -> handle_get(conn, opts)
+            "POST" -> handle_post(conn, opts)
+            "DELETE" -> handle_delete(conn, opts)
+            _ -> send_error(conn, 405, "Method not allowed")
+          end
+
+        {:error, version} ->
+          Logging.transport_event("unsupported_protocol_version", %{version: version}, level: :warning)
+
+          send_error(conn, 400, "Unsupported MCP-Protocol-Version: #{version}")
+      end
+    end
+
+    # Per MCP 2025-06-18, clients send the negotiated protocol version on the
+    # MCP-Protocol-Version header of every request after initialize. When the
+    # header is absent the server SHOULD assume 2025-03-26 for backwards
+    # compatibility; when present but unsupported the request is rejected.
+    defp validate_protocol_version_header(conn, opts) do
+      case get_req_header(conn, "mcp-protocol-version") do
+        [] ->
+          :ok
+
+        [version | _] ->
+          if version in supported_protocol_versions(opts.server) do
+            :ok
+          else
+            {:error, version}
+          end
+      end
+    end
+
+    defp supported_protocol_versions(server) do
+      if Anubis.exported?(server, :supported_protocol_versions, 0) do
+        server.supported_protocol_versions()
+      else
+        Anubis.Protocol.Registry.supported_versions()
       end
     end
 

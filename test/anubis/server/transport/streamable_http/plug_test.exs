@@ -316,6 +316,47 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert body["error"]["code"] == -32_700
     end
 
+    test "POST request with unsupported MCP-Protocol-Version returns 400", %{
+      opts: opts,
+      test_session_id: session_id
+    } do
+      request = build_request("ping", %{})
+      {:ok, body} = Message.encode_request(request, 1)
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> put_req_header("mcp-protocol-version", "1999-01-01")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      assert conn.resp_body =~ "1999-01-01"
+    end
+
+    test "POST request with supported MCP-Protocol-Version succeeds", %{
+      opts: opts,
+      test_session_id: session_id
+    } do
+      request = build_request("ping", %{})
+      {:ok, body} = Message.encode_request(request, 1)
+
+      [version | _] = Anubis.Protocol.Registry.supported_versions()
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> put_req_header("mcp-protocol-version", version)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 200
+    end
+
     test "POST request with missing method returns invalid request error", %{opts: opts} do
       payload = ~s({"jsonrpc":"2.0","id":1,"params":{}})
 

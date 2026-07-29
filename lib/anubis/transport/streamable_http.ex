@@ -198,6 +198,7 @@ defmodule Anubis.Transport.StreamableHTTP do
       transport_opts: opts.transport_opts,
       http_options: opts.http_options,
       session_id: nil,
+      protocol_version: nil,
       enable_sse: Map.get(opts, :enable_sse, false),
       finch_name: opts.finch_name,
       sse_task: nil,
@@ -257,14 +258,12 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_info({:sse_event, event}, state) do
-    handle_sse_event(event, state)
-    {:noreply, state}
+    {:noreply, handle_sse_event(event, state)}
   end
 
   @impl GenServer
   def handle_info({:sse_response_event, event}, state) do
-    handle_sse_event(event, state)
-    {:noreply, state}
+    {:noreply, handle_sse_event(event, state)}
   end
 
   @impl GenServer
@@ -318,6 +317,7 @@ defmodule Anubis.Transport.StreamableHTTP do
       |> Map.put("accept", "application/json, text/event-stream")
       |> Map.put("content-type", "application/json")
       |> put_session_header(state.session_id)
+      |> put_protocol_version_header(state.protocol_version)
 
     # Set receive_timeout, ensuring it takes precedence over any default in http_options
     # Only pass valid Finch.request options (receive_timeout, pool_timeout, request_timeout)
@@ -369,7 +369,7 @@ defmodule Anubis.Transport.StreamableHTTP do
         {:reply, :ok, %{new_state | active_request: nil}}
 
       {_, "application/json"} ->
-        forward_to_client(body, new_state)
+        new_state = forward_to_client(body, new_state)
         {:reply, :ok, %{new_state | active_request: nil}}
 
       {_, "text/event-stream"} ->
@@ -384,7 +384,24 @@ defmodule Anubis.Transport.StreamableHTTP do
   defp forward_to_client(message, %{client: client} = state) do
     emit_telemetry(:receive, state, %{message_size: byte_size(message)})
     GenServer.cast(client, {:response, message})
+    maybe_store_protocol_version(state, message)
   end
+
+  # Per MCP 2025-06-18, once the server has answered initialize the client
+  # MUST send the negotiated protocol version on the MCP-Protocol-Version
+  # header of every subsequent request. The transport learns it from the
+  # initialize response as it flows through to the client.
+  defp maybe_store_protocol_version(%{protocol_version: nil} = state, message) do
+    case JSON.decode(message) do
+      {:ok, %{"result" => %{"protocolVersion" => version}}} when is_binary(version) ->
+        %{state | protocol_version: version}
+
+      _ ->
+        state
+    end
+  end
+
+  defp maybe_store_protocol_version(state, _message), do: state
 
   defp stream_sse_response(body, state) do
     parent = self()
@@ -407,8 +424,9 @@ defmodule Anubis.Transport.StreamableHTTP do
       end
   end
 
-  defp handle_sse_event({:error, :halted}, _state) do
+  defp handle_sse_event({:error, :halted}, state) do
     Logging.transport_event("sse_halted", "SSE stream ended")
+    state
   end
 
   defp handle_sse_event(%Event{data: data, id: id}, state) do
@@ -416,13 +434,18 @@ defmodule Anubis.Transport.StreamableHTTP do
     forward_to_client(data, new_state)
   end
 
-  defp handle_sse_event(event, _state) do
+  defp handle_sse_event(event, state) do
     Logging.transport_event("unknown_sse_event", event, level: :warning)
+    state
   end
 
   defp put_session_header(headers, nil), do: headers
 
   defp put_session_header(headers, session_id), do: Map.put(headers, "mcp-session-id", session_id)
+
+  defp put_protocol_version_header(headers, nil), do: headers
+
+  defp put_protocol_version_header(headers, version), do: Map.put(headers, "mcp-protocol-version", version)
 
   defp update_session_id(state, headers) do
     case get_header(headers, "mcp-session-id") do
@@ -526,11 +549,15 @@ defmodule Anubis.Transport.StreamableHTTP do
     state.headers
     |> Map.put("accept", "text/event-stream")
     |> put_session_header(state.session_id)
+    |> put_protocol_version_header(state.protocol_version)
     |> put_last_event_id_header(state.last_event_id)
   end
 
   defp delete_session(state) do
-    headers = put_session_header(state.headers, state.session_id)
+    headers =
+      state.headers
+      |> put_session_header(state.session_id)
+      |> put_protocol_version_header(state.protocol_version)
 
     options = state.http_options
 
