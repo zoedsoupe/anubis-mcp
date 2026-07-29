@@ -674,7 +674,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert conn.status == 404
     end
 
-    test "request to unknown session auto-reinitializes", %{opts: opts} do
+    test "request to unknown session returns 404 so the client re-initializes", %{opts: opts} do
       request = build_request("tools/list", %{})
       {:ok, body} = Message.encode_request(request, 42)
 
@@ -686,10 +686,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         |> put_req_header("mcp-session-id", "expired-session-id")
         |> StreamableHTTPPlug.call(opts)
 
-      assert conn.status == 200
-      {:ok, response} = Jason.decode(conn.resp_body)
-      assert is_map(response["result"])
-      assert Map.has_key?(response["result"], "tools")
+      assert conn.status == 404
+      assert conn.resp_body =~ "Session not found"
     end
 
     test "initialize request creates new session", %{opts: opts} do
@@ -712,109 +710,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert conn.status == 200
       {:ok, response} = Jason.decode(conn.resp_body)
       assert response["result"]["protocolVersion"]
-    end
-  end
-
-  describe "init/2 failure handling" do
-    defp setup_init_reject_server(server_module) do
-      task_sup = Registry.task_supervisor_name(server_module)
-      start_supervised!({Task.Supervisor, name: task_sup}, id: {server_module, :task_sup})
-
-      transport_name = Registry.transport_name(server_module, StubTransport)
-      start_supervised!({StubTransport, name: transport_name}, id: {server_module, :transport})
-
-      registry_name = Registry.registry_name(server_module)
-      start_supervised!({Registry.Local, name: registry_name}, id: {server_module, :registry})
-
-      naming_registry = Registry.naming_registry_name(registry_name)
-
-      start_supervised!({Elixir.Registry, keys: :unique, name: naming_registry},
-        id: {server_module, :naming_registry}
-      )
-
-      session_config = %{
-        server_module: server_module,
-        registry_mod: Registry.Local,
-        transport: [layer: StubTransport, name: transport_name],
-        session_idle_timeout: nil,
-        timeout: 30_000,
-        task_supervisor: task_sup
-      }
-
-      :persistent_term.put({ServerSupervisor, server_module, :session_config}, session_config)
-
-      on_exit(fn ->
-        :persistent_term.erase({ServerSupervisor, server_module, :session_config})
-      end)
-
-      session_sup_name = Registry.session_supervisor_name(server_module)
-
-      start_supervised!({DynamicSupervisor, name: session_sup_name, strategy: :one_for_one},
-        id: {server_module, :session_sup}
-      )
-
-      name = Registry.transport_name(server_module, :streamable_http)
-
-      start_supervised(
-        {StreamableHTTP, server: server_module, name: name, task_supervisor: task_sup},
-        id: {server_module, :transport_layer}
-      )
-
-      StreamableHTTPPlug.init(server: server_module)
-    end
-
-    test "returns JSON-RPC error when init/2 rejects with a plain reason" do
-      opts = setup_init_reject_server(StubInitRejectServer)
-
-      request = %{
-        "jsonrpc" => "2.0",
-        "id" => "req-init-fail",
-        "method" => "tools/list",
-        "params" => %{}
-      }
-
-      body = JSON.encode!(request)
-
-      conn =
-        :post
-        |> conn("/", body)
-        |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json")
-        |> StreamableHTTPPlug.call(opts)
-
-      assert conn.status == 400
-      assert {:ok, decoded} = Jason.decode(conn.resp_body)
-      assert decoded["jsonrpc"] == "2.0"
-      assert decoded["id"] == "req-init-fail"
-      assert decoded["error"]["code"] == -32_603
-      assert is_binary(decoded["error"]["message"])
-      assert is_binary(get_in(decoded, ["error", "data", "message"]))
-    end
-
-    test "passes through structured MCP errors returned from init/2" do
-      opts = setup_init_reject_server(StubInitRejectWithErrorServer)
-
-      request = %{
-        "jsonrpc" => "2.0",
-        "id" => "req-init-error",
-        "method" => "tools/list",
-        "params" => %{}
-      }
-
-      body = JSON.encode!(request)
-
-      conn =
-        :post
-        |> conn("/", body)
-        |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json")
-        |> StreamableHTTPPlug.call(opts)
-
-      assert conn.status == 400
-      assert {:ok, decoded} = Jason.decode(conn.resp_body)
-      assert decoded["error"]["code"] == -32_600
-      assert decoded["error"]["message"] == "Invalid Request"
-      assert get_in(decoded, ["error", "data", "message"]) == "unauthorized"
     end
   end
 end

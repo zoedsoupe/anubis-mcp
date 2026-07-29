@@ -335,6 +335,17 @@ defmodule Anubis.Server.SessionExpiryTest do
       state = :sys.get_state(session)
       refute state.initialized
     end
+
+    test "structured MCP errors from init/2 pass through auto_initialize" do
+      session_id = "init-reject-error-#{System.unique_integer([:positive])}"
+      session = start_session(StubInitRejectWithErrorServer, session_id)
+
+      assert {:error, %Error{reason: :invalid_request, data: %{message: "unauthorized"}}} =
+               Session.auto_initialize(session)
+
+      state = :sys.get_state(session)
+      refute state.initialized
+    end
   end
 
   describe "child_spec/1" do

@@ -47,7 +47,6 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Message
     alias Anubis.Server.Authorization
     alias Anubis.Server.Registry
-    alias Anubis.Server.Session
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.StreamableHTTP
     alias Anubis.SSE.Streaming
@@ -231,6 +230,13 @@ if Code.ensure_loaded?(Plug) do
 
             process_message(conn, message, session_id, context, opts)
 
+          {:ok, _batch} ->
+            send_jsonrpc_error(
+              conn,
+              Error.protocol(:invalid_request, %{message: "Batched requests are not supported"}),
+              nil
+            )
+
           {:error, reason} ->
             send_parse_failure(conn, body, reason)
         end
@@ -352,11 +358,15 @@ if Code.ensure_loaded?(Plug) do
           end
 
         {:error, reason} ->
-          send_jsonrpc_error(
-            conn,
-            Error.wrap_reason(reason),
-            extract_request_id(message)
-          )
+          if reason == :not_found do
+            send_error(conn, 404, "Session not found")
+          else
+            send_jsonrpc_error(
+              conn,
+              Error.wrap_reason(reason),
+              extract_request_id(message)
+            )
+          end
       end
     end
 
@@ -475,12 +485,12 @@ if Code.ensure_loaded?(Plug) do
 
     # Notifications and responses arrive on a session that already exists, but in
     # a multi-instance (horizontally scaled) deployment the request may be routed
-    # to a node whose local registry has never seen it. The request path already
-    # recovers via `find_or_create_session/4`; mirror that for notifications and
-    # responses so a session persisted to the configured `Session.Store` on one
-    # node is restored on another instead of 404ing. When no store is configured
-    # (single node), behaviour is unchanged: a registry miss stays a 404.
-    defp find_or_restore_session(opts, session_id, context) do
+    # to a node whose local registry has never seen it. A session persisted to
+    # the configured `Session.Store` on one node is restored on another instead
+    # of 404ing. When the store cannot restore it (or none is configured), the
+    # client gets a 404 so it knows to re-`initialize` — the session is gone and
+    # silently auto-initializing an empty one would hide that.
+    defp find_or_restore_session(opts, session_id, _context) do
       case find_session(opts, session_id) do
         {:ok, pid} ->
           {:ok, pid}
@@ -488,13 +498,12 @@ if Code.ensure_loaded?(Plug) do
         {:error, :not_found} ->
           case restore_session_from_store(opts, session_id) do
             {:ok, _} = ok -> ok
-            {:error, :no_session} -> {:error, :not_found}
-            {:error, _} -> start_and_auto_initialize_session(opts, session_id, context)
+            {:error, _} -> {:error, :not_found}
           end
       end
     end
 
-    defp find_or_create_session(opts, session_id, message, context) do
+    defp find_or_create_session(opts, session_id, message, _context) do
       case find_session(opts, session_id) do
         {:ok, pid} ->
           {:ok, pid}
@@ -505,34 +514,8 @@ if Code.ensure_loaded?(Plug) do
         {:error, :not_found} ->
           case restore_session_from_store(opts, session_id) do
             {:ok, _} = ok -> ok
-            {:error, _} -> start_and_auto_initialize_session(opts, session_id, context)
+            {:error, _} -> {:error, :not_found}
           end
-      end
-    end
-
-    defp start_and_auto_initialize_session(opts, session_id, context) do
-      case start_new_session(opts, session_id) do
-        {:ok, pid} ->
-          case Session.auto_initialize(pid, context) do
-            :ok ->
-              Logging.transport_event("session_auto_reinitialized", %{
-                session_id: session_id
-              })
-
-              {:ok, pid}
-
-            {:error, reason} ->
-              Logging.transport_event("session_auto_reinitialize_failed", %{
-                session_id: session_id,
-                reason: inspect(reason)
-              })
-
-              stop_session_process(opts, session_id)
-              {:error, reason}
-          end
-
-        error ->
-          error
       end
     end
 

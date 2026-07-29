@@ -346,7 +346,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
       refute Map.has_key?(decoded, "error")
     end
 
-    test "a request for a session not in the store falls back to auto-initialize", %{opts: opts} do
+    test "a request for a session not in the store returns 404 so the client re-initializes", %{
+      opts: opts
+    } do
       session_id = "unknown-session-#{System.unique_integer([:positive])}"
 
       {:ok, body} = Message.encode_request(%{"method" => "ping", "params" => %{}}, 1)
@@ -359,7 +361,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
         |> put_req_header("mcp-session-id", session_id)
         |> Plug.call(opts)
 
-      assert conn.status == 200
+      assert conn.status == 404
+      assert conn.resp_body =~ "Session not found"
     end
 
     test "a notification for a session not in the local registry is restored from the store", %{
