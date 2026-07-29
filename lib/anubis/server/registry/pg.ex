@@ -30,6 +30,17 @@ defmodule Anubis.Server.Registry.PG do
   `:pg` monitors registered processes and removes their entries automatically
   when a process exits, so stale PIDs are never returned.
 
+  ## Outbound delivery (server-to-client)
+
+  This registry covers the inbound direction (client → server). The outbound
+  direction (server → client over the SSE standalone stream) is handled by the
+  Streamable HTTP transport itself: each transport joins its SSE handler pids
+  to a `:pg` group keyed by session id, and `route_to_session/3` falls back to
+  that group when the session has no local handler. A notification emitted by
+  a session on node A therefore reaches a client whose SSE GET terminated on
+  node B, with no sticky-session requirement in either direction. See the
+  "Cluster routing" section of `Anubis.Server.Transport.StreamableHTTP`.
+
   ## Requirements
 
   - OTP 23+ (`:pg` was introduced in OTP 23 as a replacement for `:pg2`).

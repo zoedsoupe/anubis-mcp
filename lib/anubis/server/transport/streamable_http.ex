@@ -12,11 +12,39 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   - Automatic handler cleanup on disconnect
   - Keepalive messages to maintain connections
   - Notification broadcasting to connected clients
+  - Cross-node delivery: SSE handlers join a `:pg` group keyed by session id,
+    so `route_to_session/3` reaches a handler whose GET stream landed on a
+    different node than the session owner (see "Cluster routing" below)
   - Optional resumability: when an `:event_store` is configured, messages on a
     session's standalone stream are recorded with monotonic ids and replayed on
     reconnect via `Last-Event-ID`. Messages fired while no handler is attached
     are still recorded (bounded by `:stream_grace`), so they survive reconnect
     gaps. See `Anubis.Server.Transport.StreamableHTTP.EventStore`.
+
+  ## Cluster routing
+
+  Each transport registers its SSE handlers in a node-local map AND in a `:pg`
+  group (scope derived from the transport name) keyed by session id. When
+  `route_to_session/3` finds no local handler, it falls back to the `:pg`
+  group and delivers `{:sse_message, message}` directly to the remote handler
+  pid, mirroring how `Anubis.Server.Registry.PG` routes inbound requests.
+
+  This removes the sticky-session requirement for server-to-client traffic:
+  the SSE GET may terminate on any node, regardless of where the session
+  process lives. Handler pids are monitored by `:pg`, so crashed or
+  disconnected handlers disappear from the group automatically.
+
+  Notes:
+
+  - The scope is derived from the transport's registered name, so cluster
+    routing requires an atom name (the default naming used by
+    `Anubis.Server.Supervisor`). Transports registered with a `:via` or
+    `:global` name keep node-local delivery only.
+  - The broadcast path (`send_message/3` without a `:session_id`) remains
+    node-local.
+  - Resumability across nodes additionally requires a shared
+    `:event_store`; with the default node-local store, events emitted while
+    the handler lives on another node are delivered live but not recorded.
 
   ## Usage
 
@@ -75,7 +103,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     opts = parse_options!(opts)
     {name, opts} = Keyword.pop!(opts, :name)
 
-    GenServer.start_link(__MODULE__, Map.new(opts), name: name)
+    init_arg =
+      opts
+      |> Keyword.put(:pg_scope, pg_scope(name))
+      |> Map.new()
+
+    GenServer.start_link(__MODULE__, init_arg, name: name)
   end
 
   @impl Transport
@@ -241,8 +274,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       sse_retry: opts.sse_retry,
       stream_grace: opts.stream_grace,
       streams: MapSet.new(),
-      stream_timers: %{}
+      stream_timers: %{},
+      pg_scope: Map.get(opts, :pg_scope)
     }
+
+    if state.pg_scope, do: ensure_pg_scope(state.pg_scope)
 
     if should_keepalive?(state) do
       schedule_keepalive(state.keepalive_interval)
@@ -268,7 +304,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   def handle_call({:register_sse_handler, session_id, pid, metadata}, _from, state) do
     sse_handlers =
       case Map.get(state.sse_handlers, session_id) do
-        {_pid, old_ref, _meta} ->
+        {old_pid, old_ref, _meta} ->
           # A connection is (re)binding to this session. Stop monitoring the
           # handler currently bound to it, but do NOT send :close_sse to a
           # superseded handler. A server-initiated close prompts spec-compliant
@@ -279,6 +315,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
           # the expected_pid guard in unregister_sse_handler keeps its eventual
           # close from dropping the handler that took over.
           Process.demonitor(old_ref, [:flush])
+          pg_leave(state.pg_scope, session_id, old_pid)
           state.sse_handlers
 
         nil ->
@@ -286,6 +323,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       end
 
     ref = Process.monitor(pid)
+    pg_join(state.pg_scope, session_id, pid)
     sse_handlers = Map.put(sse_handlers, session_id, {pid, ref, metadata})
 
     Logging.transport_event("sse_handler_registered", %{
@@ -404,8 +442,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       {pid, _ref, _meta} when is_pid(expected_pid) and pid != expected_pid ->
         {:noreply, state}
 
-      {_pid, ref, _meta} ->
+      {pid, ref, _meta} ->
         Process.demonitor(ref, [:flush])
+        pg_leave(state.pg_scope, session_id, pid)
         state = %{state | sse_handlers: Map.delete(state.sse_handlers, session_id)}
         {:noreply, schedule_close_if_open(state, session_id)}
 
@@ -530,15 +569,29 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
         {:reply, :ok, state}
 
       nil ->
-        {:reply, {:error, :no_sse_handler}, state}
+        case remote_handler(state, session_id) do
+          {:ok, pid} ->
+            send(pid, {:sse_message, message})
+            {:reply, :ok, state}
+
+          {:error, :not_found} ->
+            {:reply, {:error, :no_sse_handler}, state}
+        end
     end
   end
 
   defp route(%{event_store: {_mod, _name} = store} = state, session_id, message) do
     if MapSet.member?(state.streams, session_id) do
-      {:reply, record_and_deliver(store, state.sse_handlers, session_id, message), state}
+      {:reply, record_and_deliver(store, state, session_id, message), state}
     else
-      {:reply, {:error, :no_sse_handler}, state}
+      case remote_handler(state, session_id) do
+        {:ok, pid} ->
+          send(pid, {:sse_message, message})
+          {:reply, :ok, state}
+
+        {:error, :not_found} ->
+          {:reply, {:error, :no_sse_handler}, state}
+      end
     end
   end
 
@@ -555,7 +608,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   defp broadcast(%{event_store: {_mod, _name} = store} = state, message) do
     failures =
       Enum.reduce(state.streams, [], fn session_id, acc ->
-        case record_and_deliver(store, state.sse_handlers, session_id, message) do
+        case record_and_deliver(store, state, session_id, message) do
           :ok -> acc
           {:error, reason} -> [{session_id, reason} | acc]
         end
@@ -571,12 +624,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   # actually recorded. A failed append is logged and NOT delivered with a bogus
   # legacy id, which would corrupt the client's resumption cursor; the error is
   # returned so callers can surface it rather than reporting a phantom success.
-  defp record_and_deliver({mod, name}, sse_handlers, session_id, message) do
+  # A handler living on another node receives the bare message instead: the id
+  # is only meaningful to a node sharing this event store, and handing out a
+  # cursor the serving node cannot replay would corrupt resumption.
+  defp record_and_deliver({mod, name}, state, session_id, message) do
     case mod.append(name, session_id, message) do
       {:ok, id} ->
-        case Map.get(sse_handlers, session_id) do
+        case Map.get(state.sse_handlers, session_id) do
           {pid, _ref, _meta} -> send(pid, {:sse_message, message, id})
-          nil -> :ok
+          nil -> deliver_remote(state, session_id, {:sse_message, message})
         end
 
         :ok
@@ -584,6 +640,63 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       {:error, reason} = error ->
         Logging.transport_event("sse_record_failed", %{session_id: session_id, reason: inspect(reason)}, level: :warning)
         error
+    end
+  end
+
+  # Cross-node delivery fallback. SSE handlers join a :pg group keyed by
+  # session id (see pg_join/3), so a handler whose GET stream terminated on
+  # another node is still reachable from the session owner's node. send/2 to a
+  # remote pid is transparent over distribution, mirroring how Registry.PG
+  # routes inbound requests with GenServer.call/3.
+  defp remote_handler(%{pg_scope: nil}, _session_id), do: {:error, :not_found}
+
+  defp remote_handler(%{pg_scope: scope}, session_id) do
+    case :pg.get_members(scope, session_id) do
+      [pid | _rest] -> {:ok, pid}
+      [] -> {:error, :not_found}
+    end
+  rescue
+    _e in [ArgumentError] -> {:error, :not_found}
+  end
+
+  defp deliver_remote(state, session_id, message) do
+    case remote_handler(state, session_id) do
+      {:ok, pid} -> send(pid, message)
+      {:error, :not_found} -> :ok
+    end
+  end
+
+  defp pg_join(nil, _session_id, _pid), do: :ok
+
+  defp pg_join(scope, session_id, pid) do
+    :pg.join(scope, session_id, pid)
+  rescue
+    _e in [ArgumentError] -> :ok
+  end
+
+  defp pg_leave(nil, _session_id, _pid), do: :ok
+
+  defp pg_leave(scope, session_id, pid) do
+    :pg.leave(scope, session_id, pid)
+  rescue
+    _e in [ArgumentError] -> :ok
+  end
+
+  # Derive a deterministic :pg scope from the transport name. Transport names
+  # are compile-time bounded atoms, so there is no risk of atom table
+  # exhaustion. Non-atom names (:via/:global tuples) get no scope and keep
+  # node-local delivery only.
+  # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+  defp pg_scope(name) when is_atom(name), do: :"#{name}.sse_pg"
+  defp pg_scope(_name), do: nil
+
+  # The scope process is node-lifetime infrastructure: it survives transport
+  # restarts and is reused via the already_started branch, so memberships from
+  # sibling nodes stay visible across a local transport crash.
+  defp ensure_pg_scope(scope) do
+    case :pg.start(scope) do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
     end
   end
 

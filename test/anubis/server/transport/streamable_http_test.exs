@@ -236,4 +236,148 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       assert "2025-03-26" in versions
     end
   end
+
+  describe "cross-node SSE routing" do
+    # A full multi-node test would need :slave/:peer node orchestration, which
+    # is impractical here. Instead we exercise the routing seam directly: the
+    # transport discovers handlers through a :pg group keyed by session id, so
+    # joining a pid to that group from the test faithfully simulates a handler
+    # registered with a sibling node's transport.
+    setup do
+      name = Registry.transport_name(StubServer, :streamable_http)
+      sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: sup})
+
+      {:ok, transport} =
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: sup})
+
+      %{transport: transport, pg_scope: :"#{name}.sse_pg"}
+    end
+
+    test "route_to_session delivers to a handler registered on another node", %{
+      transport: transport,
+      pg_scope: pg_scope
+    } do
+      session_id = "remote-session-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      refute StreamableHTTP.get_sse_handler(transport, session_id)
+
+      spawn(fn ->
+        :pg.join(pg_scope, session_id, self())
+        send(test_pid, :joined)
+
+        receive do
+          {:sse_message, message} -> send(test_pid, {:delivered, message})
+        end
+      end)
+
+      assert_receive :joined
+
+      assert :ok = StreamableHTTP.route_to_session(transport, session_id, "cluster message")
+      assert_receive {:delivered, "cluster message"}
+    end
+
+    test "route_to_session returns no_sse_handler when no handler exists anywhere", %{transport: transport} do
+      session_id = "ghost-session-#{System.unique_integer([:positive])}"
+
+      assert {:error, :no_sse_handler} = StreamableHTTP.route_to_session(transport, session_id, "lost")
+    end
+
+    test "local registration joins the shared :pg group", %{transport: transport, pg_scope: pg_scope} do
+      session_id = "local-session-#{System.unique_integer([:positive])}"
+
+      assert :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+      assert self() in :pg.get_members(pg_scope, session_id)
+    end
+
+    test "unregistering a local handler leaves the :pg group", %{transport: transport, pg_scope: pg_scope} do
+      session_id = "leaving-session-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, :registered)
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive :registered
+      assert handler in :pg.get_members(pg_scope, session_id)
+
+      :ok = StreamableHTTP.unregister_sse_handler(transport, session_id, handler)
+
+      assert eventually(fn -> :pg.get_members(pg_scope, session_id) == [] end)
+    end
+
+    test "a superseded handler leaves the :pg group", %{transport: transport, pg_scope: pg_scope} do
+      session_id = "supersede-session-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      old_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, :old})
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive {:registered, :old}
+
+      new_handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, {:registered, :new})
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive {:registered, :new}
+
+      members = :pg.get_members(pg_scope, session_id)
+      assert new_handler in members
+      refute old_handler in members
+
+      send(old_handler, :stop)
+      send(new_handler, :stop)
+    end
+
+    test "a dead handler is removed from the :pg group by :pg itself", %{
+      transport: transport,
+      pg_scope: pg_scope
+    } do
+      session_id = "dying-session-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      handler =
+        spawn(fn ->
+          :ok = StreamableHTTP.register_sse_handler(transport, session_id)
+          send(test_pid, :registered)
+        end)
+
+      assert_receive :registered
+      refute Process.alive?(handler)
+
+      assert eventually(fn -> :pg.get_members(pg_scope, session_id) == [] end)
+    end
+  end
+
+  # Retries `fun` with a linear backoff, returning true as soon as it holds.
+  defp eventually(fun) do
+    Enum.reduce_while(1..5, nil, fn attempt, _acc ->
+      if fun.() do
+        {:halt, true}
+      else
+        Process.sleep(attempt * 10)
+        {:cont, nil}
+      end
+    end) || raise "condition never became true after 5 attempts"
+  end
 end
