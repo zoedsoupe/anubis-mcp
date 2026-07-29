@@ -682,8 +682,7 @@ defmodule Anubis.Server.SessionTest do
 
       :telemetry.attach(
         handler_id,
-        # NOTE: currently unprefixed (missing the :anubis_mcp namespace) — see #243/#244.
-        [:server, :tool_call, :stop],
+        [:anubis_mcp, :server, :tool_call, :stop],
         fn _e, _m, meta, _c -> send(test_pid, {:tool_call_stop, meta}) end,
         nil
       )

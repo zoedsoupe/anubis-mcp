@@ -31,6 +31,11 @@ defmodule Anubis.Server.ComponentTitleTest do
       def execute(_params, frame), do: {:reply, Response.tool(), frame}
     end
 
+    setup do
+      Code.ensure_loaded!(ToolWithoutTitle)
+      :ok
+    end
+
     test "defines title/0 when the :title option is passed" do
       assert ToolWithTitle.title() == "My Tool"
     end
@@ -62,6 +67,11 @@ defmodule Anubis.Server.ComponentTitleTest do
 
       @impl true
       def read(_params, frame), do: {:reply, Response.resource(), frame}
+    end
+
+    setup do
+      Code.ensure_loaded!(ResourceWithoutTitle)
+      :ok
     end
 
     test "defines title/0 when the :title option is passed" do
@@ -104,6 +114,11 @@ defmodule Anubis.Server.ComponentTitleTest do
         response = Response.user_message(Response.prompt(), "test")
         {:reply, response, frame}
       end
+    end
+
+    setup do
+      Code.ensure_loaded!(PromptWithoutTitle)
+      :ok
     end
 
     test "defines title/0 when the :title option is passed" do

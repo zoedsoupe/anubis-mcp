@@ -8,6 +8,11 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
   @moduletag capture_log: true
 
   describe "tool annotations" do
+    setup do
+      Code.ensure_loaded!(ToolWithoutAnnotations)
+      :ok
+    end
+
     test "annotations callback is optional" do
       assert is_map(ToolWithAnnotations.annotations())
       refute function_exported?(ToolWithoutAnnotations, :annotations, 0)
@@ -16,6 +21,13 @@ defmodule Anubis.Server.Component.ToolAnnotationsTest do
   end
 
   describe "tool output schemas" do
+    setup do
+      Code.ensure_loaded!(ToolWithOutputSchema)
+      Code.ensure_loaded!(ToolWithAnnotations)
+      Code.ensure_loaded!(ToolWithoutAnnotations)
+      :ok
+    end
+
     test "output_schema callback is optional" do
       assert function_exported?(ToolWithOutputSchema, :output_schema, 0)
       refute function_exported?(ToolWithAnnotations, :output_schema, 0)

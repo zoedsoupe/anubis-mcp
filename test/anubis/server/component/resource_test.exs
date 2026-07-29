@@ -27,6 +27,11 @@ defmodule Anubis.Server.Component.ResourceTest do
       end
     end
 
+    setup do
+      Code.ensure_loaded!(TestResourceTemplate)
+      :ok
+    end
+
     test "generates uri_template/0 callback" do
       assert TestResourceTemplate.uri_template() == "test:///{category}/{id}"
     end
@@ -60,6 +65,11 @@ defmodule Anubis.Server.Component.ResourceTest do
       def read(_params, frame) do
         {:reply, Response.text(Response.resource(), "static content"), frame}
       end
+    end
+
+    setup do
+      Code.ensure_loaded!(TestStaticResource)
+      :ok
     end
 
     test "generates uri/0 callback" do
