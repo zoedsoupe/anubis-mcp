@@ -66,6 +66,64 @@ defmodule Anubis.SSE.ParserTest do
     assert Enum.empty?(Parser.run(sse))
   end
 
+  test "feed/2 returns no events until a blank-line terminator arrives" do
+    assert {[], "data: hello"} = Parser.feed("", "data: hello")
+    assert {[], "data: hello world"} = Parser.feed("data: hello", " world")
+
+    assert {[event], ""} = Parser.feed("data: hello world", "\n\n")
+    assert event.data == "hello world"
+  end
+
+  test "feed/2 reassembles an event split across multiple chunks" do
+    first = ~s(event: message\r\ndata: {"jsonrpc":"2.0","method":"ping")
+    second = ~s(,"params":{},"id":1}\r\n\r\n)
+
+    assert {[], partial} = Parser.feed("", first)
+    assert partial == first
+
+    assert {[event], ""} = Parser.feed(partial, second)
+    assert event.event == "message"
+    assert event.data == ~s({"jsonrpc":"2.0","method":"ping","params":{},"id":1})
+  end
+
+  test "feed/2 emits complete events and keeps trailing partial bytes" do
+    chunk1 = "data: first event\n\n"
+    chunk2 = "data: second event\n\ndata: partial"
+
+    assert {[first], ""} = Parser.feed("", chunk1)
+    assert first.data == "first event"
+
+    assert {[second], remainder} = Parser.feed("", chunk2)
+    assert second.data == "second event"
+    assert remainder == "data: partial"
+
+    assert {[], "data: partial event"} = Parser.feed(remainder, " event")
+    assert {[third], ""} = Parser.feed("data: partial event", "\n\n")
+    assert third.data == "partial event"
+  end
+
+  test "run/1 and feed/2 accept mixed blank-line SSE terminators" do
+    sse = "data: mixed\r\n\n"
+
+    assert [event] = Parser.run(sse)
+    assert event.data == "mixed"
+
+    assert {[], "data: partial"} = Parser.feed("", "data: partial")
+    assert {[event], ""} = Parser.feed("data: partial", "\r\n\n")
+    assert event.data == "partial"
+  end
+
+  test "run/1 and feed/2 parse bare-CR SSE line endings" do
+    sse = "data: cr-only\r\r"
+
+    assert [event] = Parser.run(sse)
+    assert event.data == "cr-only"
+
+    assert {[], "data: partial"} = Parser.feed("", "data: partial")
+    assert {[event], ""} = Parser.feed("data: partial", "\r\r")
+    assert event.data == "partial"
+  end
+
   describe "handles MCP message event correctly" do
     test "handles MCP endpoint event correctly" do
       sse = "event: endpoint\r\ndata: /messages/?session_id=123\r\n\r\n"

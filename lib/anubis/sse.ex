@@ -49,7 +49,7 @@ defmodule Anubis.SSE do
       task = spawn_stream_task(req, ref, finch_name, opts)
 
       Stream.resource(
-        fn -> {ref, task} end,
+        fn -> {ref, task, ""} end,
         &process_task_stream/1,
         &shutdown_task/1
       )
@@ -78,6 +78,8 @@ defmodule Anubis.SSE do
 
       case Finch.stream_while(req, finch_name, nil, on_chunk, http) do
         {:ok, _acc} ->
+          send(dest, {:chunk, :stream_closed, ref})
+
           Anubis.Logging.transport_event("sse_reconnect", %{
             reason: "success",
             attempt: attempt,
@@ -88,6 +90,8 @@ defmodule Anubis.SSE do
           loop_sse_stream(req, ref, dest, finch_name, opts, attempt + 1)
 
         {:error, exc, _acc} ->
+          send(dest, {:chunk, :stream_closed, ref})
+
           Anubis.Logging.transport_event(
             "sse_reconnect",
             %{
@@ -127,10 +131,14 @@ defmodule Anubis.SSE do
     {:cont, acc}
   end
 
-  defp process_task_stream({ref, _task} = state) do
+  defp process_task_stream({ref, task, buffer} = state) do
     receive do
+      {:chunk, :stream_closed, ^ref} ->
+        {[], {ref, task, ""}}
+
       {:chunk, {:data, data}, ^ref} ->
-        {Parser.run(data), state}
+        {events, remainder} = Parser.feed(buffer, data)
+        {events, {ref, task, remainder}}
 
       {:chunk, {:status, status}, ^ref} ->
         Anubis.Logging.transport_event("sse_status", status)
@@ -150,5 +158,5 @@ defmodule Anubis.SSE do
     end
   end
 
-  defp shutdown_task({_ref, task}), do: Task.shutdown(task)
+  defp shutdown_task({_ref, task, _buffer}), do: Task.shutdown(task)
 end
