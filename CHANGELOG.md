@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.11.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.10.0...v1.11.0) (2026-07-29)
+
+
+### Features
+
+* **session_store:** supervise Redis store subtree to make restarts race-free ([#242](https://github.com/zoedsoupe/anubis-mcp/issues/242)) ([48c8c1a](https://github.com/zoedsoupe/anubis-mcp/commit/48c8c1ad817a83d02a13a658f2eaa3969c05301a))
+
+
+### Bug Fixes
+
+* **prompts:** wrap prompt content objects and map system_message to user role ([#234](https://github.com/zoedsoupe/anubis-mcp/issues/234)) ([2451bb7](https://github.com/zoedsoupe/anubis-mcp/commit/2451bb7b80ad3c9fb24ca6b4d3014cb19cc81abb))
+* **server:** make title option compile in use Anubis.Server.Component ([b04feed](https://github.com/zoedsoupe/anubis-mcp/commit/b04feedbe014b83f2e5f3040f2ca06873c4035ae))
+* **server:** use restart :temporary for session processes ([#240](https://github.com/zoedsoupe/anubis-mcp/issues/240)) ([30bc4f5](https://github.com/zoedsoupe/anubis-mcp/commit/30bc4f5e91fef757928da076137167a5669b9510))
+* **sse:** buffer partial events across Finch chunks ([#245](https://github.com/zoedsoupe/anubis-mcp/issues/245)) ([beea2f6](https://github.com/zoedsoupe/anubis-mcp/commit/beea2f61ad49ba92c23a5d0df138efd5f0306738))
+* Stream the client SSE GET instead of buffering it (server push never delivered) ([#231](https://github.com/zoedsoupe/anubis-mcp/issues/231)) ([a722c1b](https://github.com/zoedsoupe/anubis-mcp/commit/a722c1baf0f811d0224ea4d72b5f6ff3f551fd62))
+* **telemetry:** expose tool call success/failure in tool_call span metadata ([#246](https://github.com/zoedsoupe/anubis-mcp/issues/246)) ([ace5ecb](https://github.com/zoedsoupe/anubis-mcp/commit/ace5ecb353d0240781964538bb9bfe575daaa4a3))
+* **telemetry:** include client_info in initialize response event metadata ([#248](https://github.com/zoedsoupe/anubis-mcp/issues/248)) ([74ed457](https://github.com/zoedsoupe/anubis-mcp/commit/74ed457b9ecb8da0344a241cf949f570c39c3705))
+* **telemetry:** namespace tool_call span under :anubis_mcp ([#244](https://github.com/zoedsoupe/anubis-mcp/issues/244)) ([561a96b](https://github.com/zoedsoupe/anubis-mcp/commit/561a96b788d4241f0fba8516c34d0fb77fef0993))
+
+
+### Tests
+
+* **server:** fix stale tool_call event name and function_exported? loading races ([7247d2c](https://github.com/zoedsoupe/anubis-mcp/commit/7247d2c3ea4a01a4e56f535d67a3e1388ffb6de2))
+* **transport:** synchronize held SSE plug with Bypass teardown ([93c5a34](https://github.com/zoedsoupe/anubis-mcp/commit/93c5a34ff9edbdd5b04f2bb7ea0c724295ea6442))
+
+
+### Continuous Integration
+
+* fix dialyzer plt caching ([8424439](https://github.com/zoedsoupe/anubis-mcp/commit/842443997a3c9e3fe2e2b08dd34a603b422e42c5))
+
 ## [1.10.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.9.0...v1.10.0) (2026-07-17)
 
 
