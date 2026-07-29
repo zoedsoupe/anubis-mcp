@@ -318,6 +318,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       server_url = "http://localhost:#{bypass.port}"
       {:ok, stub_client} = StubClient.start_link()
       session_id = "test-session-sse-push"
+      test_pid = self()
 
       Bypass.stub(bypass, "POST", "/mcp", fn conn ->
         conn
@@ -338,7 +339,17 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
           """)
 
-        Process.sleep(2_000)
+        # Hold the stream open until the test releases it. Returning while the
+        # test is already tearing down leaves Bypass with a retained plug at
+        # on_exit, which crashes Bypass.Instance (bypass 2.1.0).
+        send(test_pid, {:sse_plug_holding, self()})
+
+        receive do
+          :release_sse_plug -> :ok
+        after
+          5_000 -> :ok
+        end
+
         conn
       end)
 
@@ -356,10 +367,25 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping} = Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
       assert :ok = StreamableHTTP.send_message(transport, ping, timeout: 5000)
 
-      # Well inside the server's 2s hold: a buffering read could only deliver on close.
+      # The plug is still holding the stream: a buffering read could only
+      # deliver on close.
       assert await_pushed_notification(500), "server-pushed notification was never forwarded"
 
       StreamableHTTP.shutdown(transport)
+
+      # Release the held SSE plug and wait for it to finish so Bypass teardown
+      # never parks behind it.
+      plug_pid =
+        receive do
+          {:sse_plug_holding, pid} -> pid
+        after
+          1_000 -> flunk("SSE GET plug never started holding the stream")
+        end
+
+      ref = Process.monitor(plug_pid)
+      send(plug_pid, :release_sse_plug)
+      assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 5_000
+
       StubClient.clear_messages()
     end
   end
