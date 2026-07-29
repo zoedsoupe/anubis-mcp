@@ -3,6 +3,8 @@ defmodule Anubis.ProtocolTest do
 
   alias Anubis.MCP.Error
   alias Anubis.Protocol
+  alias Anubis.Protocol.V2025_03_26
+  alias Anubis.Protocol.V2025_06_18
 
   describe "backward compatibility" do
     test "supported_versions/0 returns all versions" do
@@ -47,17 +49,17 @@ defmodule Anubis.ProtocolTest do
     end
 
     test "negotiate_version/2 matches client and server" do
-      assert {:ok, "2025-03-26", Anubis.Protocol.V2025_03_26} =
+      assert {:ok, "2025-03-26", V2025_03_26} =
                Protocol.negotiate_version("2025-03-26", "2025-03-26")
     end
 
     test "negotiate_version/2 prefers server version" do
-      assert {:ok, "2025-06-18", Anubis.Protocol.V2025_06_18} =
+      assert {:ok, "2025-06-18", V2025_06_18} =
                Protocol.negotiate_version("2024-11-05", "2025-06-18")
     end
 
     test "negotiate_version/2 accepts a list of server versions" do
-      assert {:ok, "2025-03-26", Anubis.Protocol.V2025_03_26} =
+      assert {:ok, "2025-03-26", V2025_03_26} =
                Protocol.negotiate_version("2025-03-26", ["2025-11-25", "2025-03-26"])
     end
 
@@ -69,8 +71,8 @@ defmodule Anubis.ProtocolTest do
   describe "get_module/1" do
     test "returns module for known version" do
       assert {:ok, Anubis.Protocol.V2024_11_05} = Protocol.get_module("2024-11-05")
-      assert {:ok, Anubis.Protocol.V2025_03_26} = Protocol.get_module("2025-03-26")
-      assert {:ok, Anubis.Protocol.V2025_06_18} = Protocol.get_module("2025-06-18")
+      assert {:ok, V2025_03_26} = Protocol.get_module("2025-03-26")
+      assert {:ok, V2025_06_18} = Protocol.get_module("2025-06-18")
     end
 
     test "returns :error for unknown version" do

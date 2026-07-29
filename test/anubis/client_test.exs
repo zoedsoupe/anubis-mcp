@@ -554,6 +554,12 @@ defmodule Anubis.ClientTest do
       assert error.reason == :send_failure
       assert error.data.original_reason == :connection_closed
     end
+
+    test "session_expired cast does not crash the client", %{client: client} do
+      GenServer.cast(client, :session_expired)
+      _ = :sys.get_state(client)
+      assert Process.alive?(client)
+    end
   end
 
   describe "capability management" do

@@ -1208,6 +1208,11 @@ defmodule Anubis.Client do
     {:stop, :normal, state}
   end
 
+  def handle_cast(:session_expired, state) do
+    Logging.client_event("session_expired", %{}, level: :warning)
+    {:noreply, state}
+  end
+
   def handle_cast(:initialize, state) do
     Logging.client_event("handshake", "Making initial client <> server handshake")
 

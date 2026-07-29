@@ -147,9 +147,7 @@ defmodule Anubis.Server.Session.SerializationTest do
     end
 
     test "accepts legacy payloads without a version field" do
-      legacy =
-        state_without_version()
-        |> json_round_trip()
+      legacy = json_round_trip(state_without_version())
 
       result = Session.from_serializable(legacy)
 
