@@ -1525,12 +1525,17 @@ defmodule Anubis.Server.Session do
 
   # Session serialization
 
+  # Bump when the serialized shape changes; from_serializable/1 must keep
+  # reading the previous format for one major cycle (see #252).
+  @serialization_version 1
+
   @doc false
   @spec to_serializable(t()) :: map()
   def to_serializable(%{session_id: session_id, server_module: module} = state) do
     frame = maybe_serialize_assigns(module, state.frame)
 
     %{
+      v: @serialization_version,
       id: session_id,
       protocol_version: state.protocol_version,
       protocol_module: serialize_module(state.protocol_module),
@@ -1553,6 +1558,10 @@ defmodule Anubis.Server.Session do
   @doc false
   @spec from_serializable(map()) :: map()
   def from_serializable(map) when is_map(map) do
+    # Legacy payloads (no "v" field) predate versioning and share the v1
+    # shape; accept both for one major cycle, then drop the legacy path.
+    _version = map["v"] || :legacy
+
     %{
       session_id: map["id"],
       protocol_version: map["protocol_version"],

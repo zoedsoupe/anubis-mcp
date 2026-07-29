@@ -22,6 +22,14 @@ defmodule Anubis.Server.Session.SerializationTest do
       assert is_map(result.frame)
     end
 
+    test "embeds the serialization format version" do
+      state = build_state()
+
+      result = Session.to_serializable(state)
+
+      assert result.v == 1
+    end
+
     test "converts protocol_module atom to string" do
       state = build_state(protocol_module: V2025_03_26)
 
@@ -137,6 +145,21 @@ defmodule Anubis.Server.Session.SerializationTest do
       assert result.pending_requests == %{}
       assert %Frame{} = result.frame
     end
+
+    test "accepts legacy payloads without a version field" do
+      legacy =
+        state_without_version()
+        |> json_round_trip()
+
+      result = Session.from_serializable(legacy)
+
+      assert result.session_id == "session_123"
+      assert result.protocol_version == "2025-03-26"
+      assert result.protocol_module == V2025_03_26
+      assert result.initialized == true
+      assert result.client_info == %{"name" => "test_client"}
+      assert result.log_level == "info"
+    end
   end
 
   defp build_state(overrides \\ []) do
@@ -169,6 +192,16 @@ defmodule Anubis.Server.Session.SerializationTest do
 
   defp json_round_trip(data) do
     data |> JSON.encode!() |> JSON.decode!()
+  end
+
+  # Simulates a payload persisted before format versioning (#252):
+  # same shape as the current one, but without the "v" field.
+  defp state_without_version do
+    state = build_state()
+
+    state
+    |> Session.to_serializable()
+    |> Map.delete(:v)
   end
 
   defp try_json_encode(data) do
