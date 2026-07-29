@@ -121,24 +121,19 @@ jobs:
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: mix deps.compile --warnings-as-errors
 
-      # Ensure PLTs directory exists
-      - name: Create PLTs directory
-        run: mkdir -p priv/plts
+      # dialyxir names PLTs with exact ERTS/Elixir versions, so the cache
+      # key must use them too, otherwise every patch release misses forever
+      - name: Get BEAM versions
+        id: beam
+        run: |
+          echo "erts=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(version)]), halt().')" >> "$GITHUB_OUTPUT"
+          echo "elixir=$(elixir -e 'IO.puts(System.version())')" >> "$GITHUB_OUTPUT"
 
-      # Cache PLTs based on Elixir & Erlang version + mix.lock hash
       - name: Restore/Save PLT cache
         uses: actions/cache@v4
-        id: plt_cache
         with:
           path: priv/plts
-          key: plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('mix.lock') }}
-          restore-keys: |
-            plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-
-
-      # Create PLTs if no cache was found
-      - name: Create PLTs
-        if: steps.plt_cache.outputs.cache-hit != 'true'
-        run: mix dialyzer --plt
+          key: plt-${{ runner.os }}-${{ steps.beam.outputs.erts }}-${{ steps.beam.outputs.elixir }}-${{ hashFiles('mix.lock') }}
 
       - name: Run dialyzer
         run: mix dialyzer --format github

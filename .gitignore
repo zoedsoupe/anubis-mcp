@@ -58,3 +58,6 @@ result
 
 # redis
 dump.rdb
+
+/graphify-out/
+/plans/
