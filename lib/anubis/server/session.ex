@@ -715,7 +715,7 @@ defmodule Anubis.Server.Session do
     Telemetry.execute(
       Telemetry.event_server_response(),
       %{system_time: System.system_time()},
-      %{method: "initialize", status: :success}
+      %{method: "initialize", status: :success, client_info: client_info}
     )
 
     {:reply, {:ok, encode_reply(Message.build_response(result, request["id"]))}, state}

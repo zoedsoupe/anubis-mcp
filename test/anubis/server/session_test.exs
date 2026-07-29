@@ -100,6 +100,48 @@ defmodule Anubis.Server.SessionTest do
     end
   end
 
+  describe "initialize telemetry" do
+    test "response event metadata carries client_info" do
+      test_pid = self()
+      handler_id = "test-init-telemetry-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:anubis_mcp | Anubis.Telemetry.event_server_response()],
+        fn _e, _m, meta, _c -> send(test_pid, {:server_response, meta}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      transport_name = Registry.transport_name(StubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name})
+      task_sup = Registry.task_supervisor_name(StubServer)
+      start_supervised!({Task.Supervisor, name: task_sup})
+
+      session_id = "init_telemetry_session_#{System.unique_integer()}"
+      session_name = Registry.session_name(StubServer, session_id)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: StubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :init_telemetry_session
+        )
+
+      client_info = %{"name" => "TestClient", "version" => "1.0.0"}
+      init_msg = init_request("2025-03-26", client_info)
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, init_msg, %{}})
+
+      assert_receive {:server_response, %{method: "initialize", status: :success, client_info: ^client_info}}, 500
+    end
+  end
+
   describe "handle_call/3 for messages" do
     setup :initialized_server
 
