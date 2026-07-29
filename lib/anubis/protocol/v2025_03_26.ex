@@ -14,6 +14,7 @@ defmodule Anubis.Protocol.V2025_03_26 do
 
   @behaviour Anubis.Protocol.Behaviour
 
+  alias Anubis.Protocol.Schema
   alias Anubis.Protocol.V2024_11_05
 
   @version "2025-03-26"
@@ -40,11 +41,47 @@ defmodule Anubis.Protocol.V2025_03_26 do
     "message" => :string
   }
 
+  @text_content_schema %{
+    "type" => {:required, {:literal, "text"}},
+    "text" => {:required, :string}
+  }
+
+  @image_content_schema %{
+    "type" => {:required, {:literal, "image"}},
+    "data" => {:required, :string},
+    "mimeType" => {:required, :string}
+  }
+
+  @audio_content_schema %{
+    "type" => {:required, {:literal, "audio"}},
+    "data" => {:required, :string},
+    "mimeType" => {:required, :string}
+  }
+
+  @sampling_result_schema %{
+    "role" => {:required, {:literal, "assistant"}},
+    "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema, @audio_content_schema]}},
+    "model" => {:required, :string},
+    "stopReason" => {:string, {:default, "endTurn"}}
+  }
+
+  @impl true
+  def era, do: V2024_11_05.era()
+
   @impl true
   def version, do: @version
 
   @impl true
   def supported_features, do: @features
+
+  @impl true
+  def supports_feature?(feature), do: feature in @features
+
+  @impl true
+  def transport_rules, do: V2024_11_05.transport_rules()
+
+  @impl true
+  def server_capabilities(capabilities), do: V2024_11_05.server_capabilities(capabilities)
 
   @impl true
   def request_methods, do: @request_methods
@@ -56,27 +93,37 @@ defmodule Anubis.Protocol.V2025_03_26 do
   def progress_params_schema, do: @progress_params_schema
 
   @impl true
+  def request_result_schema("sampling/createMessage"), do: @sampling_result_schema
+
+  def request_result_schema(method), do: V2024_11_05.request_result_schema(method)
+
+  @impl true
+  def request_message_schema do
+    {:multi, :method, branches} = V2024_11_05.request_message_schema()
+
+    sampling_branch =
+      Schema.request_branch(
+        "sampling/createMessage",
+        Schema.with_progress_meta(request_params_schema("sampling/createMessage"))
+      )
+
+    {:multi, :method, Map.put(branches, "sampling/createMessage", sampling_branch)}
+  end
+
+  @impl true
+  def notification_message_schema do
+    {:multi, :method, branches} = V2024_11_05.notification_message_schema()
+
+    progress_branch = Schema.notification_branch("notifications/progress", @progress_params_schema)
+
+    {:multi, :method, Map.put(branches, "notifications/progress", progress_branch)}
+  end
+
+  @impl true
   def request_params_schema("sampling/createMessage") do
-    text_content = %{
-      "type" => {:required, {:literal, "text"}},
-      "text" => {:required, :string}
-    }
-
-    image_content = %{
-      "type" => {:required, {:literal, "image"}},
-      "data" => {:required, :string},
-      "mimeType" => {:required, :string}
-    }
-
-    audio_content = %{
-      "type" => {:required, {:literal, "audio"}},
-      "data" => {:required, :string},
-      "mimeType" => {:required, :string}
-    }
-
     message_schema = %{
       "role" => {:required, {:enum, ~w(user assistant system)}},
-      "content" => {:required, {:oneof, [text_content, image_content, audio_content]}}
+      "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema, @audio_content_schema]}}
     }
 
     model_preferences = %{

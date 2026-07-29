@@ -16,9 +16,12 @@ defmodule Anubis.Protocol.V2025_06_18 do
 
   @behaviour Anubis.Protocol.Behaviour
 
+  alias Anubis.Protocol.Schema
   alias Anubis.Protocol.V2025_03_26
 
   @version "2025-06-18"
+
+  @transport_rules %{batching: false, protocol_version_header: true}
 
   @base_features V2025_03_26.supported_features()
 
@@ -41,11 +44,28 @@ defmodule Anubis.Protocol.V2025_06_18 do
     "requestedSchema" => {:required, {:custom, &Anubis.MCP.ElicitationSchema.validate/1}}
   }
 
+  @elicitation_result_schema %{
+    "action" => {:required, {:enum, ~w(accept decline cancel)}},
+    "content" => :map
+  }
+
+  @impl true
+  def era, do: V2025_03_26.era()
+
   @impl true
   def version, do: @version
 
   @impl true
   def supported_features, do: @features
+
+  @impl true
+  def supports_feature?(feature), do: feature in @features
+
+  @impl true
+  def transport_rules, do: @transport_rules
+
+  @impl true
+  def server_capabilities(capabilities), do: V2025_03_26.server_capabilities(capabilities)
 
   @impl true
   def request_methods, do: @request_methods
@@ -57,6 +77,24 @@ defmodule Anubis.Protocol.V2025_06_18 do
   def progress_params_schema do
     V2025_03_26.progress_params_schema()
   end
+
+  @impl true
+  def request_result_schema("elicitation/create"), do: @elicitation_result_schema
+
+  def request_result_schema(method), do: V2025_03_26.request_result_schema(method)
+
+  @impl true
+  def request_message_schema do
+    {:multi, :method, branches} = V2025_03_26.request_message_schema()
+
+    elicitation_branch =
+      Schema.request_branch("elicitation/create", Schema.with_progress_meta(@elicitation_create_params))
+
+    {:multi, :method, Map.put(branches, "elicitation/create", elicitation_branch)}
+  end
+
+  @impl true
+  def notification_message_schema, do: V2025_03_26.notification_message_schema()
 
   @impl true
   def request_params_schema("elicitation/create"), do: @elicitation_create_params

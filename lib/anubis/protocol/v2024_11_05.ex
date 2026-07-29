@@ -12,7 +12,15 @@ defmodule Anubis.Protocol.V2024_11_05 do
 
   @behaviour Anubis.Protocol.Behaviour
 
+  alias Anubis.Protocol.Schema
+
   @version "2024-11-05"
+
+  @era :legacy
+
+  @transport_rules %{batching: true, protocol_version_header: false}
+
+  @capability_keys ~w(prompts tools resources logging completion)
 
   @features [
     :basic_messaging,
@@ -53,11 +61,43 @@ defmodule Anubis.Protocol.V2024_11_05 do
     "total" => {:either, {:float, :integer}}
   }
 
+  @text_content_schema %{
+    "type" => {:required, {:literal, "text"}},
+    "text" => {:required, :string}
+  }
+
+  @image_content_schema %{
+    "type" => {:required, {:literal, "image"}},
+    "data" => {:required, :string},
+    "mimeType" => {:required, :string}
+  }
+
+  @sampling_result_schema %{
+    "role" => {:required, {:literal, "assistant"}},
+    "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema]}},
+    "model" => {:required, :string},
+    "stopReason" => {:string, {:default, "endTurn"}}
+  }
+
+  @impl true
+  def era, do: @era
+
   @impl true
   def version, do: @version
 
   @impl true
   def supported_features, do: @features
+
+  @impl true
+  def supports_feature?(feature), do: feature in @features
+
+  @impl true
+  def transport_rules, do: @transport_rules
+
+  @impl true
+  def server_capabilities(capabilities) when is_map(capabilities) do
+    Map.take(capabilities, @capability_keys)
+  end
 
   @impl true
   def request_methods, do: @request_methods
@@ -67,6 +107,26 @@ defmodule Anubis.Protocol.V2024_11_05 do
 
   @impl true
   def progress_params_schema, do: @progress_params_schema
+
+  @impl true
+  def request_result_schema("sampling/createMessage"), do: @sampling_result_schema
+  def request_result_schema(_), do: nil
+
+  @impl true
+  def request_message_schema do
+    {:multi, :method,
+     Map.new(@request_methods, fn method ->
+       {method, Schema.request_branch(method, request_message_params(method))}
+     end)}
+  end
+
+  @impl true
+  def notification_message_schema do
+    {:multi, :method,
+     Map.new(@notification_methods, fn method ->
+       {method, Schema.notification_branch(method, notification_params_schema(method))}
+     end)}
+  end
 
   @impl true
   def request_params_schema("initialize") do
@@ -131,20 +191,9 @@ defmodule Anubis.Protocol.V2024_11_05 do
   end
 
   def request_params_schema("sampling/createMessage") do
-    text_content = %{
-      "type" => {:required, {:literal, "text"}},
-      "text" => {:required, :string}
-    }
-
-    image_content = %{
-      "type" => {:required, {:literal, "image"}},
-      "data" => {:required, :string},
-      "mimeType" => {:required, :string}
-    }
-
     message_schema = %{
       "role" => {:required, {:enum, ~w(user assistant system)}},
-      "content" => {:required, {:oneof, [text_content, image_content]}}
+      "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema]}}
     }
 
     %{
@@ -184,4 +233,16 @@ defmodule Anubis.Protocol.V2024_11_05 do
   end
 
   def notification_params_schema(_), do: :map
+
+  # initialize declares its own open "_meta" (extension namespace, issue #206);
+  # merging it after the progress slot keeps it from being narrowed down
+  defp request_message_params("initialize") do
+    Map.merge(Schema.progress_meta(), request_params_schema("initialize"))
+  end
+
+  defp request_message_params("resources/templates/list"), do: :map
+
+  defp request_message_params(method) do
+    Schema.with_progress_meta(request_params_schema(method))
+  end
 end

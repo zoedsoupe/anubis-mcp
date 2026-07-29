@@ -11,9 +11,12 @@ defmodule Anubis.Protocol.V2025_11_25 do
 
   @behaviour Anubis.Protocol.Behaviour
 
+  alias Anubis.Protocol.Schema
   alias Anubis.Protocol.V2025_06_18
 
   @version "2025-11-25"
+
+  @capability_keys ~w(prompts tools resources logging completion tasks)
 
   @base_features V2025_06_18.supported_features()
 
@@ -48,10 +51,24 @@ defmodule Anubis.Protocol.V2025_11_25 do
   }
 
   @impl true
+  def era, do: V2025_06_18.era()
+
+  @impl true
   def version, do: @version
 
   @impl true
   def supported_features, do: @features
+
+  @impl true
+  def supports_feature?(feature), do: feature in @features
+
+  @impl true
+  def transport_rules, do: V2025_06_18.transport_rules()
+
+  @impl true
+  def server_capabilities(capabilities) when is_map(capabilities) do
+    Map.take(capabilities, @capability_keys)
+  end
 
   @impl true
   def request_methods, do: @request_methods
@@ -62,6 +79,36 @@ defmodule Anubis.Protocol.V2025_11_25 do
   @impl true
   def progress_params_schema do
     V2025_06_18.progress_params_schema()
+  end
+
+  @impl true
+  def request_result_schema(method), do: V2025_06_18.request_result_schema(method)
+
+  @impl true
+  def request_message_schema do
+    {:multi, :method, branches} = V2025_06_18.request_message_schema()
+
+    branches =
+      Map.merge(
+        branches,
+        Map.new(@task_request_methods, fn method ->
+          {method, Schema.request_branch(method, request_params_schema(method))}
+        end)
+      )
+
+    tools_call_branch =
+      Schema.request_branch("tools/call", Schema.with_progress_meta(request_params_schema("tools/call")))
+
+    {:multi, :method, Map.put(branches, "tools/call", tools_call_branch)}
+  end
+
+  @impl true
+  def notification_message_schema do
+    {:multi, :method, branches} = V2025_06_18.notification_message_schema()
+
+    status_branch = Schema.notification_branch("notifications/tasks/status", @task_status_notification_params)
+
+    {:multi, :method, Map.put(branches, "notifications/tasks/status", status_branch)}
   end
 
   @impl true

@@ -4,6 +4,7 @@ defmodule Anubis.Protocol.VersionModulesTest do
   alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
+  alias Anubis.Protocol.V2025_11_25
 
   describe "V2024_11_05" do
     test "version/0 returns correct string" do
@@ -186,16 +187,24 @@ defmodule Anubis.Protocol.VersionModulesTest do
   end
 
   describe "behaviour compliance" do
-    for mod <- [V2024_11_05, V2025_03_26, V2025_06_18] do
+    for mod <- [V2024_11_05, V2025_03_26, V2025_06_18, V2025_11_25] do
       test "#{mod} implements all callbacks" do
         mod = unquote(mod)
+        assert mod.era() in [:legacy, :stateless]
         assert is_binary(mod.version())
         assert is_list(mod.supported_features())
+        assert is_boolean(mod.supports_feature?(:ping))
+        assert %{batching: batching?, protocol_version_header: header?} = mod.transport_rules()
+        assert is_boolean(batching?)
+        assert is_boolean(header?)
+        assert is_map(mod.server_capabilities(%{"tools" => %{}}))
         assert is_list(mod.request_methods())
         assert is_list(mod.notification_methods())
         assert is_map(mod.progress_params_schema())
         assert "initialize" |> mod.request_params_schema() |> is_map()
         assert mod.notification_params_schema("notifications/initialized") == :map
+        assert {:multi, :method, _} = mod.request_message_schema()
+        assert {:multi, :method, _} = mod.notification_message_schema()
       end
     end
   end
