@@ -47,16 +47,22 @@ defmodule Anubis.ProtocolTest do
     end
 
     test "negotiate_version/2 matches client and server" do
-      assert {:ok, "2025-03-26"} = Protocol.negotiate_version("2025-03-26", "2025-03-26")
+      assert {:ok, "2025-03-26", Anubis.Protocol.V2025_03_26} =
+               Protocol.negotiate_version("2025-03-26", "2025-03-26")
     end
 
     test "negotiate_version/2 prefers server version" do
-      assert {:ok, "2025-06-18"} = Protocol.negotiate_version("2024-11-05", "2025-06-18")
+      assert {:ok, "2025-06-18", Anubis.Protocol.V2025_06_18} =
+               Protocol.negotiate_version("2024-11-05", "2025-06-18")
+    end
+
+    test "negotiate_version/2 accepts a list of server versions" do
+      assert {:ok, "2025-03-26", Anubis.Protocol.V2025_03_26} =
+               Protocol.negotiate_version("2025-03-26", ["2025-11-25", "2025-03-26"])
     end
 
     test "negotiate_version/2 returns error for incompatible" do
-      assert {:error, %Error{}} =
-               Protocol.negotiate_version("9999-01-01", "8888-01-01")
+      assert :error = Protocol.negotiate_version("9999-01-01", "8888-01-01")
     end
   end
 

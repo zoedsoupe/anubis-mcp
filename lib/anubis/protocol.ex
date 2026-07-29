@@ -100,29 +100,17 @@ defmodule Anubis.Protocol do
   @doc """
   Negotiates protocol version between client and server versions.
 
-  Returns the best compatible version or an error if incompatible.
+  Delegates to `Anubis.Protocol.Registry.negotiate/2`: the client's version
+  is used when the server supports it, otherwise the server's version wins.
   """
-  @spec negotiate_version(version(), version()) ::
-          {:ok, version()} | {:error, Error.t()}
-  def negotiate_version(client_version, server_version) do
-    cond do
-      client_version == server_version and Registry.supported?(client_version) ->
-        {:ok, client_version}
+  @spec negotiate_version(version(), version() | [version()]) ::
+          {:ok, version(), module()} | :error
+  def negotiate_version(client_version, server_version) when is_binary(server_version) do
+    Registry.negotiate(client_version, [server_version])
+  end
 
-      Registry.supported?(server_version) ->
-        {:ok, server_version}
-
-      Registry.supported?(client_version) ->
-        {:ok, client_version}
-
-      true ->
-        {:error,
-         Error.protocol(:invalid_params, %{
-           client_version: client_version,
-           server_version: server_version,
-           supported: supported_versions()
-         })}
-    end
+  def negotiate_version(client_version, server_versions) when is_list(server_versions) do
+    Registry.negotiate(client_version, server_versions)
   end
 
   @doc """
