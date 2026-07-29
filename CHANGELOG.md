@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.11.0...v1.12.0) (2026-07-29)
+
+
+### Features
+
+* **session:** version session serialization format ([0a91fee](https://github.com/zoedsoupe/anubis-mcp/commit/0a91fee1dced27610a85d3e7806aae8c43faeb0a)), closes [#252](https://github.com/zoedsoupe/anubis-mcp/issues/252)
+
+
+### Bug Fixes
+
+* **client:** handle session_expired cast from streamable HTTP transport ([59a8896](https://github.com/zoedsoupe/anubis-mcp/commit/59a889640de17124a5aaab4dac9864dc4a8829cb)), closes [#264](https://github.com/zoedsoupe/anubis-mcp/issues/264)
+* **client:** store negotiated protocol version from initialize response ([3cdba16](https://github.com/zoedsoupe/anubis-mcp/commit/3cdba165cde1be930f792ef07a54e9968d7da57c)), closes [#249](https://github.com/zoedsoupe/anubis-mcp/issues/249)
+* **transport:** send and validate MCP-Protocol-Version header ([fe6b767](https://github.com/zoedsoupe/anubis-mcp/commit/fe6b767144e5f5dffc5dde5baf0541bb19aaf2ab)), closes [#250](https://github.com/zoedsoupe/anubis-mcp/issues/250)
+
+
+### Code Refactoring
+
+* **protocol:** unify version negotiation APIs ([#251](https://github.com/zoedsoupe/anubis-mcp/issues/251)) ([985d940](https://github.com/zoedsoupe/anubis-mcp/commit/985d9404a551948242f61773049e9597a0a28f5e))
+
 ## [1.11.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.10.0...v1.11.0) (2026-07-29)
 
 
