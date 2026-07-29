@@ -16,6 +16,7 @@ defmodule Anubis.Server.Transport.STDIO do
 
   alias Anubis.MCP.Message
   alias Anubis.Server.Registry
+  alias Anubis.Server.Transport.Session
   alias Anubis.Telemetry
   alias Anubis.Transport.Behaviour, as: Transport
 
@@ -258,14 +259,14 @@ defmodule Anubis.Server.Transport.STDIO do
 
   defp dispatch_to_session(message, session_pid, context, state) do
     if Message.is_notification(message) do
-      GenServer.cast(session_pid, {:mcp_notification, message, context})
+      Session.dispatch_notification(session_pid, message, context)
     else
       forward_request_to_session(session_pid, message, context, state)
     end
   end
 
   defp forward_request_to_session(session_pid, message, context, state) do
-    case GenServer.call(session_pid, {:mcp_request, message, context}, state.request_timeout) do
+    case Session.dispatch_request(session_pid, message, context, timeout: state.request_timeout) do
       {:ok, response} when is_binary(response) ->
         IO.write(state.io_device, response <> "\n")
 

@@ -8,6 +8,8 @@ defmodule Anubis.Server.Session do
 
   Sessions are created by the transport layer (STDIO creates one at startup,
   HTTP transports create them dynamically via `Anubis.Server.Supervisor`).
+  Transports deliver client messages through the dispatcher contract defined
+  in `Anubis.Server.Transport.Session`.
   """
 
   use GenServer

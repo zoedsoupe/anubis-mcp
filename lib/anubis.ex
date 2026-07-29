@@ -73,4 +73,9 @@ defmodule Anubis do
     config = Application.get_env(:anubis_mcp, :session_store) || []
     config[:ttl] || @default_session_store_ttl
   end
+
+  @spec get_session_dispatcher :: module
+  def get_session_dispatcher do
+    Application.get_env(:anubis_mcp, :session_dispatcher, Anubis.Server.Transport.Session.Local)
+  end
 end

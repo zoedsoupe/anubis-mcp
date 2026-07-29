@@ -11,6 +11,7 @@ defmodule StubTransport do
   alias Anubis.MCP.Builders
   alias Anubis.MCP.ID
   alias Anubis.MCP.Message
+  alias Anubis.Server.Transport.Session
 
   require Message
 
@@ -162,8 +163,7 @@ defmodule StubTransport do
       session_name =
         Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
-      {:ok, response} =
-        GenServer.call(session_name, {:mcp_request, message, %{}})
+      {:ok, response} = Session.dispatch_request(session_name, message, %{})
 
       if state.client do
         GenServer.cast(state.client, {:response, response})
@@ -175,13 +175,13 @@ defmodule StubTransport do
     session_name =
       Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
-    GenServer.cast(session_name, {:mcp_response, message, %{}})
+    Session.dispatch_response(session_name, message, %{})
   end
 
   defp forward_to_session(message, state) when Message.is_notification(message) do
     session_name =
       Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
-    :ok = GenServer.cast(session_name, {:mcp_notification, message, %{}})
+    :ok = Session.dispatch_notification(session_name, message, %{})
   end
 end

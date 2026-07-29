@@ -48,6 +48,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.Server.Authorization
     alias Anubis.Server.Registry
     alias Anubis.Server.Supervisor, as: ServerSupervisor
+    alias Anubis.Server.Transport.Session
     alias Anubis.Server.Transport.StreamableHTTP
     alias Anubis.SSE.Streaming
     alias Anubis.Telemetry
@@ -323,7 +324,7 @@ if Code.ensure_loaded?(Plug) do
     defp handle_notification_message(conn, message, session_id, context, opts) do
       case find_or_restore_session(opts, session_id, context) do
         {:ok, session_pid} ->
-          GenServer.cast(session_pid, {:mcp_notification, message, context})
+          Session.dispatch_notification(session_pid, message, context)
 
           conn
           |> put_resp_content_type("application/json")
@@ -337,7 +338,7 @@ if Code.ensure_loaded?(Plug) do
     defp handle_response_message(conn, message, session_id, context, opts) do
       case find_or_restore_session(opts, session_id, context) do
         {:ok, session_pid} ->
-          GenServer.cast(session_pid, {:mcp_response, message, context})
+          Session.dispatch_response(session_pid, message, context)
 
           conn
           |> put_resp_content_type("application/json")
@@ -371,7 +372,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_json_request(conn, session_pid, message, session_id, context, %{session_header: session_header} = opts) do
-      case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
+      case Session.dispatch_request(session_pid, message, context, timeout: opts.timeout) do
         {:ok, response} when is_binary(response) ->
           conn
           |> put_resp_content_type("application/json")
@@ -401,7 +402,7 @@ if Code.ensure_loaded?(Plug) do
     defp handle_sse_request(conn, session_pid, message, session_id, context, opts) do
       %{session_header: session_header} = opts
 
-      case GenServer.call(session_pid, {:mcp_request, message, context}, opts.timeout) do
+      case Session.dispatch_request(session_pid, message, context, timeout: opts.timeout) do
         {:ok, response} when is_binary(response) ->
           stream_response_on_conn(conn, response, session_id, session_header)
 

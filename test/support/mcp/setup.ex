@@ -9,6 +9,7 @@ defmodule Anubis.MCP.Setup do
   alias Anubis.MCP.Message
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
+  alias Anubis.Server.Transport.Session, as: SessionDispatcher
   alias Anubis.Server.Transport.STDIO
 
   @doc """
@@ -141,9 +142,9 @@ defmodule Anubis.MCP.Setup do
       )
 
     request = Builders.init_request(protocol_version, info, capabilities)
-    assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+    assert {:ok, _} = SessionDispatcher.dispatch_request(session, request, %{})
     notification = Builders.build_notification("notifications/initialized", %{})
-    assert :ok = GenServer.cast(session, {:mcp_notification, notification, %{}})
+    assert :ok = SessionDispatcher.dispatch_notification(session, notification, %{})
 
     Process.sleep(50)
 

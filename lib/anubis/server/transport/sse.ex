@@ -74,6 +74,7 @@ defmodule Anubis.Server.Transport.SSE do
   alias Anubis.MCP.Message
   alias Anubis.Server.Registry
   alias Anubis.Server.Supervisor, as: ServerSupervisor
+  alias Anubis.Server.Transport.Session
   alias Anubis.Telemetry
   alias Anubis.Transport.Behaviour, as: Transport
 
@@ -329,7 +330,7 @@ defmodule Anubis.Server.Transport.SSE do
     case find_or_create_session(session_id, message, state) do
       {:ok, session_pid} ->
         if Message.is_notification(message) do
-          GenServer.cast(session_pid, {:mcp_notification, message, context})
+          Session.dispatch_notification(session_pid, message, context)
           {:ok_cast}
         else
           forward_request_to_session(session_pid, message, context, state.request_timeout)
@@ -393,9 +394,7 @@ defmodule Anubis.Server.Transport.SSE do
   end
 
   defp forward_request_to_session(session_pid, message, context, timeout) do
-    msg = {:mcp_request, message, context}
-
-    case GenServer.call(session_pid, msg, timeout) do
+    case Session.dispatch_request(session_pid, message, context, timeout: timeout) do
       {:ok, response} ->
         {:ok, response}
 
