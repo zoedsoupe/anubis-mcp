@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.13.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.12.0...v1.13.0) (2026-07-29)
+
+
+### Bug Fixes
+
+* **server:** reject unknown sessions on the request path instead of silent auto-recovery ([b2db47f](https://github.com/zoedsoupe/anubis-mcp/commit/b2db47f4798f77d6bd15b5cb6fc540963ffede52)), closes [#204](https://github.com/zoedsoupe/anubis-mcp/issues/204)
+
+
+### Code Refactoring
+
+* **session:** extract request scheduler ([88b0cce](https://github.com/zoedsoupe/anubis-mcp/commit/88b0cce2521691d89f147ac1e1a496c04834e3a5)), closes [#253](https://github.com/zoedsoupe/anubis-mcp/issues/253)
+* **session:** extract server-initiated request engine ([8b877af](https://github.com/zoedsoupe/anubis-mcp/commit/8b877afe73c90ae47e9d1804e95a9bc0413f9f38)), closes [#253](https://github.com/zoedsoupe/anubis-mcp/issues/253)
+* **session:** extract tasks runtime ([ff6047c](https://github.com/zoedsoupe/anubis-mcp/commit/ff6047cfa49c5713fe5db7e3eb48f9da788f6c3d)), closes [#253](https://github.com/zoedsoupe/anubis-mcp/issues/253)
+
 ## [1.12.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.11.0...v1.12.0) (2026-07-29)
 
 
