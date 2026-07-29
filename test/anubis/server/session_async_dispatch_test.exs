@@ -217,6 +217,31 @@ defmodule Anubis.Server.SessionAsyncDispatchTest do
     end
   end
 
+  describe "tool_call telemetry" do
+    test "stop event fires under the :anubis_mcp namespace", %{session: session} do
+      handler_id = "test-tool-call-telemetry-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:anubis_mcp, :server, :tool_call, :stop],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:tool_call_stop, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      ctx = with_test_pid()
+      req = tool_call_request("echo", %{"value" => "telemetry"}, "tel-1")
+      assert {:ok, _encoded} = GenServer.call(session, {:mcp_request, req, ctx}, 5_000)
+
+      assert_receive {:tool_call_stop, %{duration: duration}, %{tool: "echo"}}, 1_000
+      assert is_integer(duration) and duration >= 0
+    end
+  end
+
   defp start_async_session(_ctx) do
     session_id = "async-#{System.unique_integer([:positive])}"
     transport_name = Registry.transport_name(AsyncDispatchTestServer, StubTransport)
