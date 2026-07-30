@@ -21,7 +21,6 @@
 {:stdio, command: "cmd", args: ["a"], env: %{}, cwd: "/tmp"}
 {:streamable_http, base_url: "http://localhost:8000", mcp_path: "/mcp", headers: %{}}
 {:websocket, base_url: "ws://localhost:8000"}
-{:sse, base_url: "http://localhost:8000"}  # legacy
 ```
 
 ### Requests

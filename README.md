@@ -21,6 +21,25 @@ def deps do
 end
 ```
 
+## Supported MCP versions
+
+| anubis_mcp | MCP spec versions |
+|------------|-------------------|
+| 1.x        | 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25 |
+| 2.x        | 2025-03-26, 2025-06-18, 2025-11-25 |
+
+Breaking changes in 2.0:
+
+- Support for spec version 2024-11-05 was dropped; 2025-03-26 is the new floor.
+- The HTTP+SSE transports (`{:sse, ...}` on the client, `Anubis.Server.Transport.SSE` on the server) were removed, following their deprecation upstream. Use Streamable HTTP (`{:streamable_http, ...}`) instead.
+
+## Deprecation policy
+
+Mirroring the upstream MCP specification:
+
+- **Deprecated** features keep working for at least one minor release cycle and ship with a documented migration path.
+- **Removed** features are deleted only in major releases. Dropping a spec version is always a major bump.
+
 ## Quick Start
 
 ### Server
@@ -116,7 +135,7 @@ For detailed guides and examples, visit the [official documentation](https://hex
 We have build some elixir implementation examples using `plug` based and `phoenix` apps:
 
 1. [upcase-server](/examples/upcase/README.md): `plug` based MCP server using streamable_http
-2. [echo-elixir](/examples/echo-elixir/README.md): `phoenix` based MCP server using sse
+2. [echo-elixir](/examples/echo-elixir/README.md): `phoenix` based MCP server using streamable_http
 3. [ascii-server](/examples/ascii/README.md): `phoenix_live_view` based MCP server using streamable_http and UI
 
 ## License
