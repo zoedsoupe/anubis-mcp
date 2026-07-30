@@ -97,7 +97,7 @@ defmodule Anubis.Client.Elicitation do
   end
 
   defp send_elicitation_response(id, result, state) do
-    case Message.encode_elicitation_response(%{"result" => result}, id) do
+    case Message.encode_elicitation_response(%{"result" => result}, id, State.protocol_module(state)) do
       {:ok, encoded} ->
         transport = state.transport
         :ok = transport.layer.send_message(transport.name, encoded, timeout: state.timeout)

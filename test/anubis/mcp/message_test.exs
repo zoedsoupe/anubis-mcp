@@ -2,10 +2,127 @@ defmodule Anubis.MCP.MessageTest do
   use ExUnit.Case, async: true
 
   alias Anubis.MCP.Message
+  alias Anubis.Protocol.V2024_11_05
+  alias Anubis.Protocol.V2025_03_26
+  alias Anubis.Protocol.V2025_06_18
+  alias Anubis.Protocol.V2025_11_25
 
   require Message
 
   @moduletag capture_log: true
+
+  describe "version-aware dispatch" do
+    @elicitation_request ~s({"jsonrpc":"2.0","id":1,"method":"elicitation/create","params":{"message":"name?","requestedSchema":{"type":"object","properties":{"name":{"type":"string"}}}}}\n)
+
+    test "decode/2 rejects methods the negotiated version does not model" do
+      assert {:error, :method_not_found} = Message.decode(@elicitation_request, V2025_03_26)
+      assert {:ok, [%{"method" => "elicitation/create"}]} = Message.decode(@elicitation_request, V2025_06_18)
+    end
+
+    test "decode/1 defaults to the latest version" do
+      assert {:ok, [%{"method" => "elicitation/create"}]} = Message.decode(@elicitation_request)
+
+      tasks_request = ~s({"jsonrpc":"2.0","id":1,"method":"tasks/get","params":{"taskId":"t-1"}}\n)
+      assert {:ok, [%{"method" => "tasks/get"}]} = Message.decode(tasks_request)
+    end
+
+    test "decode/2 rejects tasks methods before 2025-11-25" do
+      tasks_request = ~s({"jsonrpc":"2.0","id":1,"method":"tasks/get","params":{"taskId":"t-1"}}\n)
+
+      assert {:error, :method_not_found} = Message.decode(tasks_request, V2025_06_18)
+      assert {:ok, _} = Message.decode(tasks_request, V2025_11_25)
+    end
+
+    test "validate_message/2 rejects unknown notification methods for the version" do
+      notification = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/tasks/status",
+        "params" => %{
+          "taskId" => "t-1",
+          "status" => "working",
+          "createdAt" => "2026-07-29T00:00:00Z",
+          "lastUpdatedAt" => "2026-07-29T00:00:00Z"
+        }
+      }
+
+      assert {:error, :method_not_found} = Message.validate_message(notification, V2025_06_18)
+      assert {:ok, _} = Message.validate_message(notification, V2025_11_25)
+    end
+
+    test "validate_message/2 filters params to the negotiated version" do
+      progress = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/progress",
+        "params" => %{"progressToken" => "t", "progress" => 1, "message" => "working"}
+      }
+
+      assert {:ok, validated} = Message.validate_message(progress, V2025_03_26)
+      assert validated["params"]["message"] == "working"
+
+      assert {:ok, validated} = Message.validate_message(progress, V2024_11_05)
+      refute Map.has_key?(validated["params"], "message")
+    end
+
+    test "request_schema/1 and notification_schema/1 reflect the version" do
+      assert {:multi, :method, branches} = Message.request_schema(V2025_11_25)
+      assert Map.has_key?(branches, "tasks/get")
+
+      assert {:multi, :method, branches} = Message.request_schema(V2025_03_26)
+      refute Map.has_key?(branches, "elicitation/create")
+
+      assert {:multi, :method, branches} = Message.notification_schema(V2025_11_25)
+      assert Map.has_key?(branches, "notifications/tasks/status")
+    end
+
+    test "encode_request/3 with an older version schema rejects newer methods" do
+      request = %{"method" => "tasks/get", "params" => %{"taskId" => "t-1"}}
+
+      assert {:error, _} = Message.encode_request(request, 1, Message.request_schema(V2025_06_18))
+      assert {:ok, _} = Message.encode_request(request, 1, Message.request_schema(V2025_11_25))
+      assert {:ok, _} = Message.encode_request(request, 1)
+    end
+
+    test "encode_notification/2 with an older version schema rejects newer notifications" do
+      notification = %{
+        "method" => "notifications/tasks/status",
+        "params" => %{
+          "taskId" => "t-1",
+          "status" => "working",
+          "createdAt" => "2026-07-29T00:00:00Z",
+          "lastUpdatedAt" => "2026-07-29T00:00:00Z"
+        }
+      }
+
+      assert {:error, _} = Message.encode_notification(notification, Message.notification_schema(V2025_06_18))
+      assert {:ok, _} = Message.encode_notification(notification)
+    end
+
+    test "encode_sampling_response/3 validates result content per version" do
+      response = %{
+        "result" => %{
+          "role" => "assistant",
+          "content" => %{"type" => "audio", "data" => "AA==", "mimeType" => "audio/mp3"},
+          "model" => "test-model"
+        }
+      }
+
+      assert {:error, _} = Message.encode_sampling_response(response, 1, V2024_11_05)
+      assert {:ok, _} = Message.encode_sampling_response(response, 1, V2025_03_26)
+      assert {:ok, _} = Message.encode_sampling_response(response, 1)
+    end
+
+    test "get_schema/1 remains available for legacy schema names" do
+      assert {:multi, :method, _} = Message.get_schema(:request_schema)
+      assert {:multi, :method, _} = Message.get_schema(:notification_schema)
+      assert {:oneof, _} = Message.get_schema(:mcp_message_schema)
+      assert is_map(Message.get_schema(:response_schema))
+      assert is_map(Message.get_schema(:error_schema))
+      assert is_map(Message.get_schema(:sampling_result_schema))
+      assert is_map(Message.get_schema(:elicitation_result_schema))
+      assert is_map(Message.get_schema(:sampling_response_schema))
+      assert is_map(Message.get_schema(:elicitation_response_schema))
+    end
+  end
 
   describe "decode/1" do
     test "decodes a single valid message" do

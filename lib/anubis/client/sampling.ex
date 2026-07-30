@@ -73,7 +73,7 @@ defmodule Anubis.Client.Sampling do
   end
 
   defp handle_sampling_result(id, result, state) do
-    case Message.encode_sampling_response(%{"result" => result}, id) do
+    case Message.encode_sampling_response(%{"result" => result}, id, State.protocol_module(state)) do
       {:ok, validated} ->
         send_sampling_response(id, validated, state)
 

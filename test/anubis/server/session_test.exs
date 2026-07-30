@@ -5,6 +5,7 @@ defmodule Anubis.Server.SessionTest do
   alias Anubis.Server.Frame
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
+  alias Anubis.Server.TaskStore.Local
 
   require Message
 
@@ -878,5 +879,93 @@ defmodule Anubis.Server.SessionTest do
       assert {:ok, [decoded]} = Message.decode(encoded)
       assert decoded["error"]["data"]["message"] == "Server not initialized"
     end
+  end
+
+  describe "version-aware dispatch" do
+    test "rejects requests for methods the negotiated version does not model" do
+      %{server: session} = initialized_server(%{protocol_version: "2025-03-26"})
+
+      elicitation =
+        build_request(
+          "elicitation/create",
+          %{
+            "message" => "Name?",
+            "requestedSchema" => %{"type" => "object", "properties" => %{"name" => %{"type" => "string"}}}
+          },
+          "req-version-gated"
+        )
+
+      assert {:ok, encoded} = GenServer.call(session, {:mcp_request, elicitation, %{}})
+      assert {:ok, [decoded]} = Message.decode(encoded)
+      assert decoded["error"]["code"] == -32_601
+
+      tools_list = build_request("tools/list", %{}, "req-still-dispatched")
+
+      assert {:ok, encoded} = GenServer.call(session, {:mcp_request, tools_list, %{}})
+      assert {:ok, [decoded]} = Message.decode(encoded)
+      assert [%{"name" => "greet"}] = decoded["result"]["tools"]
+    end
+
+    test "drops notifications the negotiated version does not model" do
+      %{server: session} = initialized_server(%{protocol_version: "2025-03-26"})
+
+      notification =
+        build_notification("notifications/tasks/status", %{
+          "taskId" => "t-1",
+          "status" => "working",
+          "createdAt" => "2026-07-29T00:00:00Z",
+          "lastUpdatedAt" => "2026-07-29T00:00:00Z"
+        })
+
+      assert :ok = GenServer.cast(session, {:mcp_notification, notification, %{}})
+      assert Process.alive?(session)
+      assert :sys.get_state(session).initialized
+    end
+
+    test "initialize response shapes capabilities to the negotiated version" do
+      session = start_tasks_capable_session("shape-excluded-session")
+
+      request = init_request("2025-06-18", %{"name" => "TestClient", "version" => "1.0.0"})
+      assert {:ok, encoded} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert {:ok, [decoded]} = Message.decode(encoded)
+
+      assert decoded["result"]["protocolVersion"] == "2025-06-18"
+      assert Map.has_key?(decoded["result"]["capabilities"], "tools")
+      refute Map.has_key?(decoded["result"]["capabilities"], "tasks")
+    end
+
+    test "initialize response keeps capabilities the negotiated version models" do
+      session = start_tasks_capable_session("shape-included-session")
+
+      request = init_request("2025-11-25", %{"name" => "TestClient", "version" => "1.0.0"})
+      assert {:ok, encoded} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert {:ok, [decoded]} = Message.decode(encoded)
+
+      assert decoded["result"]["protocolVersion"] == "2025-11-25"
+      assert Map.has_key?(decoded["result"]["capabilities"], "tasks")
+    end
+  end
+
+  defp start_tasks_capable_session(session_id) do
+    transport_name = Registry.transport_name(TasksStubServer, StubTransport)
+    start_supervised!({StubTransport, name: transport_name})
+
+    task_sup = Registry.task_supervisor_name(TasksStubServer)
+    start_supervised!({Task.Supervisor, name: task_sup})
+
+    task_store_name = Registry.task_store_name(TasksStubServer)
+    start_supervised!({Local, name: task_store_name})
+
+    session_name = Registry.session_name(TasksStubServer, session_id)
+
+    start_supervised!(
+      {Session,
+       session_id: session_id,
+       server_module: TasksStubServer,
+       name: session_name,
+       transport: [layer: StubTransport, name: transport_name],
+       task_supervisor: task_sup,
+       task_store: [adapter: Local, name: task_store_name]}
+    )
   end
 end

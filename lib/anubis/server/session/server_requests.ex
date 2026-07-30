@@ -50,7 +50,7 @@ defmodule Anubis.Server.Session.ServerRequests do
     state = put_in(state.server_requests[request_id], request_info)
 
     with :ok <- validate_client_capability(state, config.capability),
-         {:ok, request_data} <- encode_request(config.method, params, request_id),
+         {:ok, request_data} <- encode_request(config.method, params, request_id, state),
          :ok <- send_to_transport(state.transport, request_data, transport_opts(state)) do
       Logging.server_event(config.sent_event, %{request_id: request_id})
       {:noreply, state}
@@ -156,11 +156,11 @@ defmodule Anubis.Server.Session.ServerRequests do
   end
 
   @doc false
-  @spec encode_notification(String.t(), map()) :: {:ok, binary()} | {:error, term()}
-  def encode_notification(method, params) do
+  @spec encode_notification(String.t(), map(), state()) :: {:ok, binary()} | {:error, term()}
+  def encode_notification(method, params, state) do
     notification = Message.build_notification(method, params)
     Logging.message("outgoing", "notification", nil, notification)
-    Message.encode_notification(notification)
+    Message.encode_notification(notification, Message.notification_schema(protocol_module(state)))
   end
 
   defp do_timeout(kind, request_id, state) do
@@ -182,10 +182,14 @@ defmodule Anubis.Server.Session.ServerRequests do
 
   defp maybe_notify_timeout_cancellation(%{cancel_on_timeout: true} = config, %{id: request_id}, state) do
     with {:ok, notification} <-
-           encode_notification("notifications/cancelled", %{
-             "requestId" => request_id,
-             "reason" => "timeout"
-           }),
+           encode_notification(
+             "notifications/cancelled",
+             %{
+               "requestId" => request_id,
+               "reason" => "timeout"
+             },
+             state
+           ),
          :ok <- send_to_transport(state.transport, notification, transport_opts(state)) do
       Logging.server_event(config.timeout_cancelled_event, %{request_id: request_id})
     end
@@ -291,15 +295,18 @@ defmodule Anubis.Server.Session.ServerRequests do
     end
   end
 
-  defp encode_request(method, params, request_id) do
+  defp encode_request(method, params, request_id, state) do
     request = %{
       "method" => method,
       "params" => params
     }
 
     Logging.message("outgoing", "request", request_id, request)
-    Message.encode_request(request, request_id)
+    Message.encode_request(request, request_id, Message.request_schema(protocol_module(state)))
   end
+
+  defp protocol_module(%{protocol_module: nil}), do: Anubis.Protocol.Registry.latest_module()
+  defp protocol_module(%{protocol_module: protocol_module}), do: protocol_module
 
   defp sanitize_elicitation_result(%{"action" => "accept", "content" => content} = result, %{requested_schema: schema})
        when is_map(content) do

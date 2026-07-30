@@ -76,6 +76,8 @@ defmodule Anubis.MCP.Setup do
           "prompts" => %{}
         }
 
+    protocol_version = opts[:protocol_version] || "2025-03-26"
+
     GenServer.cast(client, :initialize)
 
     request_id = get_request_id(client, "initialize")
@@ -84,7 +86,7 @@ defmodule Anubis.MCP.Setup do
     response =
       Builders.init_response(
         request_id,
-        "2025-03-26",
+        protocol_version,
         %{"name" => "TestServer", "version" => "1.0.0"},
         server_capabilities
       )
@@ -221,7 +223,11 @@ defmodule Anubis.MCP.Setup do
       })
 
     allow(Anubis.MockTransport, self(), fn -> client end)
-    initialize_client(client, server_capabilities: server_capabilities)
+
+    initialize_client(client,
+      server_capabilities: server_capabilities,
+      protocol_version: context[:protocol_version]
+    )
 
     Map.put(context, :client, client)
   end

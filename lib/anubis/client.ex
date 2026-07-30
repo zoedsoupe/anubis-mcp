@@ -1058,7 +1058,7 @@ defmodule Anubis.Client do
     with :ok <- State.validate_capability(state, method),
          {request_id, updated_state} =
            State.add_request_from_operation(state, operation, from),
-         {:ok, request_data} <- encode_request(method, params_with_token, request_id),
+         {:ok, request_data} <- encode_request(state, method, params_with_token, request_id),
          :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
       Telemetry.execute(
         Telemetry.event_client_request(),
@@ -1232,7 +1232,7 @@ defmodule Anubis.Client do
     {request_id, updated_state} =
       State.add_request_from_operation(state, operation, {self(), make_ref()})
 
-    with {:ok, request_data} <- encode_request("initialize", params, request_id),
+    with {:ok, request_data} <- encode_request(state, "initialize", params, request_id),
          :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
       {:noreply, updated_state}
     else
@@ -1269,7 +1269,7 @@ defmodule Anubis.Client do
   end
 
   defp parse_response(data, %{transport_parse_state: nil} = state) do
-    case Message.decode(data) do
+    case Message.decode(data, State.protocol_module(state)) do
       {:ok, messages} -> {:ok, messages, state}
       {:error, _} = error -> error
     end
@@ -1604,16 +1604,16 @@ defmodule Anubis.Client do
 
   # Helper functions
 
-  defp encode_request(method, params, request_id) do
+  defp encode_request(state, method, params, request_id) do
     request = %{"method" => method, "params" => params}
     Logging.message("outgoing", "request", request_id, request)
-    Message.encode_request(request, request_id)
+    Message.encode_request(request, request_id, Message.request_schema(State.protocol_module(state)))
   end
 
-  defp encode_notification(method, params) do
+  defp encode_notification(state, method, params) do
     notification = %{"method" => method, "params" => params}
     Logging.message("outgoing", "notification", nil, notification)
-    Message.encode_notification(notification)
+    Message.encode_notification(notification, Message.notification_schema(State.protocol_module(state)))
   end
 
   defp send_cancellation(state, request_id, reason) do
@@ -1632,7 +1632,7 @@ defmodule Anubis.Client do
   end
 
   defp send_notification(state, method, params \\ %{}) do
-    with {:ok, notification_data} <- encode_notification(method, params) do
+    with {:ok, notification_data} <- encode_notification(state, method, params) do
       send_to_transport(state.transport, notification_data, timeout: state.timeout)
     end
   end

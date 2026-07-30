@@ -211,7 +211,14 @@ defmodule Anubis.Server.Session do
     state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
-    handle_single_request(decoded, transport_context, from, state)
+    case revalidate_for_version(decoded, state) do
+      {:ok, decoded} ->
+        handle_single_request(decoded, transport_context, from, state)
+
+      {:error, reason} ->
+        error = Error.protocol(reason, %{method: decoded["method"]})
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, decoded["id"]))}, state}
+    end
   end
 
   def handle_call({:auto_initialize, _transport_context}, _from, %{initialized: true} = state) do
@@ -328,6 +335,22 @@ defmodule Anubis.Server.Session do
     state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
+    case revalidate_for_version(decoded, state) do
+      {:ok, decoded} ->
+        dispatch_notification(decoded, transport_context, state)
+
+      {:error, reason} ->
+        Logging.server_event(
+          "notification_rejected",
+          %{session_id: state.session_id, method: decoded["method"], reason: reason},
+          level: :warning
+        )
+
+        {:noreply, state}
+    end
+  end
+
+  defp dispatch_notification(decoded, transport_context, state) do
     if Message.is_initialize_lifecycle(decoded) or state.initialized do
       handle_notification(decoded, transport_context, state)
     else
@@ -338,6 +361,19 @@ defmodule Anubis.Server.Session do
       })
 
       {:noreply, state}
+    end
+  end
+
+  # Once a version is negotiated, inbound requests and notifications are
+  # re-validated against it: methods the version does not model are rejected
+  # instead of dispatched. Responses and errors are version-independent.
+  defp revalidate_for_version(decoded, %{protocol_module: nil}), do: {:ok, decoded}
+
+  defp revalidate_for_version(decoded, %{protocol_module: protocol_module}) do
+    if Message.is_request(decoded) or Message.is_notification(decoded) do
+      Message.validate_message(decoded, protocol_module)
+    else
+      {:ok, decoded}
     end
   end
 
@@ -405,7 +441,7 @@ defmodule Anubis.Server.Session do
 
   @impl GenServer
   def handle_info({:send_notification, method, params}, state) do
-    with {:ok, notification} <- ServerRequests.encode_notification(method, params),
+    with {:ok, notification} <- ServerRequests.encode_notification(method, params, state),
          :ok <- ServerRequests.send_to_transport(state.transport, notification, ServerRequests.transport_opts(state)) do
       {:noreply, state}
     else
@@ -648,7 +684,11 @@ defmodule Anubis.Server.Session do
 
     result =
       maybe_put_instructions(
-        %{"protocolVersion" => protocol_version, "serverInfo" => state.server_info, "capabilities" => state.capabilities},
+        %{
+          "protocolVersion" => protocol_version,
+          "serverInfo" => state.server_info,
+          "capabilities" => protocol_module.server_capabilities(state.capabilities)
+        },
         state.instructions
       )
 

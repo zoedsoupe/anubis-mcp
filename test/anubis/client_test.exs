@@ -1547,6 +1547,8 @@ defmodule Anubis.ClientTest do
   end
 
   describe "elicitation" do
+    @moduletag protocol_version: "2025-06-18"
+
     setup :initialized_client
 
     @schema %{

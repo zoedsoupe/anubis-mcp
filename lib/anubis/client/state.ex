@@ -342,6 +342,24 @@ defmodule Anubis.Client.State do
   def update_protocol_version(state, _protocol_version), do: state
 
   @doc """
+  Returns the protocol version module for the state's negotiated version.
+
+  Falls back to the latest registered version when the stored version is
+  unknown (e.g. a pre-negotiation custom value).
+
+  ## Parameters
+
+    * `state` - The current client state
+  """
+  @spec protocol_module(t()) :: module()
+  def protocol_module(%{protocol_version: version}) do
+    case Anubis.Protocol.get_module(version) do
+      {:ok, module} -> module
+      :error -> Anubis.Protocol.Registry.latest_module()
+    end
+  end
+
+  @doc """
   Returns a list of all pending requests.
 
   ## Parameters

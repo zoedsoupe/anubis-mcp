@@ -2,206 +2,44 @@ defmodule Anubis.MCP.Message do
   @moduledoc """
   Handles parsing and validation of MCP (Model Context Protocol) messages using the Peri library.
 
-  This module provides functions to parse and validate MCP messages based on the Model Context Protocol schema
+  Message validation and encoding are version-aware: request and notification
+  schemas come from the negotiated protocol version module (see
+  `Anubis.Protocol.Behaviour`). Functions that take no protocol module default
+  to the latest registered version, which preserves the previous superset
+  behavior. Removing a feature from a version means deleting it from that
+  version's module; nothing here changes.
   """
 
-  import Peri
-
-  # MCP message schemas
-  #
-  # The version-specific param schemas live in the `Anubis.Protocol.V*` modules
-  # and are the single source of truth. This module derives the flat,
-  # version-agnostic superset used to validate any incoming message by pulling
-  # each method's schema from the latest protocol version at compile time.
-
+  alias Anubis.Protocol.Registry
   alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
-  alias Anubis.Protocol.V2025_11_25
 
   @log_levels ~w(debug info notice warning error critical alert emergency)
-
-  @progress_params %{
-    "_meta" => %{
-      "progressToken" => {:either, {:string, :integer}}
-    }
-  }
-
-  # Content schemas for sampling RESULT validation. The protocol version modules
-  # only model request/notification params, not results, so these live here.
-  # keep in sync with the content schemas built inside
-  # Anubis.Protocol.V2025_03_26.request_params_schema("sampling/createMessage")
-  @text_content_schema %{
-    "type" => {:required, {:literal, "text"}},
-    "text" => {:required, :string}
-  }
-
-  @image_content_schema %{
-    "type" => {:required, {:literal, "image"}},
-    "data" => {:required, :string},
-    "mimeType" => {:required, :string}
-  }
-
-  @audio_content_schema %{
-    "type" => {:required, {:literal, "audio"}},
-    "data" => {:required, :string},
-    "mimeType" => {:required, :string}
-  }
 
   # Progress notification schemas exposed for the encode helpers, single-sourced
   # from the protocol version modules.
   @progress_notif_params_schema V2024_11_05.progress_params_schema()
   @progress_notif_params_schema_2025 V2025_03_26.progress_params_schema()
 
-  @request_branch_specs %{
-    # initialize declares its own open "_meta" (extension namespace, issue #206);
-    # merge order keeps it from being narrowed to the progress-only "_meta"
-    "initialize" => Map.merge(@progress_params, V2025_11_25.request_params_schema("initialize")),
-    "ping" => :map,
-    "resources/list" => Map.merge(V2025_11_25.request_params_schema("resources/list"), @progress_params),
-    "resources/templates/list" => :map,
-    "resources/read" => Map.merge(V2025_11_25.request_params_schema("resources/read"), @progress_params),
-    "resources/subscribe" => Map.merge(V2025_11_25.request_params_schema("resources/subscribe"), @progress_params),
-    "resources/unsubscribe" => Map.merge(V2025_11_25.request_params_schema("resources/unsubscribe"), @progress_params),
-    "prompts/list" => Map.merge(V2025_11_25.request_params_schema("prompts/list"), @progress_params),
-    "prompts/get" => Map.merge(V2025_11_25.request_params_schema("prompts/get"), @progress_params),
-    "tools/list" => Map.merge(V2025_11_25.request_params_schema("tools/list"), @progress_params),
-    "tools/call" => Map.merge(V2025_11_25.request_params_schema("tools/call"), @progress_params),
-    "tasks/get" => V2025_11_25.request_params_schema("tasks/get"),
-    "tasks/result" => V2025_11_25.request_params_schema("tasks/result"),
-    "tasks/cancel" => V2025_11_25.request_params_schema("tasks/cancel"),
-    "tasks/list" => V2025_11_25.request_params_schema("tasks/list"),
-    "logging/setLevel" => Map.merge(V2025_11_25.request_params_schema("logging/setLevel"), @progress_params),
-    "completion/complete" => Map.merge(V2025_11_25.request_params_schema("completion/complete"), @progress_params),
-    "sampling/createMessage" => Map.merge(V2025_11_25.request_params_schema("sampling/createMessage"), @progress_params),
-    "elicitation/create" => Map.merge(V2025_11_25.request_params_schema("elicitation/create"), @progress_params),
-    "roots/list" => :map
+  # Response and error envelopes are version-independent; request and
+  # notification envelopes come from the protocol version modules.
+  @response_schema %{
+    "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+    "result" => {:required, :any},
+    "id" => {:required, {:either, {:string, :integer}}}
   }
 
-  @known_request_methods @request_branch_specs
-
-  @request_branches Map.new(@request_branch_specs, fn {method, params_schema} ->
-                      {method,
-                       %{
-                         "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-                         "method" => {:required, {:literal, method}},
-                         "params" => params_schema,
-                         "id" => {:required, {:either, {:string, :integer}}}
-                       }}
-                    end)
-
-  defschema(
-    :request_schema,
-    {:multi, :method, @request_branches},
-    mode: :strict
-  )
-
-  @notification_branch_specs %{
-    "notifications/initialized" => :map,
-    "notifications/cancelled" => V2025_11_25.notification_params_schema("notifications/cancelled"),
-    "notifications/progress" => V2025_11_25.notification_params_schema("notifications/progress"),
-    "notifications/message" => V2025_11_25.notification_params_schema("notifications/message"),
-    "notifications/roots/list_changed" => :map,
-    "notifications/log/message" => :map,
-    "notifications/tools/list_changed" => :map,
-    "notifications/prompts/list_changed" => :map,
-    "notifications/resources/list_changed" => :map,
-    "notifications/resources/updated" => V2025_11_25.notification_params_schema("notifications/resources/updated"),
-    "notifications/tasks/status" => V2025_11_25.notification_params_schema("notifications/tasks/status")
+  @error_schema %{
+    "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
+    "error" =>
+      {:required,
+       %{
+         "code" => {:required, :integer},
+         "message" => {:required, :string},
+         "data" => :any
+       }},
+    "id" => {:required, {:either, {:string, :integer}}}
   }
-
-  @known_notification_methods @notification_branch_specs
-
-  @notification_branches Map.new(@notification_branch_specs, fn {method, params_schema} ->
-                           {method,
-                            %{
-                              "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-                              "method" => {:required, {:literal, method}},
-                              "params" => params_schema
-                            }}
-                         end)
-
-  defschema(
-    :notification_schema,
-    {:multi, :method, @notification_branches},
-    mode: :strict
-  )
-
-  defschema(
-    :response_schema,
-    %{
-      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-      "result" => {:required, :any},
-      "id" => {:required, {:either, {:string, :integer}}}
-    },
-    mode: :strict
-  )
-
-  defschema(
-    :sampling_result_schema,
-    %{
-      "role" => {:required, {:literal, "assistant"}},
-      "content" => {:required, {:oneof, [@text_content_schema, @image_content_schema, @audio_content_schema]}},
-      "model" => {:required, :string},
-      "stopReason" => {:string, {:default, "endTurn"}}
-    },
-    mode: :strict
-  )
-
-  defschema(
-    :sampling_response_schema,
-    Map.put(
-      get_schema(:response_schema),
-      "result",
-      get_schema(:sampling_result_schema)
-    ),
-    mode: :strict
-  )
-
-  defschema(
-    :elicitation_result_schema,
-    %{
-      "action" => {:required, {:enum, ~w(accept decline cancel)}},
-      "content" => :map
-    }
-  )
-
-  defschema(
-    :elicitation_response_schema,
-    Map.put(
-      get_schema(:response_schema),
-      "result",
-      get_schema(:elicitation_result_schema)
-    ),
-    mode: :strict
-  )
-
-  defschema(
-    :error_schema,
-    %{
-      "jsonrpc" => {:required, {:string, {:eq, "2.0"}}},
-      "error" =>
-        {:required,
-         %{
-           "code" => {:required, :integer},
-           "message" => {:required, :string},
-           "data" => :any
-         }},
-      "id" => {:required, {:either, {:string, :integer}}}
-    },
-    mode: :strict
-  )
-
-  defschema(
-    :mcp_message_schema,
-    {:oneof,
-     [
-       get_schema(:request_schema),
-       get_schema(:notification_schema),
-       get_schema(:response_schema),
-       get_schema(:error_schema)
-     ]},
-    mode: :strict
-  )
 
   # generic guards
 
@@ -318,23 +156,108 @@ defmodule Anubis.MCP.Message do
                   (is_notification(data) and
                      :erlang.map_get("method", data) == "notifications/initialized")
 
+  # Version-aware schemas
+
+  @doc """
+  Returns the full request message schema for a protocol version module.
+
+  Defaults to the latest registered protocol version.
+
+  ## Examples
+
+      iex> {:multi, :method, branches} = Message.request_schema(Anubis.Protocol.V2025_11_25)
+      iex> Map.has_key?(branches, "tasks/get")
+      true
+
+      iex> {:multi, :method, branches} = Message.request_schema(Anubis.Protocol.V2025_03_26)
+      iex> Map.has_key?(branches, "elicitation/create")
+      false
+  """
+  @spec request_schema() :: term()
+  def request_schema, do: request_schema(Registry.latest_module())
+
+  @spec request_schema(module()) :: term()
+  def request_schema(protocol_module), do: protocol_module.request_message_schema()
+
+  @doc """
+  Returns the full notification message schema for a protocol version module.
+
+  Defaults to the latest registered protocol version.
+  """
+  @spec notification_schema() :: term()
+  def notification_schema, do: notification_schema(Registry.latest_module())
+
+  @spec notification_schema(module()) :: term()
+  def notification_schema(protocol_module), do: protocol_module.notification_message_schema()
+
+  @doc """
+  Returns the Peri schema registered under `name`.
+
+  Kept for backwards compatibility: these schemas used to be defined in this
+  module and are now resolved from the latest registered protocol version.
+  """
+  @spec get_schema(atom()) :: term()
+  def get_schema(:request_schema), do: request_schema()
+  def get_schema(:notification_schema), do: notification_schema()
+  def get_schema(:response_schema), do: @response_schema
+  def get_schema(:error_schema), do: @error_schema
+  def get_schema(:mcp_message_schema), do: mcp_message_schema(Registry.latest_module())
+
+  def get_schema(:sampling_result_schema) do
+    Registry.latest_module().request_result_schema("sampling/createMessage")
+  end
+
+  def get_schema(:elicitation_result_schema) do
+    Registry.latest_module().request_result_schema("elicitation/create")
+  end
+
+  def get_schema(:sampling_response_schema) do
+    result_response_schema(get_schema(:sampling_result_schema))
+  end
+
+  def get_schema(:elicitation_response_schema) do
+    result_response_schema(get_schema(:elicitation_result_schema))
+  end
+
+  defp mcp_message_schema(protocol_module) do
+    {:oneof,
+     [
+       request_schema(protocol_module),
+       notification_schema(protocol_module),
+       @response_schema,
+       @error_schema
+     ]}
+  end
+
+  defp result_response_schema(nil), do: @response_schema
+  defp result_response_schema(result_schema), do: Map.put(@response_schema, "result", result_schema)
+
   @doc """
   Decodes raw data (possibly containing multiple messages) into JSON-RPC messages.
 
+  Messages are validated against the latest registered protocol version.
   Returns either:
   - `{:ok, messages}` where messages is a list of parsed JSON-RPC messages
   - `{:error, reason}` if parsing fails
   """
-  def decode(data) when is_binary(data) do
+  def decode(data), do: decode(data, Registry.latest_module())
+
+  @doc """
+  Decodes raw data, validating each message against the given protocol
+  version module.
+
+  Returns the same shapes as `decode/1`.
+  """
+  def decode(data, protocol_module) when is_binary(data) do
     data
     |> String.split("\n", trim: true)
-    |> decode_lines()
+    |> decode_lines(protocol_module)
   end
 
-  defp decode_lines(lines) do
+  defp decode_lines(lines, protocol_module) do
     lines
     |> Enum.flat_map(&decode_line/1)
-    |> validate_all_messages()
+    |> validate_all_messages(protocol_module)
   end
 
   defp decode_line(line) do
@@ -345,14 +268,14 @@ defmodule Anubis.MCP.Message do
     end
   end
 
-  defp validate_all_messages(messages) do
+  defp validate_all_messages(messages, protocol_module) do
     messages
     |> Enum.reduce_while({:ok, []}, fn
       {:invalid, reason}, _acc ->
         {:halt, {:error, reason}}
 
       message, {:ok, acc} ->
-        case validate_message(message) do
+        case validate_message(message, protocol_module) do
           {:ok, validated} -> {:cont, {:ok, [validated | acc]}}
           error -> {:halt, error}
         end
@@ -364,31 +287,40 @@ defmodule Anubis.MCP.Message do
   end
 
   @doc """
-  Validates a decoded JSON message to ensure it complies with the MCP schema.
+  Validates a decoded JSON message against the latest registered protocol version.
   """
-  def validate_message(message) when is_map(message) do
+  def validate_message(message), do: validate_message(message, Registry.latest_module())
+
+  @doc """
+  Validates a decoded JSON message against the given protocol version module.
+
+  A message whose method is not part of the version fails with
+  `{:error, :method_not_found}`; malformed messages fail with
+  `{:error, :invalid_request}`.
+  """
+  def validate_message(message, protocol_module) when is_map(message) do
     with :ok <- validate_jsonrpc_envelope(message),
-         {:ok, validated} <- mcp_message_schema(message) do
+         {:ok, validated} <- Peri.validate(mcp_message_schema(protocol_module), message) do
       {:ok, validated}
     else
       {:error, reason} when reason in [:invalid_request, :parse_error, :method_not_found] ->
         {:error, reason}
 
       {:error, _} ->
-        classify_schema_failure(message)
+        classify_schema_failure(message, protocol_module)
     end
   end
 
-  defp classify_schema_failure(message) do
+  defp classify_schema_failure(message, protocol_module) do
     method = Map.get(message, "method")
 
     cond do
       jsonrpc_request_envelope?(message) and is_binary(method) and
-          not Map.has_key?(@known_request_methods, method) ->
+          method not in protocol_module.request_methods() ->
         {:error, :method_not_found}
 
       is_notification(message) and is_binary(method) and
-          not Map.has_key?(@known_notification_methods, method) ->
+          method not in protocol_module.notification_methods() ->
         {:error, :method_not_found}
 
       true ->
@@ -423,14 +355,18 @@ defmodule Anubis.MCP.Message do
   @doc """
   Encodes a request message to a JSON-RPC 2.0 compliant string.
 
+  The request is validated against the latest registered protocol version.
   Returns the encoded string with a newline character appended.
   """
   def encode_request(request, id) do
-    encode_request(request, id, get_schema(:request_schema))
+    encode_request(request, id, request_schema())
   end
 
   @doc """
   Encodes a request message using a custom schema.
+
+  Use `request_schema/1` to derive the schema for a negotiated protocol
+  version module.
 
   ## Parameters
 
@@ -450,14 +386,18 @@ defmodule Anubis.MCP.Message do
   @doc """
   Encodes a notification message to a JSON-RPC 2.0 compliant string.
 
-  Returns the encoded string with a newline character appended.
+  The notification is validated against the latest registered protocol
+  version. Returns the encoded string with a newline character appended.
   """
   def encode_notification(notification) do
-    encode_notification(notification, get_schema(:notification_schema))
+    encode_notification(notification, notification_schema())
   end
 
   @doc """
   Encodes a notification message using a custom schema.
+
+  Use `notification_schema/1` to derive the schema for a negotiated protocol
+  version module.
 
   ## Parameters
 
@@ -539,15 +479,41 @@ defmodule Anubis.MCP.Message do
   Returns the encoded string with a newline character appended.
   """
   def encode_response(response, id) do
-    encode_response(response, id, get_schema(:response_schema))
+    encode_response(response, id, @response_schema)
   end
 
+  @doc """
+  Encodes a sampling response, validating the result against the latest
+  registered protocol version.
+  """
   def encode_sampling_response(response, id) do
-    encode_response(response, id, get_schema(:sampling_response_schema))
+    encode_sampling_response(response, id, Registry.latest_module())
   end
 
+  @doc """
+  Encodes a sampling response, validating the result against the given
+  protocol version module.
+  """
+  def encode_sampling_response(response, id, protocol_module) do
+    result_schema = protocol_module.request_result_schema("sampling/createMessage")
+    encode_response(response, id, result_response_schema(result_schema))
+  end
+
+  @doc """
+  Encodes an elicitation response, validating the result against the latest
+  registered protocol version.
+  """
   def encode_elicitation_response(response, id) do
-    encode_response(response, id, get_schema(:elicitation_response_schema))
+    encode_elicitation_response(response, id, Registry.latest_module())
+  end
+
+  @doc """
+  Encodes an elicitation response, validating the result against the given
+  protocol version module.
+  """
+  def encode_elicitation_response(response, id, protocol_module) do
+    result_schema = protocol_module.request_result_schema("elicitation/create")
+    encode_response(response, id, result_response_schema(result_schema))
   end
 
   @doc """
@@ -574,12 +540,10 @@ defmodule Anubis.MCP.Message do
   Returns the encoded string with a newline character appended.
   """
   def encode_error(response, id) do
-    schema = get_schema(:error_schema)
-
     response
     |> Map.put("jsonrpc", "2.0")
     |> Map.put("id", id)
-    |> encode_message(schema)
+    |> encode_message(@error_schema)
   end
 
   defp encode_message(data, schema) do
@@ -638,7 +602,7 @@ defmodule Anubis.MCP.Message do
   """
   @spec progress_params_schema_for(String.t()) :: {:ok, map()} | :error
   def progress_params_schema_for(version) do
-    Anubis.Protocol.Registry.progress_params_schema(version)
+    Registry.progress_params_schema(version)
   end
 
   @doc """

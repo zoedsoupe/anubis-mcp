@@ -200,7 +200,7 @@ defmodule Anubis.Server.Session.Tasks do
       {:ok, %McpTask{} = task} ->
         params = McpTask.to_protocol(task)
 
-        with {:ok, notification} <- ServerRequests.encode_notification("notifications/tasks/status", params) do
+        with {:ok, notification} <- ServerRequests.encode_notification("notifications/tasks/status", params, state) do
           ServerRequests.send_to_transport(state.transport, notification, ServerRequests.transport_opts(state))
         end
 
