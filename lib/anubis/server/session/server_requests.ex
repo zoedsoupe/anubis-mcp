@@ -1,20 +1,10 @@
 defmodule Anubis.Server.Session.ServerRequests do
-  @moduledoc """
-  Engine for server-initiated requests (sampling, roots, elicitation).
+  @moduledoc false
 
-  Owns the lifecycle of requests the server sends to the client: capability
-  validation, encoding, transport send, timeout tracking, and routing the
-  response back to the server module callback. The three subsystems share
-  one generic flow; what varies between them (wire method, client
-  capability, timeout message, result shaping, log events) lives in the
-  per-kind configuration below.
-
-  State is kept in the Session's `server_requests` map; this module
-  transforms it and performs the side effects (timers, transport, logging)
-  at the edges. `Anubis.Server.Session` delegates to this module and
-  supplies a `frame_fn` to prepare the callback frame lazily.
-  """
-
+  # Internal engine for server-initiated requests (sampling, roots,
+  # elicitation). State lives in the Session's server_requests map; this
+  # module transforms it and performs side effects at the edges on behalf
+  # of Anubis.Server.Session.
   use Anubis.Logging
 
   alias Anubis.MCP.ElicitationSchema

@@ -1,21 +1,9 @@
 defmodule Anubis.Server.Session.Scheduler do
-  @moduledoc """
-  Request scheduling engine for a session.
+  @moduledoc false
 
-  Owns the single in-flight request slot, the FIFO request queue, callbacks
-  deferred while a request is in flight, and cancellation of in-flight or
-  queued requests. At most one request executes at a time per session: while
-  one runs, competing requests queue and competing casts/infos are deferred,
-  then drained in order once the in-flight request completes.
-
-  State fields (`in_flight`, `request_queue`, `deferred_callbacks`,
-  `pending_requests`) live in the Session's state map; this module
-  transforms them and performs the side effects (task spawn, monitors,
-  caller replies, logging, telemetry) at the edges. `Anubis.Server.Session`
-  delegates to this module and supplies callbacks to prepare frames and to
-  apply drained deferred items back into its own dispatch paths.
-  """
-
+  # Internal request scheduling engine. State fields live in the Session's
+  # state map; this module transforms them and performs side effects at the
+  # edges on behalf of Anubis.Server.Session.
   use Anubis.Logging
 
   alias Anubis.MCP.Error

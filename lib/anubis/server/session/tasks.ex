@@ -1,19 +1,9 @@
 defmodule Anubis.Server.Session.Tasks do
-  @moduledoc """
-  Tasks runtime for a session (MCP spec 2025-11-25).
+  @moduledoc false
 
-  Owns the lifecycle of task-augmented `tools/call` executions: capability
-  checks, task creation and worker spawn, status transitions, cancellation,
-  TTL expiry, result storage through the configured `Anubis.Server.TaskStore`
-  adapter, and replies to `tasks/result` waiters.
-
-  State fields (`tasks`, `task_refs`, `task_store`) live in the Session's
-  state map; this module transforms them and performs the side effects
-  (worker spawn, monitors, timers, store calls, waiter replies) at the
-  edges. `Anubis.Server.Session` delegates to this module and supplies a
-  `frame_fn` to prepare frames lazily.
-  """
-
+  # Internal tasks runtime (MCP spec 2025-11-25). State fields live in the
+  # Session's state map; this module transforms them and performs side
+  # effects at the edges on behalf of Anubis.Server.Session.
   alias Anubis.MCP.Error
   alias Anubis.MCP.Message
   alias Anubis.Server.Frame
