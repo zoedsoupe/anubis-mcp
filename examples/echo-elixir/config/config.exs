@@ -2,7 +2,7 @@ import Config
 
 config :echo,
   generators: [timestamp_type: :utc_datetime],
-  mcp_transport: :sse
+  mcp_transport: :streamable_http
 
 config :echo, EchoWeb.Endpoint,
   url: [host: "localhost"],

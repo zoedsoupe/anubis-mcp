@@ -16,19 +16,19 @@ defmodule Echo.Application do
       {Phoenix.PubSub, name: Echo.PubSub},
     ]
 
-    transport_type = Application.get_env(:echo, :mcp_transport, :sse)
+    transport_type = Application.get_env(:echo, :mcp_transport, :streamable_http)
 
     case transport_type do
       :stdio ->
         # For STDIO transport, we don't need the web endpoint
         base_children ++ [{EchoMCP.Server, transport: :stdio}]
 
-      :sse ->
-        # For SSE transport, we need the web endpoint
+      :streamable_http ->
+        # For Streamable HTTP transport, we need the web endpoint
         base_children ++
           [
             EchoWeb.Endpoint,
-            {EchoMCP.Server, transport: {:sse, base_url: "/mcp", post_path: "/message"}}
+            {EchoMCP.Server, transport: :streamable_http}
           ]
     end
   end

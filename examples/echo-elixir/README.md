@@ -1,27 +1,26 @@
 # Echo MCP Server
 
-A comprehensive Phoenix-based MCP server that demonstrates Server-Sent Events transport and the full spectrum of MCP capabilities through Anubis.
+A comprehensive Phoenix-based MCP server that demonstrates the Streamable HTTP transport and the full spectrum of MCP capabilities through Anubis.
 
 ## Exploring Real-time MCP Communication
 
-What happens when you combine Phoenix's real-time capabilities with the Model Context Protocol? The Echo server answers this by implementing an SSE-based transport that enables streaming communication between clients and servers. This approach showcases how Anubis adapts to different transport mechanisms while maintaining protocol compliance.
+What happens when you combine Phoenix's real-time capabilities with the Model Context Protocol? The Echo server answers this by implementing the Streamable HTTP transport, which enables streaming communication between clients and servers over a single endpoint. This approach showcases how Anubis adapts to different transport mechanisms while maintaining protocol compliance.
 
 ## Transport Architecture
 
-The server's most distinctive feature is its use of Server-Sent Events (SSE) for MCP communication. Unlike traditional request-response patterns, SSE enables the server to push updates to clients, opening possibilities for progress notifications, streaming responses, and real-time collaboration.
+The server's most distinctive feature is its use of Streamable HTTP for MCP communication. Unlike traditional request-response patterns, the server can push updates to clients over an SSE stream on the same endpoint, opening possibilities for progress notifications, streaming responses, and real-time collaboration.
 
-### SSE Configuration
+### Streamable HTTP Configuration
 
 ```elixir
 # Application configuration
-transport: {:sse, base_url: "/mcp", post_path: "/message"}
+transport: :streamable_http
 
-# Router setup creates two endpoints
-get "/mcp/sse", SSE.Plug, server: EchoMCP.Server      # Event stream
-post "/mcp/message", SSE.Plug, server: EchoMCP.Server  # Message submission
+# Router setup mounts a single endpoint
+forward "/mcp", StreamableHTTP.Plug, server: EchoMCP.Server
 ```
 
-This dual-endpoint pattern separates the persistent event stream from message submissions, allowing for efficient bidirectional communication over HTTP.
+This single-endpoint pattern handles message submission and the optional event stream on the same path, allowing for efficient bidirectional communication over HTTP.
 
 ## Comprehensive MCP Capabilities
 
@@ -89,22 +88,22 @@ This approach, inspired by Phoenix LiveView's socket assigns, provides a familia
 
 ### Running the Server
 
-The Echo server supports two transport modes: SSE (Server-Sent Events) and STDIO.
+The Echo server supports two transport modes: Streamable HTTP and STDIO.
 
-#### SSE Transport (default)
+#### Streamable HTTP Transport (default)
 
 ```bash
 # Install dependencies
 mix setup
 
-# Start Phoenix server with SSE transport
+# Start Phoenix server with Streamable HTTP transport
 mix phx.server
 
 # Or explicitly set transport
-MCP_TRANSPORT=sse mix phx.server
+MCP_TRANSPORT=streamable_http mix phx.server
 ```
 
-The server starts on port 4000, with the SSE endpoint accessible at `http://localhost:4000/mcp/sse`.
+The server starts on port 4000, with the MCP endpoint accessible at `http://localhost:4000/mcp`.
 
 #### STDIO Transport
 
@@ -124,7 +123,7 @@ In STDIO mode, the server communicates via standard input/output, making it comp
 
 As you explore this implementation, consider these enhancement possibilities:
 
-- How would you add authentication to the SSE stream?
+- How would you add authentication to the event stream?
 - What patterns would you use for broadcasting updates to multiple connected clients?
 - How might you implement request queuing for rate-limited operations?
 

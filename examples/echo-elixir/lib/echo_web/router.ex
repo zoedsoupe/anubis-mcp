@@ -1,16 +1,15 @@
 defmodule EchoWeb.Router do
   use EchoWeb, :router
 
-  alias Anubis.Server.Transport.SSE
+  alias Anubis.Server.Transport.StreamableHTTP
 
-  pipeline :sse do
+  pipeline :mcp do
     plug :accepts, ["json", "event-stream"]
   end
 
-  scope "/mcp" do
-    pipe_through :sse
+  scope "/" do
+    pipe_through :mcp
 
-    get "/sse", SSE.Plug, server: EchoMCP.Server, mode: :sse
-    post "/message", SSE.Plug, server: EchoMCP.Server, mode: :post
+    forward "/mcp", StreamableHTTP.Plug, server: EchoMCP.Server
   end
 end

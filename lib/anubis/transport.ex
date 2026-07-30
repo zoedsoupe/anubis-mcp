@@ -14,7 +14,6 @@ defmodule Anubis.Transport do
 
   - `Anubis.Transport.STDIO` — newline-delimited JSON over stdin/stdout (client)
   - `Anubis.Transport.StreamableHTTP` — JSON over HTTP request/response bodies (client)
-  - `Anubis.Transport.SSE` — JSON wrapped in SSE event format (client)
 
   ## Example
 

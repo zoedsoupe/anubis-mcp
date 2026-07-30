@@ -1,6 +1,6 @@
 # Transports
 
-MCP separates what a server offers from how the bytes move. Anubis ships two transports you will actually deploy, STDIO and Streamable HTTP, plus two legacy ones kept for compatibility. This guide covers each from both the server and the client side.
+MCP separates what a server offers from how the bytes move. Anubis ships two transports you will actually deploy, STDIO and Streamable HTTP, plus a client-side WebSocket transport kept for compatibility. This guide covers each from both the server and the client side.
 
 ## Choosing a transport
 
@@ -8,7 +8,7 @@ MCP separates what a server offers from how the bytes move. Anubis ships two tra
 
 **Streamable HTTP** exposes the server as an HTTP endpoint. Requests arrive as POSTs and the server can push notifications over an SSE stream on the same path. Pick it whenever clients connect over the network, when multiple clients share one server, or when the server lives inside an existing web application. This is the transport the current MCP specification recommends for remote servers.
 
-**WebSocket** (client only) and **HTTP+SSE** (the pre-2025 two-endpoint scheme) remain for talking to older servers. Do not build anything new on them.
+**WebSocket** (client only) remains for talking to servers that offer it. Do not build anything new on it.
 
 ## STDIO
 
@@ -126,9 +126,11 @@ transport: {:streamable_http,
   headers: %{"authorization" => "Bearer #{token}"}}
 ```
 
-## Legacy transports
+## WebSocket
 
-The HTTP+SSE transport from protocol version 2024-11-05 used one endpoint for the event stream and another for posting messages. Anubis still speaks it on both sides: clients via `transport: {:sse, base_url: ...}`, servers via `Anubis.Server.Transport.SSE.Plug`. The WebSocket client transport, `transport: {:websocket, base_url: ...}`, connects to servers that offer it. Both exist so you can talk to deployments that have not migrated; prefer Streamable HTTP everywhere you control.
+The WebSocket client transport, `transport: {:websocket, base_url: ...}`, connects to servers that offer it. It exists so you can talk to deployments that have not migrated; prefer Streamable HTTP everywhere you control.
+
+The HTTP+SSE transport from protocol version 2024-11-05 was removed in Anubis 2.0, together with support for that spec version. Use Streamable HTTP instead.
 
 ## Next steps
 

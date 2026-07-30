@@ -5,8 +5,8 @@ if Code.ensure_loaded?(Plug) do
     at `/.well-known/oauth-protected-resource`.
 
     Mount this plug at the root of your MCP server so the discovery endpoint is
-    reachable even when the SSE or Streamable HTTP plugs are mounted under
-    sub-paths such as `/sse` or `/mcp`.
+    reachable even when the Streamable HTTP plug is mounted under a sub-path
+    such as `/mcp`.
 
     ## Usage
 
@@ -16,8 +16,8 @@ if Code.ensure_loaded?(Plug) do
           to: Anubis.Server.Transport.WellKnown,
           init_opts: [server: MyApp.MCPServer]
 
-        forward "/sse", to: Anubis.Server.Transport.SSE.Plug,
-          init_opts: [server: MyApp.MCPServer, mode: :sse]
+        forward "/mcp", to: Anubis.Server.Transport.StreamableHTTP.Plug,
+          init_opts: [server: MyApp.MCPServer]
 
     Within Phoenix:
 

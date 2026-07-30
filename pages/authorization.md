@@ -1,6 +1,6 @@
 # Authorization
 
-Anubis supports OAuth 2.1 bearer token authorization for HTTP-based transports (`:streamable_http` and `:sse`). STDIO transport is exempt per the MCP specification.
+Anubis supports OAuth 2.1 bearer token authorization for HTTP-based transports (`:streamable_http`). STDIO transport is exempt per the MCP specification.
 
 ## Quick Start
 
@@ -134,7 +134,7 @@ Response:
 }
 ```
 
-The SSE and Streamable HTTP plugs handle this path inline when they are mounted at the root of the host. If you mount the MCP plug under a sub-path (e.g. `/sse`, `/mcp`), requests to `/.well-known/oauth-protected-resource` never reach the plug. In that case mount `Anubis.Server.Transport.WellKnown` as a sibling route:
+The Streamable HTTP plug handles this path inline when it is mounted at the root of the host. If you mount the MCP plug under a sub-path (e.g. `/mcp`), requests to `/.well-known/oauth-protected-resource` never reach the plug. In that case mount `Anubis.Server.Transport.WellKnown` as a sibling route:
 
 ```elixir
 # Plug.Router
@@ -142,8 +142,8 @@ forward "/.well-known/oauth-protected-resource",
   to: Anubis.Server.Transport.WellKnown,
   init_opts: [server: MyApp.MCPServer]
 
-forward "/sse", to: Anubis.Server.Transport.SSE.Plug,
-  init_opts: [server: MyApp.MCPServer, mode: :sse]
+forward "/mcp", to: Anubis.Server.Transport.StreamableHTTP.Plug,
+  init_opts: [server: MyApp.MCPServer]
 ```
 
 ```elixir

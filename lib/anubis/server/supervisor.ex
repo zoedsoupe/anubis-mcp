@@ -8,17 +8,15 @@ defmodule Anubis.Server.Supervisor do
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.TaskStore
-  alias Anubis.Server.Transport.SSE
   alias Anubis.Server.Transport.STDIO
   alias Anubis.Server.Transport.StreamableHTTP
   alias Anubis.Server.Transport.StreamableHTTP.EventStore
 
   @default_event_store Anubis.Server.Transport.StreamableHTTP.EventStore.InMemory
 
-  @type sse :: {:sse, keyword()}
   @type stream_http :: {:streamable_http, keyword()}
 
-  @type transport :: :stdio | stream_http | sse | StubTransport
+  @type transport :: :stdio | stream_http | StubTransport
 
   @type start_option ::
           {:transport, transport}
@@ -415,9 +413,8 @@ defmodule Anubis.Server.Supervisor do
   end
 
   defp normalize_transport(t) when t in [:stdio, StubTransport], do: t
-  defp normalize_transport(t) when t in ~w(sse streamable_http)a, do: {t, []}
-
-  defp normalize_transport({t, opts}) when t in ~w(sse streamable_http)a, do: {t, opts}
+  defp normalize_transport(:streamable_http), do: {:streamable_http, []}
+  defp normalize_transport({:streamable_http, opts}), do: {:streamable_http, opts}
 
   if Mix.env() == :test do
     defp parse_transport_child(StubTransport = kind, server) do
@@ -439,27 +436,13 @@ defmodule Anubis.Server.Supervisor do
     {StreamableHTTP, opts}
   end
 
-  defp parse_transport_child({:sse, opts}, server) do
-    Logging.log(
-      :warning,
-      "The :sse transport option is deprecated as of MCP specification 2025-03-26. " <>
-        "Please use {:streamable_http, opts} instead. " <>
-        "The SSE transport is maintained only for backward compatibility with MCP protocol version 2024-11-05.",
-      []
-    )
-
-    name = Registry.transport_name(server, :sse)
-    opts = Keyword.merge(opts, name: name, server: server)
-    {SSE, opts}
-  end
-
   if Mix.env() == :test do
     defp should_start?(StubTransport), do: true
   end
 
   defp should_start?(:stdio), do: true
 
-  defp should_start?({transport, opts}) when transport in ~w(sse streamable_http)a do
+  defp should_start?({:streamable_http, opts}) do
     start? = Keyword.get(opts, :start)
     if is_nil(start?), do: http_server_running?(), else: start?
   end
