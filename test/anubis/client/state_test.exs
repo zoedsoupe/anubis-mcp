@@ -11,7 +11,7 @@ defmodule Anubis.Client.StateTest do
       opts = %{
         client_info: %{"name" => "TestClient", "version" => "1.0.0"},
         capabilities: %{"resources" => %{}},
-        protocol_version: "2024-11-05",
+        protocol_version: "2025-03-26",
         transport: %{layer: :fake_transport, name: :fake_name},
         timeout: 30_000
       }
@@ -20,7 +20,7 @@ defmodule Anubis.Client.StateTest do
 
       assert state.client_info == %{"name" => "TestClient", "version" => "1.0.0"}
       assert state.capabilities == %{"resources" => %{}}
-      assert state.protocol_version == "2024-11-05"
+      assert state.protocol_version == "2025-03-26"
       assert state.transport == %{layer: :fake_transport, name: :fake_name}
       assert state.timeout == 30_000
       assert state.pending_requests == %{}
@@ -332,7 +332,7 @@ defmodule Anubis.Client.StateTest do
     %State{
       client_info: %{"name" => "TestClient", "version" => "1.0.0"},
       capabilities: %{},
-      protocol_version: "2024-11-05",
+      protocol_version: "2025-03-26",
       transport: %{layer: :fake_transport, name: :fake_name},
       timeout: 30_000
     }

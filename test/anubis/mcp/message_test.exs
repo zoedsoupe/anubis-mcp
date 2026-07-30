@@ -2,7 +2,6 @@ defmodule Anubis.MCP.MessageTest do
   use ExUnit.Case, async: true
 
   alias Anubis.MCP.Message
-  alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
   alias Anubis.Protocol.V2025_11_25
@@ -58,9 +57,6 @@ defmodule Anubis.MCP.MessageTest do
 
       assert {:ok, validated} = Message.validate_message(progress, V2025_03_26)
       assert validated["params"]["message"] == "working"
-
-      assert {:ok, validated} = Message.validate_message(progress, V2024_11_05)
-      refute Map.has_key?(validated["params"], "message")
     end
 
     test "request_schema/1 and notification_schema/1 reflect the version" do
@@ -106,7 +102,6 @@ defmodule Anubis.MCP.MessageTest do
         }
       }
 
-      assert {:error, _} = Message.encode_sampling_response(response, 1, V2024_11_05)
       assert {:ok, _} = Message.encode_sampling_response(response, 1, V2025_03_26)
       assert {:ok, _} = Message.encode_sampling_response(response, 1)
     end

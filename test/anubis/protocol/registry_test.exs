@@ -2,14 +2,12 @@ defmodule Anubis.Protocol.RegistryTest do
   use ExUnit.Case, async: true
 
   alias Anubis.Protocol.Registry
-  alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
   alias Anubis.Protocol.V2025_11_25
 
   describe "get/1" do
     test "returns module for known version" do
-      assert {:ok, V2024_11_05} = Registry.get("2024-11-05")
       assert {:ok, V2025_03_26} = Registry.get("2025-03-26")
       assert {:ok, V2025_06_18} = Registry.get("2025-06-18")
       assert {:ok, V2025_11_25} = Registry.get("2025-11-25")
@@ -19,17 +17,21 @@ defmodule Anubis.Protocol.RegistryTest do
       assert :error = Registry.get("9999-01-01")
       assert :error = Registry.get("")
     end
+
+    test "returns :error for dropped versions" do
+      assert :error = Registry.get("2024-11-05")
+    end
   end
 
   describe "supported_versions/0" do
     test "returns all versions newest first" do
       versions = Registry.supported_versions()
       assert is_list(versions)
-      assert length(versions) == 4
+      assert length(versions) == 3
       assert hd(versions) == "2025-11-25"
       assert "2025-06-18" in versions
       assert "2025-03-26" in versions
-      assert "2024-11-05" in versions
+      refute "2024-11-05" in versions
     end
   end
 
@@ -53,7 +55,6 @@ defmodule Anubis.Protocol.RegistryTest do
 
   describe "supported?/1" do
     test "returns true for supported versions" do
-      assert Registry.supported?("2024-11-05")
       assert Registry.supported?("2025-03-26")
       assert Registry.supported?("2025-06-18")
       assert Registry.supported?("2025-11-25")
@@ -63,6 +64,10 @@ defmodule Anubis.Protocol.RegistryTest do
       refute Registry.supported?("9999-01-01")
       refute Registry.supported?("")
     end
+
+    test "returns false for dropped versions" do
+      refute Registry.supported?("2024-11-05")
+    end
   end
 
   describe "negotiate/1" do
@@ -70,13 +75,16 @@ defmodule Anubis.Protocol.RegistryTest do
       assert {:ok, "2025-11-25", V2025_11_25} = Registry.negotiate("2025-11-25")
       assert {:ok, "2025-06-18", V2025_06_18} = Registry.negotiate("2025-06-18")
       assert {:ok, "2025-03-26", V2025_03_26} = Registry.negotiate("2025-03-26")
-      assert {:ok, "2024-11-05", V2024_11_05} = Registry.negotiate("2024-11-05")
     end
 
     test "returns error for unsupported client version" do
       assert {:error, :unsupported_version, versions} = Registry.negotiate("9999-01-01")
       assert is_list(versions)
-      assert length(versions) == 4
+      assert length(versions) == 3
+    end
+
+    test "returns error for dropped client version" do
+      assert {:error, :unsupported_version, _} = Registry.negotiate("2024-11-05")
     end
   end
 
@@ -99,7 +107,7 @@ defmodule Anubis.Protocol.RegistryTest do
 
   describe "get_features/1" do
     test "returns features for known version" do
-      assert {:ok, features} = Registry.get_features("2024-11-05")
+      assert {:ok, features} = Registry.get_features("2025-03-26")
       assert :basic_messaging in features
       assert :tools in features
       assert :resources in features
@@ -112,33 +120,28 @@ defmodule Anubis.Protocol.RegistryTest do
 
   describe "supports_feature?/2" do
     test "returns true for supported features" do
-      assert Registry.supports_feature?("2024-11-05", :tools)
+      assert Registry.supports_feature?("2025-03-26", :tools)
       assert Registry.supports_feature?("2025-03-26", :authorization)
       assert Registry.supports_feature?("2025-06-18", :elicitation)
     end
 
     test "returns false for unsupported features" do
-      refute Registry.supports_feature?("2024-11-05", :authorization)
-      refute Registry.supports_feature?("2024-11-05", :elicitation)
       refute Registry.supports_feature?("2025-03-26", :elicitation)
+      refute Registry.supports_feature?("2025-06-18", :tasks)
     end
 
     test "returns false for unknown version" do
       refute Registry.supports_feature?("9999-01-01", :tools)
+      refute Registry.supports_feature?("2024-11-05", :tools)
     end
   end
 
   describe "progress_params_schema/1" do
-    test "2024-11-05 does not include message field" do
-      assert {:ok, schema} = Registry.progress_params_schema("2024-11-05")
+    test "2025-03-26 includes message field" do
+      assert {:ok, schema} = Registry.progress_params_schema("2025-03-26")
       assert is_map(schema)
       assert Map.has_key?(schema, "progressToken")
       assert Map.has_key?(schema, "progress")
-      refute Map.has_key?(schema, "message")
-    end
-
-    test "2025-03-26 includes message field" do
-      assert {:ok, schema} = Registry.progress_params_schema("2025-03-26")
       assert Map.has_key?(schema, "message")
     end
 
@@ -149,6 +152,7 @@ defmodule Anubis.Protocol.RegistryTest do
 
     test "returns :error for unknown version" do
       assert :error = Registry.progress_params_schema("9999-01-01")
+      assert :error = Registry.progress_params_schema("2024-11-05")
     end
   end
 end

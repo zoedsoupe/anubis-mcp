@@ -37,7 +37,7 @@ defmodule Anubis.Client.Supervisor do
         transport: {:stdio, command: "mcp", args: ["server"]},
         client_info: %{"name" => "MyApp", "version" => "1.0.0"},
         capabilities: %{"roots" => %{}},
-        protocol_version: "2024-11-05"
+        protocol_version: "2025-06-18"
       )
 
       # With custom names (e.g., for distributed systems)
@@ -47,7 +47,7 @@ defmodule Anubis.Client.Supervisor do
         transport: {:stdio, command: "mcp", args: ["server"]},
         client_info: %{"name" => "MyApp", "version" => "1.0.0"},
         capabilities: %{"roots" => %{}},
-        protocol_version: "2024-11-05"
+        protocol_version: "2025-06-18"
       )
   """
   @spec start_link(keyword()) :: Supervisor.on_start()

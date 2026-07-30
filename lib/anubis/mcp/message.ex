@@ -11,15 +11,13 @@ defmodule Anubis.MCP.Message do
   """
 
   alias Anubis.Protocol.Registry
-  alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
 
   @log_levels ~w(debug info notice warning error critical alert emergency)
 
-  # Progress notification schemas exposed for the encode helpers, single-sourced
-  # from the protocol version modules.
-  @progress_notif_params_schema V2024_11_05.progress_params_schema()
-  @progress_notif_params_schema_2025 V2025_03_26.progress_params_schema()
+  # Progress notification schema exposed for the encode helpers, single-sourced
+  # from the floor protocol version module.
+  @progress_notif_params_schema V2025_03_26.progress_params_schema()
 
   # Response and error envelopes are version-independent; request and
   # notification envelopes come from the protocol version modules.
@@ -421,7 +419,7 @@ defmodule Anubis.MCP.Message do
       * `"progressToken"` - The token that was provided in the original request (string or integer)
       * `"progress"` - The current progress value (number)
       * `"total"` - Optional total value for the operation (number)
-      * `"message"` - Optional descriptive message (string, for 2025-03-26)
+      * `"message"` - Optional descriptive message (string)
     * `params_schema` - Optional Peri schema for params validation (defaults to @progress_notif_params_schema)
 
   Returns the encoded string with a newline character appended.
@@ -578,12 +576,8 @@ defmodule Anubis.MCP.Message do
   defp maybe_add_logger(params, logger) when is_binary(logger), do: Map.put(params, "logger", logger)
 
   @doc """
-  Returns the progress notification parameters schema for 2025-03-26 (with message field).
-  """
-  def progress_params_schema_2025, do: @progress_notif_params_schema_2025
-
-  @doc """
-  Returns the standard progress notification parameters schema for 2024-11-05.
+  Returns the progress notification parameters schema for the floor protocol
+  version (2025-03-26, with the `message` field).
   """
   def progress_params_schema, do: @progress_notif_params_schema
 
@@ -594,11 +588,11 @@ defmodule Anubis.MCP.Message do
 
   ## Examples
 
-      iex> Message.progress_params_schema_for("2024-11-05")
-      %{"progressToken" => {:required, {:either, {:string, :integer}}}, ...}
-
       iex> Message.progress_params_schema_for("2025-03-26")
-      %{"progressToken" => ..., "message" => :string}
+      {:ok, %{"progressToken" => {:required, {:either, {:string, :integer}}}, ...}}
+
+      iex> Message.progress_params_schema_for("2024-11-05")
+      :error
   """
   @spec progress_params_schema_for(String.t()) :: {:ok, map()} | :error
   def progress_params_schema_for(version) do

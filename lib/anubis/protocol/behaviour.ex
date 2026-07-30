@@ -2,7 +2,7 @@ defmodule Anubis.Protocol.Behaviour do
   @moduledoc """
   Dialect contract that each MCP protocol version module must implement.
 
-  Each protocol version (e.g., 2024-11-05, 2025-03-26, 2025-06-18) implements
+  Each protocol version (e.g., 2025-03-26, 2025-06-18, 2025-11-25) implements
   this behaviour to isolate version-specific logic. A version module owns
   everything about its version: params and result schemas, full message
   schemas, capability shaping, feature flags, transport rules, and the era
@@ -20,8 +20,7 @@ defmodule Anubis.Protocol.Behaviour do
 
   ## Version differences
 
-  - **2024-11-05**: Initial spec, SSE transport, basic tools/resources/prompts
-  - **2025-03-26**: Added Streamable HTTP, JSON-RPC batching, authorization framework, tool annotations
+  - **2025-03-26**: Streamable HTTP, JSON-RPC batching, authorization framework, tool annotations (support floor)
   - **2025-06-18**: Removed batching, added structured tool output, elicitation, resource_link type
   - **2025-11-25**: Added tasks (`tasks/get`, `tasks/result`, `tasks/list`, `tasks/cancel`)
   """

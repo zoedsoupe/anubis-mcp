@@ -61,7 +61,7 @@ The server uses the MCP session ID header for session management:
 # Initialize connection (will return a session ID in the response headers)
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}},"id":1}'
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}},"id":1}'
 
 # Use the returned session ID for subsequent requests
 SESSION_ID="<session-id-from-response>"

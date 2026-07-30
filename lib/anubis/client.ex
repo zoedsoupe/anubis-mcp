@@ -210,7 +210,7 @@ defmodule Anubis.Client do
   - `:transport` - The MCP transport options
   - `:client_info` - Information about the client
   - `:capabilities` - Client capabilities to advertise to the MCP server
-  - `:protocol_version` - Protocol version to use (defaults to "2024-11-05")
+  - `:protocol_version` - Protocol version to use (defaults to the latest supported version)
 
   Any other option support by `GenServer`.
   """

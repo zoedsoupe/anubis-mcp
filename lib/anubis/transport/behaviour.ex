@@ -21,7 +21,7 @@ defmodule Anubis.Transport.Behaviour do
   ## Examples
 
       iex> MyTransport.supported_protocol_versions()
-      ["2024-11-05", "2025-03-26"]
+      ["2025-03-26", "2025-06-18"]
   """
   @callback supported_protocol_versions() :: [String.t()] | :all
 end

@@ -1,12 +1,11 @@
 defmodule Anubis.Protocol.DialectTest do
   use ExUnit.Case, async: true
 
-  alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
   alias Anubis.Protocol.V2025_11_25
 
-  @versions [V2024_11_05, V2025_03_26, V2025_06_18, V2025_11_25]
+  @versions [V2025_03_26, V2025_06_18, V2025_11_25]
 
   describe "era/0" do
     test "all current versions belong to the legacy era" do
@@ -24,7 +23,6 @@ defmodule Anubis.Protocol.DialectTest do
     end
 
     test "reports version-specific features" do
-      refute V2024_11_05.supports_feature?(:elicitation)
       refute V2025_03_26.supports_feature?(:elicitation)
       assert V2025_06_18.supports_feature?(:elicitation)
       refute V2025_06_18.supports_feature?(:tasks)
@@ -33,8 +31,7 @@ defmodule Anubis.Protocol.DialectTest do
   end
 
   describe "transport_rules/0" do
-    test "early versions allow batching and do not require the version header" do
-      assert %{batching: true, protocol_version_header: false} = V2024_11_05.transport_rules()
+    test "the floor version allows batching and does not require the version header" do
       assert %{batching: true, protocol_version_header: false} = V2025_03_26.transport_rules()
     end
 
@@ -48,7 +45,7 @@ defmodule Anubis.Protocol.DialectTest do
     @declared %{"tools" => %{}, "resources" => %{}, "tasks" => %{"list" => true}}
 
     test "older versions drop capabilities introduced later" do
-      assert V2024_11_05.server_capabilities(@declared) == %{"tools" => %{}, "resources" => %{}}
+      assert V2025_03_26.server_capabilities(@declared) == %{"tools" => %{}, "resources" => %{}}
       assert V2025_06_18.server_capabilities(@declared) == %{"tools" => %{}, "resources" => %{}}
     end
 
@@ -65,32 +62,21 @@ defmodule Anubis.Protocol.DialectTest do
       end
     end
 
-    test "sampling result in 2024-11-05 accepts text and image content only" do
-      schema = V2024_11_05.request_result_schema("sampling/createMessage")
-
-      assert {:ok, _} =
-               Peri.validate(schema, %{
-                 "role" => "assistant",
-                 "content" => %{"type" => "text", "text" => "hi"},
-                 "model" => "m"
-               })
-
-      assert {:error, _} =
-               Peri.validate(schema, %{
-                 "role" => "assistant",
-                 "content" => %{"type" => "audio", "data" => "AA==", "mimeType" => "audio/mp3"},
-                 "model" => "m"
-               })
-    end
-
-    test "sampling result from 2025-03-26 on accepts audio content" do
-      for mod <- [V2025_03_26, V2025_06_18, V2025_11_25] do
+    test "sampling result accepts audio content from the floor version on" do
+      for mod <- @versions do
         schema = mod.request_result_schema("sampling/createMessage")
 
         assert {:ok, _} =
                  Peri.validate(schema, %{
                    "role" => "assistant",
                    "content" => %{"type" => "audio", "data" => "AA==", "mimeType" => "audio/mp3"},
+                   "model" => "m"
+                 })
+
+        assert {:ok, _} =
+                 Peri.validate(schema, %{
+                   "role" => "assistant",
+                   "content" => %{"type" => "text", "text" => "hi"},
                    "model" => "m"
                  })
       end
@@ -157,14 +143,13 @@ defmodule Anubis.Protocol.DialectTest do
       assert {:ok, _} = Peri.validate(V2025_06_18.request_message_schema(), message)
     end
 
-    test "progress notification message field exists from 2025-03-26 on" do
+    test "progress notification carries the message field" do
       params = %{"progressToken" => "t", "progress" => 1, "message" => "working"}
 
-      assert {:ok, validated} = Peri.validate(V2025_03_26.notification_message_schema(), envelope(params))
-      assert validated["params"]["message"] == "working"
-
-      assert {:ok, validated} = Peri.validate(V2024_11_05.notification_message_schema(), envelope(params))
-      refute Map.has_key?(validated["params"], "message")
+      for mod <- @versions do
+        assert {:ok, validated} = Peri.validate(mod.notification_message_schema(), envelope(params))
+        assert validated["params"]["message"] == "working"
+      end
     end
 
     test "requests carry the progress _meta slot" do
@@ -175,7 +160,7 @@ defmodule Anubis.Protocol.DialectTest do
         "params" => %{"_meta" => %{"progressToken" => "tok"}}
       }
 
-      assert {:ok, validated} = Peri.validate(V2024_11_05.request_message_schema(), message)
+      assert {:ok, validated} = Peri.validate(V2025_03_26.request_message_schema(), message)
       assert validated["params"]["_meta"] == %{"progressToken" => "tok"}
     end
 
@@ -185,14 +170,14 @@ defmodule Anubis.Protocol.DialectTest do
         "method" => "initialize",
         "id" => 1,
         "params" => %{
-          "protocolVersion" => "2024-11-05",
+          "protocolVersion" => "2025-03-26",
           "capabilities" => %{},
           "_meta" => %{"appId" => "acme"},
           "clientInfo" => %{"name" => "c", "version" => "1"}
         }
       }
 
-      assert {:ok, validated} = Peri.validate(V2024_11_05.request_message_schema(), message)
+      assert {:ok, validated} = Peri.validate(V2025_03_26.request_message_schema(), message)
       assert validated["params"]["_meta"] == %{"appId" => "acme"}
     end
   end

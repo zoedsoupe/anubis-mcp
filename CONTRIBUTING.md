@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to Anubis MCP! This document provides guidelines and instructions for contributing to the project.
 
-Firstly, have sure to follow the official MCP (Model Context Protocol) [specification](https://spec.modelcontextprotocol.io/specification/2024-11-05/)!
+Firstly, have sure to follow the official MCP (Model Context Protocol) [specification](https://spec.modelcontextprotocol.io/specification/2025-06-18/)!
 
 ## Development Setup
 
