@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.14.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.13.0...v1.14.0) (2026-07-30)
+
+
+### Features
+
+* **mcp:** route message encode and validation through the negotiated protocol module ([c327da7](https://github.com/zoedsoupe/anubis-mcp/commit/c327da78bbbf659e04fd23577b94c9f748c0542d))
+* **protocol:** widen behaviour into full dialect contract ([fcefb88](https://github.com/zoedsoupe/anubis-mcp/commit/fcefb88bea304c5e077704bbef71358d8477b4d2))
+* **transport:** formalize transport-session contract as public behaviour ([784452d](https://github.com/zoedsoupe/anubis-mcp/commit/784452d49ce6dfe19e3858d79bdfcf96c9b8183b))
+
+
+### Bug Fixes
+
+* **server:** route SSE notifications across nodes via pg ([cfb8635](https://github.com/zoedsoupe/anubis-mcp/commit/cfb8635286626d0b927c0bdfcc1e4db8f2f03440))
+
 ## [1.13.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.12.0...v1.13.0) (2026-07-29)
 
 
