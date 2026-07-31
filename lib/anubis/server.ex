@@ -107,7 +107,7 @@ defmodule Anubis.Server do
   alias Anubis.Server.Response
 
   @server_capabilities ~w(prompts tools resources logging completion)a
-  @protocol_versions Anubis.Protocol.Registry.supported_versions()
+  @protocol_versions Anubis.Protocol.Registry.legacy_versions()
 
   @type request :: map()
   @type response :: map()

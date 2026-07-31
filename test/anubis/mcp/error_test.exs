@@ -47,6 +47,36 @@ defmodule Anubis.MCP.ErrorTest do
       assert error.reason == :internal_error
       assert error.message == "Internal error"
     end
+
+    test "protocol/2 creates header mismatch error" do
+      error = Error.protocol(:header_mismatch, %{header: "Mcp-Name"})
+      assert error.code == -32_020
+      assert error.reason == :header_mismatch
+      assert error.message == "Header mismatch"
+      assert error.data.header == "Mcp-Name"
+    end
+
+    test "protocol/2 creates missing required client capability error" do
+      error = Error.protocol(:missing_required_client_capability, %{requiredCapabilities: ["elicitation"]})
+      assert error.code == -32_021
+      assert error.reason == :missing_required_client_capability
+      assert error.message == "Missing required client capability"
+      assert error.data.requiredCapabilities == ["elicitation"]
+    end
+
+    test "protocol/2 creates unsupported protocol version error" do
+      error = Error.protocol(:unsupported_protocol_version, %{supported: ["2026-07-28"], requested: "1900-01-01"})
+      assert error.code == -32_022
+      assert error.reason == :unsupported_protocol_version
+      assert error.message == "Unsupported protocol version"
+      assert error.data.requested == "1900-01-01"
+    end
+
+    test "the codes reserved for the specification stay out of the legacy sub-range" do
+      for reason <- [:header_mismatch, :missing_required_client_capability, :unsupported_protocol_version] do
+        assert Error.protocol(reason).code in -32_099..-32_020
+      end
+    end
   end
 
   describe "wrap_reason/1" do
@@ -124,6 +154,21 @@ defmodule Anubis.MCP.ErrorTest do
 
       assert error.code == -32_002
       assert error.reason == :resource_not_found
+    end
+
+    test "from_json_rpc/1 round-trips the specification-reserved codes" do
+      reasons = %{
+        -32_020 => :header_mismatch,
+        -32_021 => :missing_required_client_capability,
+        -32_022 => :unsupported_protocol_version
+      }
+
+      for {code, reason} <- reasons do
+        error = Error.from_json_rpc(%{"code" => code, "message" => "boom"})
+
+        assert error.code == code
+        assert error.reason == reason
+      end
     end
 
     test "from_json_rpc/1 includes data if present" do

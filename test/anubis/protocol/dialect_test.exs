@@ -1,17 +1,30 @@
 defmodule Anubis.Protocol.DialectTest do
   use ExUnit.Case, async: true
 
+  alias Anubis.Protocol.Registry
   alias Anubis.Protocol.V2024_11_05
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
   alias Anubis.Protocol.V2025_11_25
+  alias Anubis.Protocol.V2026_07_28
 
   @versions [V2024_11_05, V2025_03_26, V2025_06_18, V2025_11_25]
 
   describe "era/0" do
-    test "all current versions belong to the legacy era" do
+    test "the handshake versions belong to the legacy era" do
       for mod <- @versions do
         assert mod.era() == :legacy
+      end
+    end
+
+    test "2026-07-28 opens the stateless era" do
+      assert V2026_07_28.era() == :stateless
+    end
+
+    test "every registered version reports an era the registry groups it under" do
+      for version <- Registry.supported_versions() do
+        {:ok, mod} = Registry.get(version)
+        assert version in Registry.versions_for_era(mod.era())
       end
     end
   end

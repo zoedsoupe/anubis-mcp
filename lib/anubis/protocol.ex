@@ -17,6 +17,7 @@ defmodule Anubis.Protocol do
 
   @type version :: String.t()
   @type feature :: atom()
+  @type era :: Anubis.Protocol.Behaviour.era()
 
   @doc """
   Returns all supported protocol versions.
@@ -25,10 +26,29 @@ defmodule Anubis.Protocol do
   defdelegate supported_versions(), to: Registry
 
   @doc """
-  Returns the latest supported protocol version.
+  Returns the supported protocol versions belonging to an era.
+  """
+  @spec supported_versions(era()) :: [version()]
+  defdelegate supported_versions(era), to: Registry, as: :versions_for_era
+
+  @doc """
+  Returns the era a protocol version belongs to.
+  """
+  @spec era(version()) :: {:ok, era()} | :error
+  defdelegate era(version), to: Registry
+
+  @doc """
+  Returns the latest protocol version reachable through the `initialize`
+  handshake.
   """
   @spec latest_version() :: version()
   defdelegate latest_version(), to: Registry
+
+  @doc """
+  Returns the latest supported protocol version of an era.
+  """
+  @spec latest_version(era()) :: version() | nil
+  defdelegate latest_version(era), to: Registry
 
   @doc """
   Returns the fallback protocol version for compatibility.
