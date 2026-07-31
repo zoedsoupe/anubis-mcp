@@ -153,6 +153,8 @@ defmodule Anubis.Protocol.V2026_07_28 do
     V2025_06_18.request_params_schema("completion/complete")
   end
 
+  def request_params_schema(method) when method in @request_methods, do: %{}
+
   def request_params_schema(_method), do: :map
 
   @impl true
@@ -167,11 +169,11 @@ defmodule Anubis.Protocol.V2026_07_28 do
   end
 
   def notification_params_schema("notifications/subscriptions/acknowledged") do
-    %{"_meta" => {:required, :map}, "notifications" => @subscription_filter}
+    Map.put(Schema.subscription_meta(), "notifications", @subscription_filter)
   end
 
   def notification_params_schema("notifications/resources/updated") do
-    %{"_meta" => {:required, :map}, "uri" => {:required, :string}}
+    Map.put(Schema.subscription_meta(), "uri", {:required, :string})
   end
 
   def notification_params_schema(method) when method in ~w(
@@ -179,7 +181,7 @@ defmodule Anubis.Protocol.V2026_07_28 do
         notifications/prompts/list_changed
         notifications/resources/list_changed
       ) do
-    %{"_meta" => {:required, :map}}
+    Schema.subscription_meta()
   end
 
   def notification_params_schema(_method), do: :map

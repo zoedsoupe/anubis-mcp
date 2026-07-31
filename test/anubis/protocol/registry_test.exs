@@ -68,9 +68,10 @@ defmodule Anubis.Protocol.RegistryTest do
   end
 
   describe "latest_version/0" do
-    test "returns the latest handshake-negotiable version, not the newest overall" do
+    test "returns the latest handshake-negotiable version" do
       assert "2025-11-25" = Registry.latest_version()
-      refute Registry.latest_version() == hd(Registry.supported_versions())
+      assert Registry.latest_version() == Registry.latest_version(:legacy)
+      assert {:ok, :legacy} = Registry.era(Registry.latest_version())
     end
   end
 
@@ -135,6 +136,16 @@ defmodule Anubis.Protocol.RegistryTest do
     test "falls back to server latest when client version not in server list" do
       assert {:ok, "2025-06-18", V2025_06_18} =
                Registry.negotiate("2024-11-05", ["2025-06-18", "2025-03-26"])
+    end
+
+    test "falls back to the newest server version regardless of list order" do
+      for server_versions <- [
+            ["2024-11-05", "2025-11-25"],
+            ["2025-11-25", "2024-11-05"],
+            ["2025-03-26", "2025-11-25", "2024-11-05"]
+          ] do
+        assert {:ok, "2025-11-25", V2025_11_25} = Registry.negotiate("9999-01-01", server_versions)
+      end
     end
 
     test "returns client version when it matches server's only version" do

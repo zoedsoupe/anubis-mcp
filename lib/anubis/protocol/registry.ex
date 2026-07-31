@@ -44,7 +44,7 @@ defmodule Anubis.Protocol.Registry do
                    |> Enum.group_by(fn {_version, mod} -> mod.era() end, fn {version, _mod} -> version end)
                    |> Map.new(fn {era, versions} -> {era, Enum.sort(versions, :desc)} end)
 
-  @latest_version "2025-11-25"
+  @latest_version hd(@versions_by_era[:legacy])
   @fallback_version "2025-03-26"
 
   @type version :: String.t()
@@ -194,8 +194,9 @@ defmodule Anubis.Protocol.Registry do
   Negotiate version between client and server supported version lists.
 
   Used when the server has a restricted set of supported versions.
-  Returns the best matching version (client's preference if in server list,
-  otherwise the server's first legacy version).
+  Returns the client's preference when the server offers it, otherwise the
+  newest legacy version the server offers, regardless of the order they were
+  given in.
 
   Non-legacy and unregistered entries are ignored, and a server list that
   offers no legacy version returns `:error` rather than silently substituting
@@ -209,6 +210,9 @@ defmodule Anubis.Protocol.Registry do
       iex> Anubis.Protocol.Registry.negotiate("2024-11-05", ["2025-11-25", "2025-03-26"])
       {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
 
+      iex> Anubis.Protocol.Registry.negotiate("2024-11-05", ["2025-03-26", "2025-11-25"])
+      {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
+
       iex> Anubis.Protocol.Registry.negotiate("2026-07-28", ["2026-07-28"])
       :error
   """
@@ -220,13 +224,10 @@ defmodule Anubis.Protocol.Registry do
       [] ->
         :error
 
-      [latest | _] = candidates ->
-        version = if client_version in candidates, do: client_version, else: latest
+      candidates ->
+        version = if client_version in candidates, do: client_version, else: Enum.max(candidates)
 
-        case legacy_module(version) do
-          {:ok, mod} -> {:ok, version, mod}
-          :error -> :error
-        end
+        with {:ok, mod} <- legacy_module(version), do: {:ok, version, mod}
     end
   end
 

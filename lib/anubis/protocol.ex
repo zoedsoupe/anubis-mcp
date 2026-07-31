@@ -57,17 +57,22 @@ defmodule Anubis.Protocol do
   defdelegate fallback_version(), to: Registry
 
   @doc """
-  Validates if a protocol version is supported.
+  Validates that a protocol version can be negotiated with the `initialize`
+  handshake.
+
+  Only `:legacy` versions qualify. A `:stateless` version is registered and
+  valid, but it is not reachable through the handshake, so accepting it here
+  would report success for a connection that cannot be established.
   """
   @spec validate_version(version()) :: :ok | {:error, Error.t()}
   def validate_version(version) do
-    if Registry.supported?(version) do
+    if era(version) == {:ok, :legacy} do
       :ok
     else
       {:error,
        Error.protocol(:invalid_params, %{
          version: version,
-         supported: supported_versions()
+         supported: supported_versions(:legacy)
        })}
     end
   end
