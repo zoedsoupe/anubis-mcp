@@ -12,6 +12,14 @@ defmodule Anubis.MCP.Error do
   - **Resource Errors**: MCP-specific resource handling errors
   - **Execution Errors**: Tool and operation execution failures
 
+  ## Error code ranges
+
+  MCP partitions the JSON-RPC implementation-defined range: `-32000` to
+  `-32019` holds codes allocated before the policy existed (such as `-32002`
+  for a missing resource, and the generic `-32000` used by transport and
+  execution errors), while `-32020` to `-32099` is reserved for codes the
+  specification defines.
+
   ## Examples
 
       # Protocol errors
@@ -54,6 +62,10 @@ defmodule Anubis.MCP.Error do
   # MCP-specific error codes
   @resource_not_found -32_002
 
+  @header_mismatch -32_020
+  @missing_required_client_capability -32_021
+  @unsupported_protocol_version -32_022
+
   # Generic server error code for custom errors
   @server_error -32_000
 
@@ -65,6 +77,9 @@ defmodule Anubis.MCP.Error do
     invalid_params: "Invalid params",
     internal_error: "Internal error",
     resource_not_found: "Resource not found",
+    header_mismatch: "Header mismatch",
+    missing_required_client_capability: "Missing required client capability",
+    unsupported_protocol_version: "Unsupported protocol version",
     server_error: "Server error"
   }
 
@@ -80,6 +95,11 @@ defmodule Anubis.MCP.Error do
   - `:method_not_found` - The method does not exist
   - `:invalid_params` - Invalid method parameters
   - `:internal_error` - Internal JSON-RPC error
+  - `:header_mismatch` - Transport headers disagree with the request body
+  - `:missing_required_client_capability` - The request needs a capability the
+    client did not declare
+  - `:unsupported_protocol_version` - The requested protocol version is not
+    implemented
 
   ## Examples
 
@@ -88,6 +108,9 @@ defmodule Anubis.MCP.Error do
 
       iex> Anubis.MCP.Error.protocol(:method_not_found, %{method: "foo"})
       %Anubis.MCP.Error{code: -32601, reason: :method_not_found, message: "Method not found", data: %{method: "foo"}}
+
+      iex> Anubis.MCP.Error.protocol(:unsupported_protocol_version, %{supported: ["2026-07-28"]})
+      %Anubis.MCP.Error{code: -32022, reason: :unsupported_protocol_version, message: "Unsupported protocol version", data: %{supported: ["2026-07-28"]}}
   """
   @spec protocol(atom(), map()) :: t()
   def protocol(reason, data \\ %{})
@@ -133,6 +156,33 @@ defmodule Anubis.MCP.Error do
       code: @internal_error,
       reason: :internal_error,
       message: @error_messages.internal_error,
+      data: data
+    }
+  end
+
+  def protocol(:header_mismatch, data) do
+    %__MODULE__{
+      code: @header_mismatch,
+      reason: :header_mismatch,
+      message: @error_messages.header_mismatch,
+      data: data
+    }
+  end
+
+  def protocol(:missing_required_client_capability, data) do
+    %__MODULE__{
+      code: @missing_required_client_capability,
+      reason: :missing_required_client_capability,
+      message: @error_messages.missing_required_client_capability,
+      data: data
+    }
+  end
+
+  def protocol(:unsupported_protocol_version, data) do
+    %__MODULE__{
+      code: @unsupported_protocol_version,
+      reason: :unsupported_protocol_version,
+      message: @error_messages.unsupported_protocol_version,
       data: data
     }
   end
@@ -296,6 +346,9 @@ defmodule Anubis.MCP.Error do
   defp reason_from_code(@invalid_params), do: :invalid_params
   defp reason_from_code(@internal_error), do: :internal_error
   defp reason_from_code(@resource_not_found), do: :resource_not_found
+  defp reason_from_code(@header_mismatch), do: :header_mismatch
+  defp reason_from_code(@missing_required_client_capability), do: :missing_required_client_capability
+  defp reason_from_code(@unsupported_protocol_version), do: :unsupported_protocol_version
   defp reason_from_code(_), do: :server_error
 
   defp default_message(reason) do
