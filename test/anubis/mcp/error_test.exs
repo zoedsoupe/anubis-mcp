@@ -97,11 +97,26 @@ defmodule Anubis.MCP.ErrorTest do
       assert error.data == %{requiredCapabilities: %{"elicitation" => %{}}}
     end
 
-    test "the payloads survive a JSON-RPC round trip" do
-      encoded = Error.build_json_rpc(Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"]), 1)
+    test "unsupported_protocol_version/2 serializes to the specified wire payload" do
+      {:ok, encoded} = Error.to_json_rpc(Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"]), 1)
 
-      assert %{"code" => -32_022, "data" => data} = encoded["error"]
-      assert data == %{supported: ["2026-07-28"], requested: "1900-01-01"}
+      assert %{
+               "error" => %{
+                 "code" => -32_022,
+                 "data" => %{"supported" => ["2026-07-28"], "requested" => "1900-01-01"}
+               }
+             } = Jason.decode!(encoded)
+    end
+
+    test "missing_required_client_capability/1 serializes requiredCapabilities as an object" do
+      {:ok, encoded} = Error.to_json_rpc(Error.missing_required_client_capability(%{"elicitation" => %{}}), 1)
+
+      assert %{
+               "error" => %{
+                 "code" => -32_021,
+                 "data" => %{"requiredCapabilities" => %{"elicitation" => %{}}}
+               }
+             } = Jason.decode!(encoded)
     end
 
     test "rejects argument shapes the specification does not allow" do
