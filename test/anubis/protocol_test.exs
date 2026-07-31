@@ -33,6 +33,19 @@ defmodule Anubis.ProtocolTest do
       assert {:error, %Error{}} = Protocol.validate_version("2024-11-05")
     end
 
+    test "validate_version/1 accepts every version the handshake can negotiate" do
+      for version <- Protocol.supported_versions(:legacy) do
+        assert :ok = Protocol.validate_version(version)
+      end
+    end
+
+    test "validate_version/1 rejects a stateless version it could not negotiate" do
+      for version <- Protocol.supported_versions(:stateless) do
+        assert {:error, %Error{data: data}} = Protocol.validate_version(version)
+        refute version in data.supported
+      end
+    end
+
     test "get_features/1 returns features for known version" do
       features = Protocol.get_features("2025-03-26")
       assert is_list(features)

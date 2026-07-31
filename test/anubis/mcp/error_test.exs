@@ -57,11 +57,12 @@ defmodule Anubis.MCP.ErrorTest do
     end
 
     test "protocol/2 creates missing required client capability error" do
-      error = Error.protocol(:missing_required_client_capability, %{requiredCapabilities: ["elicitation"]})
+      capabilities = %{"elicitation" => %{}}
+      error = Error.protocol(:missing_required_client_capability, %{requiredCapabilities: capabilities})
       assert error.code == -32_021
       assert error.reason == :missing_required_client_capability
       assert error.message == "Missing required client capability"
-      assert error.data.requiredCapabilities == ["elicitation"]
+      assert error.data.requiredCapabilities == capabilities
     end
 
     test "protocol/2 creates unsupported protocol version error" do
@@ -76,6 +77,36 @@ defmodule Anubis.MCP.ErrorTest do
       for reason <- [:header_mismatch, :missing_required_client_capability, :unsupported_protocol_version] do
         assert Error.protocol(reason).code in -32_099..-32_020
       end
+    end
+  end
+
+  describe "reserved errors with a specified payload" do
+    test "unsupported_protocol_version/2 carries both supported and requested" do
+      error = Error.unsupported_protocol_version("1900-01-01", ["2026-07-28", "2025-11-25"])
+
+      assert error.code == -32_022
+      assert error.reason == :unsupported_protocol_version
+      assert error.data == %{supported: ["2026-07-28", "2025-11-25"], requested: "1900-01-01"}
+    end
+
+    test "missing_required_client_capability/1 keeps capabilities as an object" do
+      error = Error.missing_required_client_capability(%{"elicitation" => %{}})
+
+      assert error.code == -32_021
+      assert error.reason == :missing_required_client_capability
+      assert error.data == %{requiredCapabilities: %{"elicitation" => %{}}}
+    end
+
+    test "the payloads survive a JSON-RPC round trip" do
+      encoded = Error.build_json_rpc(Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"]), 1)
+
+      assert %{"code" => -32_022, "data" => data} = encoded["error"]
+      assert data == %{supported: ["2026-07-28"], requested: "1900-01-01"}
+    end
+
+    test "rejects argument shapes the specification does not allow" do
+      assert_raise FunctionClauseError, fn -> Error.unsupported_protocol_version("1900-01-01", "2026-07-28") end
+      assert_raise FunctionClauseError, fn -> Error.missing_required_client_capability(["elicitation"]) end
     end
   end
 

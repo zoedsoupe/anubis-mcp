@@ -20,6 +20,10 @@ defmodule Anubis.Protocol.Schema do
 
   @request_meta %{"_meta" => {:required, {:custom, &__MODULE__.validate_request_meta/1}}}
 
+  @subscription_meta %{"_meta" => {:required, {:custom, &__MODULE__.validate_subscription_meta/1}}}
+
+  @subscription_id_key "io.modelcontextprotocol/subscriptionId"
+
   @doc """
   Returns the schema fragment for the `params._meta.progressToken` slot
   shared by all MCP requests.
@@ -79,6 +83,43 @@ defmodule Anubis.Protocol.Schema do
     {:error, "_meta must be a map, got %{actual}", actual: inspect(other)}
   end
 
+  @doc """
+  Returns the `_meta` slot required on notifications delivered over a
+  `subscriptions/listen` stream.
+
+  Every message on the stream must be tagged with the subscription it belongs
+  to, so clients can demultiplex them on transports that share one channel.
+  """
+  @spec subscription_meta() :: map()
+  def subscription_meta, do: @subscription_meta
+
+  @doc """
+  Validates that a subscription notification's `_meta` carries
+  `io.modelcontextprotocol/subscriptionId`, returning the map unchanged so
+  unmodeled keys survive.
+
+  The value is the JSON-RPC id of the originating `subscriptions/listen`
+  request, so it is a string or an integer.
+  """
+  @spec validate_subscription_meta(term()) :: :ok | {:error, String.t(), keyword()}
+  def validate_subscription_meta(meta) when is_map(meta) do
+    case Map.get(meta, @subscription_id_key) do
+      id when is_binary(id) or is_integer(id) ->
+        :ok
+
+      nil ->
+        {:error, "_meta is missing required key %{key}", key: @subscription_id_key}
+
+      other ->
+        {:error, "%{key} must be a string or an integer, got %{actual}", key: @subscription_id_key,
+         actual: inspect(other)}
+    end
+  end
+
+  def validate_subscription_meta(other) do
+    {:error, "_meta must be a map, got %{actual}", actual: inspect(other)}
+  end
+
   defp validate_protocol_version(meta) do
     case Map.get(meta, "io.modelcontextprotocol/protocolVersion") do
       version when is_binary(version) -> :ok
@@ -134,12 +175,23 @@ defmodule Anubis.Protocol.Schema do
   Identical to `request_branch/2` except that `params` is required: the
   per-request `_meta` fields are mandatory on every stateless request, and an
   omitted `params` would otherwise skip validating them entirely.
+
+  Raises when `params_schema` is not a map. `with_request_meta/1` passes
+  non-map schemas through untouched, so an open schema such as `:map` would
+  silently drop the mandatory `_meta` slot; failing here surfaces a request
+  method that has no params schema instead of accepting it unvalidated.
   """
   @spec stateless_request_branch(String.t(), term()) :: map()
-  def stateless_request_branch(method, params_schema) do
+  def stateless_request_branch(method, params_schema) when is_map(params_schema) do
     method
     |> request_branch(with_request_meta(params_schema))
     |> Map.update!("params", &{:required, &1})
+  end
+
+  def stateless_request_branch(method, params_schema) do
+    raise ArgumentError,
+          "#{method}: a stateless request params schema must be a map to carry the " <>
+            "required _meta slot, got #{inspect(params_schema)}"
   end
 
   @doc """

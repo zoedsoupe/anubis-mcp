@@ -33,6 +33,10 @@ defmodule Anubis.MCP.Error do
       # Resource errors
       Anubis.MCP.Error.resource(:not_found, %{uri: "file:///missing.txt"})
 
+      # Reserved errors whose payload the specification pins down
+      Anubis.MCP.Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"])
+      Anubis.MCP.Error.missing_required_client_capability(%{"elicitation" => %{}})
+
       # Execution errors with custom messages
       Anubis.MCP.Error.execution("Database connection failed", %{retries: 3})
 
@@ -109,8 +113,8 @@ defmodule Anubis.MCP.Error do
       iex> Anubis.MCP.Error.protocol(:method_not_found, %{method: "foo"})
       %Anubis.MCP.Error{code: -32601, reason: :method_not_found, message: "Method not found", data: %{method: "foo"}}
 
-      iex> Anubis.MCP.Error.protocol(:unsupported_protocol_version, %{supported: ["2026-07-28"]})
-      %Anubis.MCP.Error{code: -32022, reason: :unsupported_protocol_version, message: "Unsupported protocol version", data: %{supported: ["2026-07-28"]}}
+      iex> Anubis.MCP.Error.protocol(:unsupported_protocol_version, %{supported: ["2026-07-28"], requested: "1900-01-01"})
+      %Anubis.MCP.Error{code: -32022, reason: :unsupported_protocol_version, message: "Unsupported protocol version", data: %{supported: ["2026-07-28"], requested: "1900-01-01"}}
   """
   @spec protocol(atom(), map()) :: t()
   def protocol(reason, data \\ %{})
@@ -210,6 +214,41 @@ defmodule Anubis.MCP.Error do
       message: message,
       data: data
     }
+  end
+
+  @doc """
+  Creates an `UnsupportedProtocolVersion` error for a version this peer does
+  not implement.
+
+  The specification requires the `data` payload to carry both the versions
+  this peer supports and the version that was requested, so prefer this over
+  `protocol/2` to build the payload for you.
+
+  ## Examples
+
+      iex> Anubis.MCP.Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"])
+      %Anubis.MCP.Error{code: -32022, reason: :unsupported_protocol_version, message: "Unsupported protocol version", data: %{supported: ["2026-07-28"], requested: "1900-01-01"}}
+  """
+  @spec unsupported_protocol_version(String.t(), [String.t()]) :: t()
+  def unsupported_protocol_version(requested, supported) when is_binary(requested) and is_list(supported) do
+    protocol(:unsupported_protocol_version, %{supported: supported, requested: requested})
+  end
+
+  @doc """
+  Creates a `MissingRequiredClientCapability` error for a request that needs a
+  capability the client did not declare.
+
+  `capabilities` is a `ClientCapabilities` map — the capabilities required to
+  process the request, not a list of their names.
+
+  ## Examples
+
+      iex> Anubis.MCP.Error.missing_required_client_capability(%{"elicitation" => %{}})
+      %Anubis.MCP.Error{code: -32021, reason: :missing_required_client_capability, message: "Missing required client capability", data: %{requiredCapabilities: %{"elicitation" => %{}}}}
+  """
+  @spec missing_required_client_capability(map()) :: t()
+  def missing_required_client_capability(capabilities) when is_map(capabilities) do
+    protocol(:missing_required_client_capability, %{requiredCapabilities: capabilities})
   end
 
   @doc """

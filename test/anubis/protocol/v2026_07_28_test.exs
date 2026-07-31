@@ -12,8 +12,22 @@ defmodule Anubis.Protocol.V2026_07_28Test do
     "io.modelcontextprotocol/clientCapabilities" => %{"elicitation" => %{}}
   }
 
+  @subscription_id "io.modelcontextprotocol/subscriptionId"
+
   defp request(method, params \\ %{}) do
     %{"jsonrpc" => "2.0", "id" => 1, "method" => method, "params" => Map.put(params, "_meta", @meta)}
+  end
+
+  # `notifications/resources/updated` is the only stream notification carrying
+  # a body field of its own, so it needs the `uri` alongside the tagged `_meta`.
+  defp stream_notification(method, meta) do
+    params =
+      case method do
+        "notifications/resources/updated" -> %{"_meta" => meta, "uri" => "file:///a.txt"}
+        _ -> %{"_meta" => meta}
+      end
+
+    %{"jsonrpc" => "2.0", "method" => method, "params" => params}
   end
 
   describe "version/0 and era/0" do
@@ -192,11 +206,59 @@ defmodule Anubis.Protocol.V2026_07_28Test do
 
       assert {:error, :invalid_request} = Message.validate_message(request("subscriptions/listen", params), V2026_07_28)
     end
+  end
 
-    test "acknowledgement notifications carry a _meta slot for the subscription id" do
-      schema = V2026_07_28.notification_params_schema("notifications/subscriptions/acknowledged")
+  describe "subscription stream notifications" do
+    @stream_notifications ~w(
+      notifications/subscriptions/acknowledged
+      notifications/resources/updated
+      notifications/tools/list_changed
+      notifications/prompts/list_changed
+      notifications/resources/list_changed
+    )
 
-      assert {:required, :map} = schema["_meta"]
+    test "every stream notification requires a subscription id" do
+      for method <- @stream_notifications do
+        assert {:error, :invalid_request} =
+                 Message.validate_message(stream_notification(method, %{}), V2026_07_28)
+      end
+    end
+
+    test "a subscription id may be a string or an integer, matching the request id" do
+      for method <- @stream_notifications, id <- [4, "sub-4"] do
+        message = stream_notification(method, %{@subscription_id => id})
+
+        assert {:ok, _} = Message.validate_message(message, V2026_07_28)
+      end
+    end
+
+    test "rejects a subscription id that is not a request id" do
+      message = stream_notification("notifications/tools/list_changed", %{@subscription_id => %{"nested" => true}})
+
+      assert {:error, :invalid_request} = Message.validate_message(message, V2026_07_28)
+    end
+
+    test "preserves unmodeled _meta keys alongside the subscription id" do
+      meta = %{@subscription_id => 4, "com.example/tenant" => "acme"}
+      message = stream_notification("notifications/tools/list_changed", meta)
+
+      assert {:ok, validated} = Message.validate_message(message, V2026_07_28)
+      assert validated["params"]["_meta"] == meta
+    end
+  end
+
+  describe "request params schemas" do
+    test "every request method has a map schema so _meta is always required" do
+      for method <- V2026_07_28.request_methods() do
+        assert is_map(V2026_07_28.request_params_schema(method)),
+               "#{method} has no params schema, so its mandatory _meta would be dropped"
+      end
+    end
+
+    test "a stateless branch cannot be built from an open schema" do
+      assert_raise ArgumentError, ~r/must be a map/, fn ->
+        Schema.stateless_request_branch("some/method", :map)
+      end
     end
   end
 
