@@ -395,6 +395,33 @@ defmodule Anubis.Server.ResponseTest do
              } = result
     end
 
+    test "blob is standard base64 the spec's decoder accepts" do
+      # Bytes chosen so the encoding differs between the two alphabets: this
+      # payload produces `+` and `/` under standard base64 and `-` and `_` under
+      # the URL-safe one, so a URL-safe encoder fails `Base.decode64/1` here.
+      data = <<0xFF, 0xEF, 0xBE, 0x00, 0x01, 0x02>>
+
+      %{"blob" => blob} =
+        Response.resource()
+        |> Response.blob(data)
+        |> Response.to_protocol("file://binary.bin", "application/octet-stream")
+
+      assert {:ok, ^data} = Base.decode64(blob)
+      refute String.contains?(blob, ["-", "_"])
+      assert rem(byte_size(blob), 4) == 0
+    end
+
+    test "blob round-trips arbitrary binary content" do
+      data = :crypto.strong_rand_bytes(257)
+
+      %{"blob" => blob} =
+        Response.resource()
+        |> Response.blob(data)
+        |> Response.to_protocol("file://random.bin", "application/octet-stream")
+
+      assert {:ok, ^data} = Base.decode64(blob)
+    end
+
     test "builds a resource with metadata" do
       result =
         Response.resource()
