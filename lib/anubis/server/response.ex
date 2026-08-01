@@ -491,8 +491,13 @@ defmodule Anubis.Server.Response do
       iex> Response.resource() |> Response.blob(data)
       %Response{type: :resource, contents: %{"blob" => base64_data}}
   """
+  @spec blob(t, binary) :: t
   def blob(%{type: :resource} = r, data) when is_binary(data) do
-    %{r | contents: %{"blob" => Base.url_encode64(data, padding: false)}}
+    # Standard base64 with padding, per the MCP schema's `BlobResourceContents`.
+    # NOT `url_encode64/2`: the URL-safe alphabet substitutes `-` and `_` for `+`
+    # and `/`, and dropping padding leaves a length no strict decoder accepts, so
+    # any binary resource carrying those bytes fails validation client-side.
+    %{r | contents: %{"blob" => Base.encode64(data)}}
   end
 
   @doc """
