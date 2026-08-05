@@ -3,12 +3,19 @@ if Code.ensure_loaded?(Plug) do
     @moduledoc """
     A Plug implementation for the Streamable HTTP transport.
 
-    This plug handles the MCP Streamable HTTP protocol as specified in MCP 2025-03-26.
-    It provides a single endpoint that supports both GET and POST methods:
+    This plug handles the session-oriented Streamable HTTP protocol introduced
+    in MCP 2025-03-26 and the experimental stateless discovery flow introduced
+    in MCP 2026-07-28.
+
+    Legacy protocol versions provide a single endpoint with three methods:
 
     - GET: Opens an SSE stream for server-to-client communication
     - POST: Handles JSON-RPC messages from client to server
     - DELETE: Closes a session
+
+    Servers explicitly configured for MCP 2026-07-28 accept POST only and do
+    not create protocol sessions. The initial stateless server slice implements
+    `server/discover`; operational methods remain follow-up work.
 
     ## Usage in Phoenix Router
 
@@ -45,11 +52,13 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Error
     alias Anubis.MCP.ID
     alias Anubis.MCP.Message
+    alias Anubis.Protocol.Registry, as: ProtocolRegistry
     alias Anubis.Server.Authorization
     alias Anubis.Server.Registry
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.Session
     alias Anubis.Server.Transport.StreamableHTTP
+    alias Anubis.Server.Transport.StreamableHTTP.Stateless
     alias Anubis.SSE.Streaming
     alias Anubis.Telemetry
     alias Plug.Conn.Unfetched
@@ -116,46 +125,91 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_request(conn, opts) do
-      case validate_protocol_version_header(conn, opts) do
-        :ok ->
-          case conn.method do
-            "GET" -> handle_get(conn, opts)
-            "POST" -> handle_post(conn, opts)
-            "DELETE" -> handle_delete(conn, opts)
-            _ -> send_error(conn, 405, "Method not allowed")
-          end
+      case resolve_protocol_era(conn, opts) do
+        {:ok, :legacy} ->
+          handle_legacy_request(conn, opts)
 
-        {:error, version} ->
-          Logging.transport_event("unsupported_protocol_version", %{version: version}, level: :warning)
+        {:ok, {:stateless, protocol_module}} ->
+          Stateless.handle(conn, opts, protocol_module)
 
-          send_error(conn, 400, "Unsupported MCP-Protocol-Version: #{version}")
+        {:error, error} ->
+          handle_protocol_resolution_error(conn, error)
       end
+    end
+
+    defp handle_legacy_request(conn, opts) do
+      case conn.method do
+        "GET" -> handle_get(conn, opts)
+        "POST" -> handle_post(conn, opts)
+        "DELETE" -> handle_delete(conn, opts)
+        _ -> send_error(conn, 405, "Method not allowed")
+      end
+    end
+
+    defp handle_protocol_resolution_error(conn, {:header_mismatch, data}) do
+      send_jsonrpc_error(conn, Error.protocol(:header_mismatch, data), nil)
+    end
+
+    defp handle_protocol_resolution_error(conn, {:unsupported_version, version, supported, true}) do
+      Logging.transport_event("unsupported_protocol_version", %{version: version}, level: :warning)
+      send_jsonrpc_error(conn, Error.unsupported_protocol_version(version, supported), nil)
+    end
+
+    defp handle_protocol_resolution_error(conn, {:unsupported_version, version, _supported, false}) do
+      Logging.transport_event("unsupported_protocol_version", %{version: version}, level: :warning)
+      send_error(conn, 400, "Unsupported MCP-Protocol-Version: #{version}")
     end
 
     # Per MCP 2025-06-18, clients send the negotiated protocol version on the
     # MCP-Protocol-Version header of every request after initialize. When the
     # header is absent the server SHOULD assume 2025-03-26 for backwards
     # compatibility; when present but unsupported the request is rejected.
-    defp validate_protocol_version_header(conn, opts) do
+    defp resolve_protocol_era(conn, opts) do
+      supported = supported_protocol_versions(opts.server)
+      stateless? = supports_stateless?(supported)
+
       case get_req_header(conn, "mcp-protocol-version") do
         [] ->
-          :ok
+          if stateless? and not supports_legacy?(supported) do
+            {:error, {:header_mismatch, %{header: "mcp-protocol-version", expected: supported, actual: []}}}
+          else
+            {:ok, :legacy}
+          end
+
+        [version] ->
+          with true <- version in supported,
+               {:ok, protocol_module} <- ProtocolRegistry.get(version) do
+            {:ok, protocol_era(protocol_module)}
+          else
+            _ -> {:error, {:unsupported_version, version, supported, stateless?}}
+          end
+
+        versions when stateless? ->
+          {:error, {:header_mismatch, %{header: "mcp-protocol-version", expected: supported, actual: versions}}}
 
         [version | _] ->
-          if version in supported_protocol_versions(opts.server) do
-            :ok
-          else
-            {:error, version}
-          end
+          if version in supported,
+            do: {:ok, :legacy},
+            else: {:error, {:unsupported_version, version, supported, false}}
       end
     end
+
+    defp protocol_era(protocol_module) do
+      case protocol_module.era() do
+        :legacy -> :legacy
+        :stateless -> {:stateless, protocol_module}
+      end
+    end
+
+    defp supports_stateless?(versions), do: Enum.any?(versions, &(ProtocolRegistry.era(&1) == {:ok, :stateless}))
+    defp supports_legacy?(versions), do: Enum.any?(versions, &(ProtocolRegistry.era(&1) == {:ok, :legacy}))
 
     # This endpoint is the session-oriented binding, so it defaults to legacy.
     defp supported_protocol_versions(server) do
       if Anubis.exported?(server, :supported_protocol_versions, 0) do
         server.supported_protocol_versions()
       else
-        Anubis.Protocol.Registry.legacy_versions()
+        ProtocolRegistry.legacy_versions()
       end
     end
 

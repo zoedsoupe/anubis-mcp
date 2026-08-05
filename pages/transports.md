@@ -87,6 +87,29 @@ The plug accepts a few options besides `server`:
 - `:request_timeout` bounds each request, defaulting to 30 seconds.
 - `:subscriber_metadata` takes a function from `Plug.Conn` to a map, letting you tag SSE subscribers with data derived from the request, such as a tenant id.
 
+### Experimental 2026-07-28 discovery
+
+Servers can opt into the stateless protocol era introduced by MCP `2026-07-28`:
+
+```elixir
+use Anubis.Server,
+  name: "My Server",
+  version: "2.0.0",
+  capabilities: [:tools],
+  protocol_versions: ["2026-07-28"]
+```
+
+For that version, the Streamable HTTP endpoint accepts independent POST requests,
+validates the request metadata and standard MCP headers, and implements
+`server/discover` without creating or returning a protocol session. HTTP GET and
+DELETE return `405 Method Not Allowed`; legacy `Mcp-Session-Id` and
+`Last-Event-ID` request headers are ignored.
+
+This is an experimental first server slice rather than complete `2026-07-28`
+support. Other stateless operations currently return `404 Method not found`.
+Subscriptions, request-scoped SSE, multi round-trip requests, result caching,
+custom `Mcp-Param-*` headers, and stateless client support remain follow-up work.
+
 ### Sessions
 
 Each connecting client gets its own session process, identified by the session id header the server assigns during initialization. Sessions hold the frame state described in [Building a Server](building-a-server.md) and expire after 30 minutes idle by default. Tune that with `session_idle_timeout`:
