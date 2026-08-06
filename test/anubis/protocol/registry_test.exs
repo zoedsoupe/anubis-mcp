@@ -6,6 +6,8 @@ defmodule Anubis.Protocol.RegistryTest do
   alias Anubis.Protocol.V2025_06_18
   alias Anubis.Protocol.V2025_11_25
 
+  doctest Registry
+
   describe "get/1" do
     test "returns module for known version" do
       assert {:ok, V2025_03_26} = Registry.get("2025-03-26")
@@ -159,6 +161,14 @@ defmodule Anubis.Protocol.RegistryTest do
     test "returns client version when it matches server's only version" do
       assert {:ok, "2025-03-26", V2025_03_26} =
                Registry.negotiate("2025-03-26", ["2025-03-26"])
+    end
+
+    test "answers a stateless client with the newest legacy version on offer" do
+      assert {:ok, "2025-11-25", V2025_11_25} = Registry.negotiate("2026-07-28", ["2025-11-25"])
+
+      assert {:ok, version, module} = Registry.negotiate("2026-07-28", ["2025-03-26", "2025-11-25"])
+      assert version == "2025-11-25"
+      assert module.era() == :legacy
     end
 
     test "never resolves to a stateless version" do

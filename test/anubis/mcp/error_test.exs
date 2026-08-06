@@ -123,6 +123,14 @@ defmodule Anubis.MCP.ErrorTest do
       assert_raise FunctionClauseError, fn -> Error.unsupported_protocol_version("1900-01-01", "2026-07-28") end
       assert_raise FunctionClauseError, fn -> Error.missing_required_client_capability(["elicitation"]) end
     end
+
+    test "rejects supported entries that are not version strings" do
+      for supported <- [[123], ["2026-07-28", nil], [:"2026-07-28"]] do
+        assert_raise ArgumentError, ~r/list of version strings/, fn ->
+          Error.unsupported_protocol_version("1900-01-01", supported)
+        end
+      end
+    end
   end
 
   describe "wrap_reason/1" do

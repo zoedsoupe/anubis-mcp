@@ -6,6 +6,8 @@ defmodule Anubis.ProtocolTest do
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
 
+  doctest Protocol
+
   describe "backward compatibility" do
     test "supported_versions/0 returns all versions" do
       versions = Protocol.supported_versions()

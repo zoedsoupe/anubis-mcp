@@ -86,12 +86,22 @@ defmodule Anubis.Protocol.Registry do
 
   @doc """
   List the versions that negotiate a session with the `initialize` handshake.
+
+  ## Examples
+
+      iex> Anubis.Protocol.Registry.legacy_versions()
+      ["2025-11-25", "2025-06-18", "2025-03-26"]
   """
   @spec legacy_versions() :: [version()]
   def legacy_versions, do: versions_for_era(:legacy)
 
   @doc """
   List the versions that carry their metadata on every request.
+
+  ## Examples
+
+      iex> Anubis.Protocol.Registry.stateless_versions()
+      ["2026-07-28"]
   """
   @spec stateless_versions() :: [version()]
   def stateless_versions, do: versions_for_era(:stateless)
@@ -201,6 +211,13 @@ defmodule Anubis.Protocol.Registry do
   offers no legacy version returns `:error` rather than silently substituting
   another version.
 
+  Unlike `negotiate/1`, which is an admission gate and rejects anything it
+  cannot match exactly, this is the `initialize` fallback: a client proposing a
+  version the server does not offer — including a `:stateless` one — is answered
+  with the newest legacy version available, as the legacy lifecycle requires
+  ("otherwise, the server MUST respond with another protocol version it
+  supports"). The client then accepts that version or disconnects.
+
   ## Examples
 
       iex> Anubis.Protocol.Registry.negotiate("2025-03-26", ["2025-11-25", "2025-03-26"])
@@ -210,6 +227,9 @@ defmodule Anubis.Protocol.Registry do
       {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
 
       iex> Anubis.Protocol.Registry.negotiate("2025-06-18", ["2025-03-26", "2025-11-25"])
+      {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
+
+      iex> Anubis.Protocol.Registry.negotiate("2026-07-28", ["2025-11-25"])
       {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
 
       iex> Anubis.Protocol.Registry.negotiate("2026-07-28", ["2026-07-28"])

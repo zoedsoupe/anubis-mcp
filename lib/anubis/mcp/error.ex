@@ -224,6 +224,10 @@ defmodule Anubis.MCP.Error do
   this peer supports and the version that was requested, so prefer this over
   `protocol/2` to build the payload for you.
 
+  Raises when `supported` holds anything other than version strings — a guard
+  cannot express that, and a non-string entry would serialize a payload the
+  specification does not allow.
+
   ## Examples
 
       iex> Anubis.MCP.Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"])
@@ -231,6 +235,10 @@ defmodule Anubis.MCP.Error do
   """
   @spec unsupported_protocol_version(String.t(), [String.t()]) :: t()
   def unsupported_protocol_version(requested, supported) when is_binary(requested) and is_list(supported) do
+    if !Enum.all?(supported, &is_binary/1) do
+      raise ArgumentError, "supported must be a list of version strings, got #{inspect(supported)}"
+    end
+
     protocol(:unsupported_protocol_version, %{supported: supported, requested: requested})
   end
 

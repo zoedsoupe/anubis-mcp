@@ -354,7 +354,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 400
-      assert conn.resp_body =~ stateless
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["jsonrpc"] == "2.0"
+      # this session-oriented endpoint's current code; the stateless binding uses -32022
+      assert body["error"]["code"] == -32_603
+      assert body["error"]["data"]["data"]["message"] =~ stateless
     end
 
     test "POST request with supported MCP-Protocol-Version succeeds", %{
@@ -376,6 +380,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 200
+      {:ok, decoded} = Jason.decode(conn.resp_body)
+      assert decoded["jsonrpc"] == "2.0"
+      assert decoded["id"] == 1
+      assert decoded["result"] == %{}
+      refute Map.has_key?(decoded, "error")
     end
 
     test "POST request with missing method returns invalid request error", %{opts: opts} do

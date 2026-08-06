@@ -7,6 +7,8 @@ defmodule Anubis.Protocol.V2026_07_28Test do
   alias Anubis.Protocol.V2025_11_25
   alias Anubis.Protocol.V2026_07_28
 
+  doctest Schema
+
   @meta %{
     "io.modelcontextprotocol/protocolVersion" => "2026-07-28",
     "io.modelcontextprotocol/clientCapabilities" => %{"elicitation" => %{}}
