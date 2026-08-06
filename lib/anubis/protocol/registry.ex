@@ -209,7 +209,7 @@ defmodule Anubis.Protocol.Registry do
       iex> Anubis.Protocol.Registry.negotiate("2025-06-18", ["2025-11-25", "2025-03-26"])
       {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
 
-      iex> Anubis.Protocol.Registry.negotiate("2024-11-05", ["2025-03-26", "2025-11-25"])
+      iex> Anubis.Protocol.Registry.negotiate("2025-06-18", ["2025-03-26", "2025-11-25"])
       {:ok, "2025-11-25", Anubis.Protocol.V2025_11_25}
 
       iex> Anubis.Protocol.Registry.negotiate("2026-07-28", ["2026-07-28"])

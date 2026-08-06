@@ -148,9 +148,9 @@ defmodule Anubis.Protocol.RegistryTest do
 
     test "falls back to the newest server version regardless of list order" do
       for server_versions <- [
-            ["2024-11-05", "2025-11-25"],
-            ["2025-11-25", "2024-11-05"],
-            ["2025-03-26", "2025-11-25", "2024-11-05"]
+            ["2025-03-26", "2025-11-25"],
+            ["2025-11-25", "2025-03-26"],
+            ["2025-03-26", "2025-11-25", "2025-06-18"]
           ] do
         assert {:ok, "2025-11-25", V2025_11_25} = Registry.negotiate("9999-01-01", server_versions)
       end
