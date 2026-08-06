@@ -77,6 +77,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     @doc false
+    @spec default_subscriber_metadata(Plug.Conn.t()) :: %{}
     def default_subscriber_metadata(_conn), do: %{}
 
     defp resolve_subscriber_metadata(opts, conn) do
