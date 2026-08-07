@@ -108,6 +108,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       opts = StreamableHTTPPlug.init(server: StubServer, subscriber_metadata: fun)
       assert opts.subscriber_metadata == fun
     end
+
+    test "result is escapable so Plug.Router.forward/2 can compile it" do
+      assert Macro.escape(StreamableHTTPPlug.init(server: StubServer))
+    end
   end
 
   describe "GET endpoint" do

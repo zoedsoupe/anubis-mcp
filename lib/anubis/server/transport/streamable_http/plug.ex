@@ -66,7 +66,7 @@ if Code.ensure_loaded?(Plug) do
       server = Keyword.fetch!(opts, :server)
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
-      subscriber_metadata = Keyword.get(opts, :subscriber_metadata, &default_subscriber_metadata/1)
+      subscriber_metadata = Keyword.get(opts, :subscriber_metadata, &__MODULE__.default_subscriber_metadata/1)
 
       %{
         server: server,
@@ -76,10 +76,12 @@ if Code.ensure_loaded?(Plug) do
       }
     end
 
-    defp default_subscriber_metadata(_conn), do: %{}
+    @doc false
+    @spec default_subscriber_metadata(Plug.Conn.t()) :: %{}
+    def default_subscriber_metadata(_conn), do: %{}
 
     defp resolve_subscriber_metadata(opts, conn) do
-      fun = Map.get(opts, :subscriber_metadata, &default_subscriber_metadata/1)
+      fun = Map.get(opts, :subscriber_metadata, &__MODULE__.default_subscriber_metadata/1)
 
       case fun.(conn) do
         metadata when is_map(metadata) ->

@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.0.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.14.0...v2.0.0) (2026-08-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **transport:** remove deprecated HTTP+SSE client and server transports
+* **protocol:** drop 2024-11-05 protocol version, floor at 2025-03-26
+
+### Features
+
+* **protocol:** drop 2024-11-05 protocol version, floor at 2025-03-26 ([1930dca](https://github.com/zoedsoupe/anubis-mcp/commit/1930dca5b8d769be959cf03240fbe3cc4c431179))
+* **transport:** remove deprecated HTTP+SSE client and server transports ([e78e177](https://github.com/zoedsoupe/anubis-mcp/commit/e78e177f6c3b2f733763d6e6bf544a28ea0d7189))
+
+
+### Bug Fixes
+
+* encode resource blobs as standard base64 ([#270](https://github.com/zoedsoupe/anubis-mcp/issues/270)) ([b386810](https://github.com/zoedsoupe/anubis-mcp/commit/b3868101d62c1b593f51ef5c1c5fbbc261307242))
+* make `StreamableHTTP.Plug.init` escapable ([#276](https://github.com/zoedsoupe/anubis-mcp/issues/276)) ([562541b](https://github.com/zoedsoupe/anubis-mcp/commit/562541b64e8e4f17969c8a77a816c29b83fb2fa3))
+
+
+### Documentation
+
+* **readme:** add spec version support matrix and deprecation policy ([c96ec2c](https://github.com/zoedsoupe/anubis-mcp/commit/c96ec2c809b830c776f22d18259d2d6527c3861b))
+* **server:** mark internal session engine modules as private ([38e09ba](https://github.com/zoedsoupe/anubis-mcp/commit/38e09ba2be75d807f8a2a98230d334476601e991))
+
 ## [1.14.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.13.0...v1.14.0) (2026-07-30)
 
 
