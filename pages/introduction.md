@@ -21,7 +21,7 @@ Add the dependency to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:anubis_mcp, "~> 1.14.0"} # x-release-please-version
+    {:anubis_mcp, "~> 2.0.0"} # x-release-please-version
   ]
 end
 ```
