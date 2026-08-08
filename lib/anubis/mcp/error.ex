@@ -235,7 +235,7 @@ defmodule Anubis.MCP.Error do
   """
   @spec unsupported_protocol_version(String.t(), [String.t()]) :: t()
   def unsupported_protocol_version(requested, supported) when is_binary(requested) and is_list(supported) do
-    if !Enum.all?(supported, &is_binary/1) do
+    if not Enum.all?(supported, &is_binary/1) do
       raise ArgumentError, "supported must be a list of version strings, got #{inspect(supported)}"
     end
 

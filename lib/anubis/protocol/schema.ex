@@ -88,7 +88,7 @@ defmodule Anubis.Protocol.Schema do
 
   @doc """
   Validates the reserved `io.modelcontextprotocol/*` keys of a stateless-era
-  request's `_meta`, returning the map unchanged so unmodeled keys survive.
+  request's `_meta`, leaving the map untouched so unmodeled keys survive.
 
   `protocolVersion` and `clientCapabilities` are required on every request;
   `clientInfo` and `logLevel` are optional but validated when present.
@@ -135,7 +135,7 @@ defmodule Anubis.Protocol.Schema do
 
   @doc """
   Validates that a subscription notification's `_meta` carries
-  `io.modelcontextprotocol/subscriptionId`, returning the map unchanged so
+  `io.modelcontextprotocol/subscriptionId`, leaving the map untouched so
   unmodeled keys survive.
 
   The value is the JSON-RPC id of the originating `subscriptions/listen`

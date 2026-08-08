@@ -38,16 +38,13 @@ defmodule Anubis.Protocol.V2026_07_28 do
 
   @capability_keys ~w(prompts tools resources completion logging extensions)
 
-  @removed_features [:ping]
+  @removed_features [:ping, :roots, :sampling, :elicitation]
 
   @features [
     :stateless,
     :discovery,
     :subscriptions,
-    :multi_round_trip_requests,
-    :result_caching,
-    :extensions,
-    :standard_request_headers
+    :extensions
     | V2025_06_18.supported_features() -- @removed_features
   ]
 

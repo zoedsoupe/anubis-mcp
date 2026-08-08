@@ -91,7 +91,9 @@ defmodule Anubis.Protocol.V2026_07_28Test do
   end
 
   describe "supported_features/0" do
-    @introduced [:stateless, :discovery, :subscriptions, :multi_round_trip_requests, :result_caching, :extensions]
+    @introduced [:stateless, :discovery, :subscriptions, :extensions]
+    @dropped [:ping, :roots, :sampling, :elicitation]
+    @deferred [:multi_round_trip_requests, :result_caching, :standard_request_headers]
 
     test "declares the features this revision introduces" do
       for feature <- @introduced do
@@ -99,8 +101,28 @@ defmodule Anubis.Protocol.V2026_07_28Test do
       end
     end
 
-    test "no longer supports ping" do
-      refute V2026_07_28.supports_feature?(:ping)
+    test "drops the features whose methods this revision removed" do
+      for feature <- @dropped do
+        refute V2026_07_28.supports_feature?(feature)
+      end
+    end
+
+    test "claims no feature whose implementation has not landed" do
+      for feature <- @deferred do
+        refute V2026_07_28.supports_feature?(feature)
+      end
+    end
+
+    test "every declared feature is backed by a method or a capability key" do
+      methods = V2026_07_28.request_methods()
+
+      assert "server/discover" in methods
+      assert "subscriptions/listen" in methods
+      assert Map.has_key?(V2026_07_28.server_capabilities(%{"extensions" => %{}}), "extensions")
+    end
+
+    test "keeps logging, which per-request logLevel keeps alive" do
+      assert V2026_07_28.supports_feature?(:logging)
     end
   end
 
