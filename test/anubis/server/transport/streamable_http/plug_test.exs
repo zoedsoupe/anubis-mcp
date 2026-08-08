@@ -340,6 +340,31 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert conn.resp_body =~ "1999-01-01"
     end
 
+    test "POST request with a stateless-era MCP-Protocol-Version returns 400", %{
+      opts: opts,
+      test_session_id: session_id
+    } do
+      request = build_request("ping", %{})
+      {:ok, body} = Message.encode_request(request, 1)
+      [stateless | _] = Anubis.Protocol.Registry.stateless_versions()
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> put_req_header("mcp-protocol-version", stateless)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["jsonrpc"] == "2.0"
+      # this session-oriented endpoint's current code; the stateless binding uses -32022
+      assert body["error"]["code"] == -32_603
+      assert body["error"]["data"]["data"]["message"] =~ stateless
+    end
+
     test "POST request with supported MCP-Protocol-Version succeeds", %{
       opts: opts,
       test_session_id: session_id
@@ -347,7 +372,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       request = build_request("ping", %{})
       {:ok, body} = Message.encode_request(request, 1)
 
-      [version | _] = Anubis.Protocol.Registry.supported_versions()
+      [version | _] = Anubis.Protocol.Registry.legacy_versions()
 
       conn =
         :post
@@ -359,6 +384,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 200
+      {:ok, decoded} = Jason.decode(conn.resp_body)
+      assert decoded["jsonrpc"] == "2.0"
+      assert decoded["id"] == 1
+      assert decoded["result"] == %{}
+      refute Map.has_key?(decoded, "error")
     end
 
     test "POST request with missing method returns invalid request error", %{opts: opts} do

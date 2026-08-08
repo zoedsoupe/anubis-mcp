@@ -152,11 +152,12 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    # This endpoint is the session-oriented binding, so it defaults to legacy.
     defp supported_protocol_versions(server) do
       if Anubis.exported?(server, :supported_protocol_versions, 0) do
         server.supported_protocol_versions()
       else
-        Anubis.Protocol.Registry.supported_versions()
+        Anubis.Protocol.Registry.legacy_versions()
       end
     end
 

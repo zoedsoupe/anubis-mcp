@@ -17,6 +17,7 @@ defmodule Anubis.Protocol do
 
   @type version :: String.t()
   @type feature :: atom()
+  @type era :: Anubis.Protocol.Behaviour.era()
 
   @doc """
   Returns all supported protocol versions.
@@ -25,10 +26,52 @@ defmodule Anubis.Protocol do
   defdelegate supported_versions(), to: Registry
 
   @doc """
-  Returns the latest supported protocol version.
+  Returns the supported protocol versions belonging to an era.
+
+  ## Examples
+
+      iex> Anubis.Protocol.supported_versions(:stateless)
+      ["2026-07-28"]
+  """
+  @spec supported_versions(era()) :: [version()]
+  defdelegate supported_versions(era), to: Registry, as: :versions_for_era
+
+  @doc """
+  Returns the era a protocol version belongs to.
+
+  ## Examples
+
+      iex> Anubis.Protocol.era("2025-11-25")
+      {:ok, :legacy}
+
+      iex> Anubis.Protocol.era("2026-07-28")
+      {:ok, :stateless}
+  """
+  @spec era(version()) :: {:ok, era()} | :error
+  defdelegate era(version), to: Registry
+
+  @doc """
+  Returns the latest protocol version reachable through the `initialize`
+  handshake.
+
+  ## Examples
+
+      iex> Anubis.Protocol.latest_version()
+      "2025-11-25"
   """
   @spec latest_version() :: version()
   defdelegate latest_version(), to: Registry
+
+  @doc """
+  Returns the latest supported protocol version of an era.
+
+  ## Examples
+
+      iex> Anubis.Protocol.latest_version(:stateless)
+      "2026-07-28"
+  """
+  @spec latest_version(era()) :: version() | nil
+  defdelegate latest_version(era), to: Registry
 
   @doc """
   Returns the fallback protocol version for compatibility.
@@ -37,17 +80,31 @@ defmodule Anubis.Protocol do
   defdelegate fallback_version(), to: Registry
 
   @doc """
-  Validates if a protocol version is supported.
+  Validates that a protocol version can be negotiated with the `initialize`
+  handshake.
+
+  Only `:legacy` versions qualify. A `:stateless` version is registered and
+  valid, but it is not reachable through the handshake, so accepting it here
+  would report success for a connection that cannot be established.
+
+  ## Examples
+
+      iex> Anubis.Protocol.validate_version("2025-11-25")
+      :ok
+
+      iex> {:error, error} = Anubis.Protocol.validate_version("2026-07-28")
+      iex> error.code
+      -32602
   """
   @spec validate_version(version()) :: :ok | {:error, Error.t()}
   def validate_version(version) do
-    if Registry.supported?(version) do
+    if era(version) == {:ok, :legacy} do
       :ok
     else
       {:error,
        Error.protocol(:invalid_params, %{
          version: version,
-         supported: supported_versions()
+         supported: supported_versions(:legacy)
        })}
     end
   end

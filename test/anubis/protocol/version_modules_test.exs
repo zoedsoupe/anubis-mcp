@@ -1,6 +1,7 @@
 defmodule Anubis.Protocol.VersionModulesTest do
   use ExUnit.Case, async: true
 
+  alias Anubis.Protocol.Registry
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
   alias Anubis.Protocol.V2025_11_25
@@ -150,11 +151,12 @@ defmodule Anubis.Protocol.VersionModulesTest do
   end
 
   describe "behaviour compliance" do
-    for mod <- [V2025_03_26, V2025_06_18, V2025_11_25] do
-      test "#{mod} implements all callbacks" do
-        mod = unquote(mod)
+    for version <- Registry.supported_versions() do
+      test "#{version} implements every dialect callback" do
+        {:ok, mod} = Registry.get(unquote(version))
+
+        assert mod.version() == unquote(version)
         assert mod.era() in [:legacy, :stateless]
-        assert is_binary(mod.version())
         assert is_list(mod.supported_features())
         assert is_boolean(mod.supports_feature?(:ping))
         assert %{batching: batching?, protocol_version_header: header?} = mod.transport_rules()
@@ -164,10 +166,28 @@ defmodule Anubis.Protocol.VersionModulesTest do
         assert is_list(mod.request_methods())
         assert is_list(mod.notification_methods())
         assert is_map(mod.progress_params_schema())
-        assert "initialize" |> mod.request_params_schema() |> is_map()
-        assert mod.notification_params_schema("notifications/initialized") == :map
         assert {:multi, :method, _} = mod.request_message_schema()
         assert {:multi, :method, _} = mod.notification_message_schema()
+      end
+    end
+
+    for version <- Registry.versions_for_era(:legacy) do
+      test "#{version} models the initialize handshake" do
+        {:ok, mod} = Registry.get(unquote(version))
+
+        assert "initialize" in mod.request_methods()
+        assert "notifications/initialized" in mod.notification_methods()
+        assert "initialize" |> mod.request_params_schema() |> is_map()
+        assert mod.notification_params_schema("notifications/initialized") == :map
+      end
+    end
+
+    for version <- Registry.versions_for_era(:stateless) do
+      test "#{version} models no handshake" do
+        {:ok, mod} = Registry.get(unquote(version))
+
+        refute "initialize" in mod.request_methods()
+        refute "notifications/initialized" in mod.notification_methods()
       end
     end
   end

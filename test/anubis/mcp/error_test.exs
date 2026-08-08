@@ -47,6 +47,90 @@ defmodule Anubis.MCP.ErrorTest do
       assert error.reason == :internal_error
       assert error.message == "Internal error"
     end
+
+    test "protocol/2 creates header mismatch error" do
+      error = Error.protocol(:header_mismatch, %{header: "Mcp-Name"})
+      assert error.code == -32_020
+      assert error.reason == :header_mismatch
+      assert error.message == "Header mismatch"
+      assert error.data.header == "Mcp-Name"
+    end
+
+    test "protocol/2 creates missing required client capability error" do
+      capabilities = %{"elicitation" => %{}}
+      error = Error.protocol(:missing_required_client_capability, %{requiredCapabilities: capabilities})
+      assert error.code == -32_021
+      assert error.reason == :missing_required_client_capability
+      assert error.message == "Missing required client capability"
+      assert error.data.requiredCapabilities == capabilities
+    end
+
+    test "protocol/2 creates unsupported protocol version error" do
+      error = Error.protocol(:unsupported_protocol_version, %{supported: ["2026-07-28"], requested: "1900-01-01"})
+      assert error.code == -32_022
+      assert error.reason == :unsupported_protocol_version
+      assert error.message == "Unsupported protocol version"
+      assert error.data.requested == "1900-01-01"
+    end
+
+    test "the codes reserved for the specification stay out of the legacy sub-range" do
+      for reason <- [:header_mismatch, :missing_required_client_capability, :unsupported_protocol_version] do
+        assert Error.protocol(reason).code in -32_099..-32_020
+      end
+    end
+  end
+
+  describe "reserved errors with a specified payload" do
+    test "unsupported_protocol_version/2 carries both supported and requested" do
+      error = Error.unsupported_protocol_version("1900-01-01", ["2026-07-28", "2025-11-25"])
+
+      assert error.code == -32_022
+      assert error.reason == :unsupported_protocol_version
+      assert error.data == %{supported: ["2026-07-28", "2025-11-25"], requested: "1900-01-01"}
+    end
+
+    test "missing_required_client_capability/1 keeps capabilities as an object" do
+      error = Error.missing_required_client_capability(%{"elicitation" => %{}})
+
+      assert error.code == -32_021
+      assert error.reason == :missing_required_client_capability
+      assert error.data == %{requiredCapabilities: %{"elicitation" => %{}}}
+    end
+
+    test "unsupported_protocol_version/2 serializes to the specified wire payload" do
+      {:ok, encoded} = Error.to_json_rpc(Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"]), 1)
+
+      assert %{
+               "error" => %{
+                 "code" => -32_022,
+                 "data" => %{"supported" => ["2026-07-28"], "requested" => "1900-01-01"}
+               }
+             } = Jason.decode!(encoded)
+    end
+
+    test "missing_required_client_capability/1 serializes requiredCapabilities as an object" do
+      {:ok, encoded} = Error.to_json_rpc(Error.missing_required_client_capability(%{"elicitation" => %{}}), 1)
+
+      assert %{
+               "error" => %{
+                 "code" => -32_021,
+                 "data" => %{"requiredCapabilities" => %{"elicitation" => %{}}}
+               }
+             } = Jason.decode!(encoded)
+    end
+
+    test "rejects argument shapes the specification does not allow" do
+      assert_raise FunctionClauseError, fn -> Error.unsupported_protocol_version("1900-01-01", "2026-07-28") end
+      assert_raise FunctionClauseError, fn -> Error.missing_required_client_capability(["elicitation"]) end
+    end
+
+    test "rejects supported entries that are not version strings" do
+      for supported <- [[123], ["2026-07-28", nil], [:"2026-07-28"]] do
+        assert_raise ArgumentError, ~r/list of version strings/, fn ->
+          Error.unsupported_protocol_version("1900-01-01", supported)
+        end
+      end
+    end
   end
 
   describe "wrap_reason/1" do
@@ -124,6 +208,21 @@ defmodule Anubis.MCP.ErrorTest do
 
       assert error.code == -32_002
       assert error.reason == :resource_not_found
+    end
+
+    test "from_json_rpc/1 round-trips the specification-reserved codes" do
+      reasons = %{
+        -32_020 => :header_mismatch,
+        -32_021 => :missing_required_client_capability,
+        -32_022 => :unsupported_protocol_version
+      }
+
+      for {code, reason} <- reasons do
+        error = Error.from_json_rpc(%{"code" => code, "message" => "boom"})
+
+        assert error.code == code
+        assert error.reason == reason
+      end
     end
 
     test "from_json_rpc/1 includes data if present" do

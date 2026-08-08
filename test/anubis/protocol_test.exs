@@ -6,6 +6,8 @@ defmodule Anubis.ProtocolTest do
   alias Anubis.Protocol.V2025_03_26
   alias Anubis.Protocol.V2025_06_18
 
+  doctest Protocol
+
   describe "backward compatibility" do
     test "supported_versions/0 returns all versions" do
       versions = Protocol.supported_versions()
@@ -31,6 +33,19 @@ defmodule Anubis.ProtocolTest do
     test "validate_version/1 rejects unsupported versions" do
       assert {:error, %Error{}} = Protocol.validate_version("9999-01-01")
       assert {:error, %Error{}} = Protocol.validate_version("2024-11-05")
+    end
+
+    test "validate_version/1 accepts every version the handshake can negotiate" do
+      for version <- Protocol.supported_versions(:legacy) do
+        assert :ok = Protocol.validate_version(version)
+      end
+    end
+
+    test "validate_version/1 rejects a stateless version it could not negotiate" do
+      for version <- Protocol.supported_versions(:stateless) do
+        assert {:error, %Error{data: data}} = Protocol.validate_version(version)
+        refute version in data.supported
+      end
     end
 
     test "get_features/1 returns features for known version" do
@@ -77,6 +92,46 @@ defmodule Anubis.ProtocolTest do
     test "returns :error for unknown version" do
       assert :error = Protocol.get_module("9999-01-01")
       assert :error = Protocol.get_module("2024-11-05")
+    end
+  end
+
+  describe "era accessors" do
+    test "supported_versions/1 partitions by era" do
+      assert Protocol.supported_versions(:stateless) == ["2026-07-28"]
+      refute "2026-07-28" in Protocol.supported_versions(:legacy)
+    end
+
+    test "era/1 and latest_version/1 delegate to the registry" do
+      assert {:ok, :stateless} = Protocol.era("2026-07-28")
+      assert {:ok, :legacy} = Protocol.era("2025-11-25")
+      assert Protocol.latest_version(:stateless) == "2026-07-28"
+    end
+  end
+
+  describe "registering a stateless version leaves the legacy era untouched" do
+    defmodule DefaultVersionsServer do
+      @moduledoc false
+      use Anubis.Server, name: "test", version: "1.0.0", capabilities: [:tools]
+    end
+
+    test "a server built with the DSL advertises no stateless version" do
+      versions = DefaultVersionsServer.supported_protocol_versions()
+
+      assert versions == Protocol.supported_versions(:legacy)
+      refute "2026-07-28" in versions
+    end
+
+    test "the client default protocol version stays in the legacy era" do
+      assert {:ok, :legacy} = Protocol.era(Protocol.latest_version())
+    end
+
+    test "negotiate_version/2 cannot resolve into the stateless era" do
+      for client_version <- ["2026-07-28", "9999-01-01"] do
+        refute match?(
+                 {:ok, "2026-07-28", _},
+                 Protocol.negotiate_version(client_version, Protocol.supported_versions())
+               )
+      end
     end
   end
 end

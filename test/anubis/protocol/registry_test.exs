@@ -6,6 +6,8 @@ defmodule Anubis.Protocol.RegistryTest do
   alias Anubis.Protocol.V2025_06_18
   alias Anubis.Protocol.V2025_11_25
 
+  doctest Registry
+
   describe "get/1" do
     test "returns module for known version" do
       assert {:ok, V2025_03_26} = Registry.get("2025-03-26")
@@ -27,17 +29,60 @@ defmodule Anubis.Protocol.RegistryTest do
     test "returns all versions newest first" do
       versions = Registry.supported_versions()
       assert is_list(versions)
-      assert length(versions) == 3
-      assert hd(versions) == "2025-11-25"
+      assert length(versions) == 4
+      assert hd(versions) == "2026-07-28"
+      assert "2025-11-25" in versions
       assert "2025-06-18" in versions
       assert "2025-03-26" in versions
       refute "2024-11-05" in versions
     end
   end
 
+  describe "versions_for_era/1" do
+    test "groups every registered version into exactly one era" do
+      legacy = Registry.versions_for_era(:legacy)
+      stateless = Registry.versions_for_era(:stateless)
+
+      assert Enum.sort(legacy ++ stateless) == Enum.sort(Registry.supported_versions())
+      assert legacy -- stateless == legacy
+    end
+
+    test "the handshake versions are legacy and 2026-07-28 is stateless" do
+      assert Registry.legacy_versions() == ["2025-11-25", "2025-06-18", "2025-03-26"]
+      assert Registry.stateless_versions() == ["2026-07-28"]
+    end
+
+    test "each era is ordered newest first" do
+      for era <- [:legacy, :stateless] do
+        versions = Registry.versions_for_era(era)
+        assert versions == Enum.sort(versions, :desc)
+      end
+    end
+  end
+
+  describe "era/1" do
+    test "reports the era of a registered version" do
+      assert {:ok, :legacy} = Registry.era("2025-11-25")
+      assert {:ok, :stateless} = Registry.era("2026-07-28")
+    end
+
+    test "returns :error for unknown version" do
+      assert :error = Registry.era("9999-01-01")
+    end
+  end
+
   describe "latest_version/0" do
-    test "returns the latest version" do
+    test "returns the latest handshake-negotiable version" do
       assert "2025-11-25" = Registry.latest_version()
+      assert Registry.latest_version() == Registry.latest_version(:legacy)
+      assert {:ok, :legacy} = Registry.era(Registry.latest_version())
+    end
+  end
+
+  describe "latest_version/1" do
+    test "returns the newest version of an era" do
+      assert "2025-11-25" = Registry.latest_version(:legacy)
+      assert "2026-07-28" = Registry.latest_version(:stateless)
     end
   end
 
@@ -79,12 +124,16 @@ defmodule Anubis.Protocol.RegistryTest do
 
     test "returns error for unsupported client version" do
       assert {:error, :unsupported_version, versions} = Registry.negotiate("9999-01-01")
-      assert is_list(versions)
-      assert length(versions) == 3
+      assert versions == Registry.legacy_versions()
     end
 
     test "returns error for dropped client version" do
       assert {:error, :unsupported_version, _} = Registry.negotiate("2024-11-05")
+    end
+
+    test "treats a stateless version as unsupported by the handshake" do
+      assert {:error, :unsupported_version, versions} = Registry.negotiate("2026-07-28")
+      refute "2026-07-28" in versions
     end
   end
 
@@ -99,9 +148,51 @@ defmodule Anubis.Protocol.RegistryTest do
                Registry.negotiate("2024-11-05", ["2025-06-18", "2025-03-26"])
     end
 
+    test "falls back to the newest server version regardless of list order" do
+      for server_versions <- [
+            ["2025-03-26", "2025-11-25"],
+            ["2025-11-25", "2025-03-26"],
+            ["2025-03-26", "2025-11-25", "2025-06-18"]
+          ] do
+        assert {:ok, "2025-11-25", V2025_11_25} = Registry.negotiate("9999-01-01", server_versions)
+      end
+    end
+
     test "returns client version when it matches server's only version" do
       assert {:ok, "2025-03-26", V2025_03_26} =
                Registry.negotiate("2025-03-26", ["2025-03-26"])
+    end
+
+    test "answers a stateless client with the newest legacy version on offer" do
+      assert {:ok, "2025-11-25", V2025_11_25} = Registry.negotiate("2026-07-28", ["2025-11-25"])
+
+      assert {:ok, version, module} = Registry.negotiate("2026-07-28", ["2025-03-26", "2025-11-25"])
+      assert version == "2025-11-25"
+      assert module.era() == :legacy
+    end
+
+    test "never resolves to a stateless version" do
+      for client_version <- ["2026-07-28", "2025-11-25", "9999-01-01"] do
+        refute match?({:ok, "2026-07-28", _}, Registry.negotiate(client_version, Registry.supported_versions()))
+      end
+    end
+
+    test "an unknown client version never falls back into the stateless era" do
+      assert {:ok, version, module} = Registry.negotiate("9999-01-01", Registry.supported_versions())
+
+      assert version == "2025-11-25"
+      assert module.era() == :legacy
+    end
+
+    test "ignores stateless and unregistered entries in the server list" do
+      assert {:ok, "2025-03-26", V2025_03_26} =
+               Registry.negotiate("2025-03-26", ["2026-07-28", "9999-01-01", "2025-03-26"])
+    end
+
+    test "returns :error when the server list offers no legacy version" do
+      assert :error = Registry.negotiate("2026-07-28", ["2026-07-28"])
+      assert :error = Registry.negotiate("2025-03-26", ["9999-01-01"])
+      assert :error = Registry.negotiate("2025-03-26", [])
     end
   end
 
