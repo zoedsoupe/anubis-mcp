@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.0](https://github.com/zoedsoupe/anubis-mcp/compare/v2.0.0...v2.1.0) (2026-08-08)
+
+
+### Features
+
+* **protocol:** add the 2026-07-28 stateless dialect ([#269](https://github.com/zoedsoupe/anubis-mcp/issues/269)) ([986fca6](https://github.com/zoedsoupe/anubis-mcp/commit/986fca684c6c8157269ed8363d627d736c192187))
+
 ## [2.0.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.14.0...v2.0.0) (2026-08-07)
 
 
