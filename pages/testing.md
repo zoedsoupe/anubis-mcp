@@ -199,6 +199,8 @@ only present on `:start`, and `result`/`is_error` only on `:stop` — attach to
 both events if you need both:
 
 ```elixir
+require Logger
+
 :telemetry.attach_many(
   "log-tool-payloads",
   [

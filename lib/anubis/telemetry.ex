@@ -30,6 +30,11 @@ defmodule Anubis.Telemetry do
   `:start` metadata also carries `arguments` and the `:stop` metadata also
   carries `result`. See `pages/testing.md` for the rationale behind the
   opt-in default.
+
+  ## Examples
+
+      iex> Anubis.Telemetry.span_tool_call("get_weather", %{"city" => "NYC"}, fn -> :ok end)
+      :ok
   """
   @spec span_tool_call(String.t() | nil, map() | nil, (-> result)) :: result when result: var
   def span_tool_call(tool_name, arguments, fun) do
