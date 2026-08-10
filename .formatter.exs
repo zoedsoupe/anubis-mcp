@@ -24,5 +24,5 @@ test = [
     "examples/upcase/{lib,config,test}/*.{ex,exs}"
   ],
   locals_without_parens: locals ++ test,
-  export: locals
+  export: [locals_without_parens: locals]
 ]
