@@ -176,6 +176,44 @@ end
 
 The `start: true` option forces the HTTP transport to boot even though no Phoenix endpoint is serving during tests. One integration test per server is usually enough; the per-component behavior belongs in the unit tests above.
 
+## Observing tool calls
+
+Every `tools/call` request is wrapped in a `:telemetry.span/3` under
+`[:anubis_mcp, :server, :tool_call]`. By default the span's metadata carries
+only the tool name and whether the call errored — enough to build dashboards
+and alerts, not enough to answer "what was this client actually asking, and
+what did we return."
+
+Set `:telemetry_capture_tool_payload` to opt into the full payload:
+
+```elixir
+# config/config.exs (or runtime.exs)
+config :anubis_mcp, :telemetry_capture_tool_payload, true
+```
+
+With the flag enabled, the `:start` event's metadata gains `arguments` (the
+raw `params.arguments` map from the request) and the `:stop` event's
+metadata gains `result` (the value your callback returned):
+
+```elixir
+:telemetry.attach(
+  "log-tool-payloads",
+  [:anubis_mcp, :server, :tool_call, :stop],
+  fn _event, _measurements, %{tool: tool, arguments: args, result: result}, _config ->
+    Logger.info("tool_call", tool: tool, arguments: args, result: inspect(result))
+  end,
+  nil
+)
+```
+
+The flag defaults to `false`. Tool arguments and results are the
+highest-cardinality, highest-PII surface in the request lifecycle — this
+mirrors the `opt_in` requirement level OpenTelemetry's GenAI semantic
+conventions assign to the equivalent `gen_ai.tool.call.arguments` /
+`gen_ai.tool.call.result` span attributes. Only enable it where you also
+control retention and redaction of whatever sink receives the telemetry
+event (a Datadog trace, a log pipeline, a database).
+
 ## Next steps
 
 - [Building a Server](building-a-server.md) documents the callbacks tested here.

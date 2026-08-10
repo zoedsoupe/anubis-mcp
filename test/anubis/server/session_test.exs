@@ -744,6 +744,83 @@ defmodule Anubis.Server.SessionTest do
     end
   end
 
+  describe "tool_call telemetry opt-in payload capture" do
+    setup do
+      original_config = Application.get_env(:anubis_mcp, :telemetry_capture_tool_payload)
+      on_exit(fn -> Application.put_env(:anubis_mcp, :telemetry_capture_tool_payload, original_config) end)
+
+      test_pid = self()
+      handler_id = "test-tool-call-payload-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach_many(
+        handler_id,
+        [
+          [:anubis_mcp, :server, :tool_call, :start],
+          [:anubis_mcp, :server, :tool_call, :stop]
+        ],
+        fn
+          [:anubis_mcp, :server, :tool_call, :start], _m, meta, _c -> send(test_pid, {:tool_call_start, meta})
+          [:anubis_mcp, :server, :tool_call, :stop], _m, meta, _c -> send(test_pid, {:tool_call_stop, meta})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      transport_name = Registry.transport_name(TasksStubServer, StubTransport)
+      start_supervised!({StubTransport, name: transport_name}, id: :payload_transport)
+      task_sup = Registry.task_supervisor_name(TasksStubServer)
+      start_supervised!({Task.Supervisor, name: task_sup}, id: :payload_task_sup)
+
+      session_id = "tool-call-payload-#{System.unique_integer([:positive])}"
+      session_name = Registry.session_name(TasksStubServer, session_id)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: session_id,
+           server_module: TasksStubServer,
+           name: session_name,
+           transport: [layer: StubTransport, name: transport_name],
+           task_supervisor: task_sup},
+          id: :payload_session
+        )
+
+      init_msg = init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, init_msg, %{}})
+
+      init_notification = build_notification("notifications/initialized", %{})
+      assert :ok = GenServer.cast(session, {:mcp_notification, init_notification, %{}})
+
+      %{session: session}
+    end
+
+    test "arguments/result are absent from span metadata when the flag is unset (default)", %{session: session} do
+      Application.put_env(:anubis_mcp, :telemetry_capture_tool_payload, false)
+
+      request = build_request("tools/call", %{"name" => "no_tasks", "arguments" => %{"x" => 1}}, 1)
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+
+      assert_receive {:tool_call_start, start_meta}, 500
+      refute Map.has_key?(start_meta, :arguments)
+
+      assert_receive {:tool_call_stop, stop_meta}, 500
+      refute Map.has_key?(stop_meta, :result)
+    end
+
+    test "arguments/result are present in span metadata when the flag is enabled", %{session: session} do
+      Application.put_env(:anubis_mcp, :telemetry_capture_tool_payload, true)
+
+      request = build_request("tools/call", %{"name" => "no_tasks", "arguments" => %{"x" => 1}}, 2)
+
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+
+      assert_receive {:tool_call_start, %{tool: "no_tasks", arguments: %{"x" => 1}}}, 500
+      assert_receive {:tool_call_stop, %{tool: "no_tasks", is_error: false, result: _result}}, 500
+    end
+  end
+
   describe "terminate/2 on supervisor-initiated stop" do
     defp start_supervised_session(server_module, session_id) do
       transport_name = Registry.transport_name(server_module, StubTransport)

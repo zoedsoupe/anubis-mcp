@@ -183,13 +183,30 @@ defmodule Anubis.Server.Session.Scheduler do
 
   defp do_handle_request(module, %{"method" => "tools/call"} = request, frame, _method) do
     tool_name = get_in(request, ["params", "name"])
+    capture_payload? = Application.get_env(:anubis_mcp, :telemetry_capture_tool_payload, false)
+
+    start_metadata =
+      if capture_payload? do
+        %{tool: tool_name, arguments: get_in(request, ["params", "arguments"])}
+      else
+        %{tool: tool_name}
+      end
 
     :telemetry.span(
       [:anubis_mcp | Telemetry.event_server_tool_call()],
-      %{tool: tool_name},
+      start_metadata,
       fn ->
         result = module.handle_request(request, frame)
-        {result, %{tool: tool_name, is_error: tool_call_error?(result)}}
+        is_error = tool_call_error?(result)
+
+        stop_metadata =
+          if capture_payload? do
+            %{tool: tool_name, is_error: is_error, result: result}
+          else
+            %{tool: tool_name, is_error: is_error}
+          end
+
+        {result, stop_metadata}
       end
     )
   end
