@@ -11,6 +11,7 @@ defmodule Anubis.Server.Session.Tasks do
   alias Anubis.Server.Handlers.Tasks, as: TasksHandler
   alias Anubis.Server.Session.ServerRequests
   alias Anubis.Server.Task, as: McpTask
+  alias Anubis.Telemetry
 
   @default_task_ttl 60_000
   @max_task_ttl to_timeout(hour: 1)
@@ -401,10 +402,14 @@ defmodule Anubis.Server.Session.Tasks do
     request = %{request | "params" => Map.delete(params, "task")}
 
     server_module = state.server_module
+    tool_name = params["name"]
+    arguments = params["arguments"]
 
     worker =
       Task.Supervisor.async_nolink(state.task_supervisor, fn ->
-        Handlers.handle(request, server_module, frame)
+        Telemetry.span_tool_call(tool_name, arguments, fn ->
+          Handlers.handle(request, server_module, frame)
+        end)
       end)
 
     ttl_timer = Process.send_after(self(), {:task_expired, task.id}, ttl)

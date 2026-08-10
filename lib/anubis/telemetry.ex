@@ -1,6 +1,8 @@
 defmodule Anubis.Telemetry do
   @moduledoc false
 
+  @default_capture_tool_payload false
+
   @doc """
   Execute a telemetry event with the Anubis MCP namespace.
 
@@ -13,6 +15,56 @@ defmodule Anubis.Telemetry do
   def execute(event_name, measurements, metadata) do
     :telemetry.execute([:anubis_mcp | event_name], measurements, metadata)
   end
+
+  @doc """
+  Wraps a tool call handler invocation in the `[:server, :tool_call]`
+  telemetry span.
+
+  Shared by the synchronous scheduler dispatch and the task-augmented
+  `tools/call` worker path so both surface identical span data regardless
+  of which route a given request took.
+
+  The span's `:start` metadata always carries `tool`; the `:stop` metadata
+  always carries `tool` and `is_error`. When
+  `:telemetry_capture_tool_payload` is enabled (defaults to `false`), the
+  `:start` metadata also carries `arguments` and the `:stop` metadata also
+  carries `result`. See `pages/testing.md` for the rationale behind the
+  opt-in default.
+  """
+  @spec span_tool_call(String.t() | nil, map() | nil, (-> result)) :: result when result: var
+  def span_tool_call(tool_name, arguments, fun) do
+    capture_payload? =
+      Application.get_env(:anubis_mcp, :telemetry_capture_tool_payload, @default_capture_tool_payload)
+
+    start_metadata =
+      if capture_payload? do
+        %{tool: tool_name, arguments: arguments}
+      else
+        %{tool: tool_name}
+      end
+
+    :telemetry.span(
+      [:anubis_mcp | event_server_tool_call()],
+      start_metadata,
+      fn ->
+        result = fun.()
+        is_error = tool_call_error?(result)
+
+        stop_metadata =
+          if capture_payload? do
+            %{tool: tool_name, is_error: is_error, result: result}
+          else
+            %{tool: tool_name, is_error: is_error}
+          end
+
+        {result, stop_metadata}
+      end
+    )
+  end
+
+  defp tool_call_error?({:error, _reason, _frame}), do: true
+  defp tool_call_error?({:reply, %{"isError" => true}, _frame}), do: true
+  defp tool_call_error?(_result), do: false
 
   # Define event name constants to ensure consistency
 

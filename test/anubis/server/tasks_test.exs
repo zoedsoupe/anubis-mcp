@@ -46,6 +46,36 @@ defmodule Anubis.Server.TasksTest do
 
       assert decoded["error"]["code"] == -32_601
     end
+
+    test "emits [:anubis_mcp, :server, :tool_call] telemetry for the worker's async execution", %{session: session} do
+      test_pid = self()
+      handler_id = "test-task-augmented-tool-call-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach_many(
+        handler_id,
+        [
+          [:anubis_mcp, :server, :tool_call, :start],
+          [:anubis_mcp, :server, :tool_call, :stop]
+        ],
+        fn
+          [:anubis_mcp, :server, :tool_call, :start], _m, meta, _c -> send(test_pid, {:task_tool_call_start, meta})
+          [:anubis_mcp, :server, :tool_call, :stop], _m, meta, _c -> send(test_pid, {:task_tool_call_stop, meta})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      decoded = create_task_call(session, "always_fails", %{"reason" => "kaboom"}, "req-1")
+      task_id = decoded["result"]["task"]["taskId"]
+
+      # The worker runs asynchronously — wait for span :stop rather than
+      # asserting immediately after the CreateTaskResult reply.
+      assert_receive {:task_tool_call_start, %{tool: "always_fails"}}, 500
+      assert_receive {:task_tool_call_stop, %{tool: "always_fails", is_error: true}}, 500
+
+      SyncHelpers.await_state(session, fn state -> not Map.has_key?(state.tasks, task_id) end)
+    end
   end
 
   describe "tasks/get" do

@@ -178,7 +178,8 @@ The `start: true` option forces the HTTP transport to boot even though no Phoeni
 
 ## Observing tool calls
 
-Every `tools/call` request is wrapped in a `:telemetry.span/3` under
+Every `tools/call` request — including task-augmented calls dispatched via
+the `tasks/` worker path — is wrapped in a `:telemetry.span/3` under
 `[:anubis_mcp, :server, :tool_call]`. By default the span's metadata carries
 only the tool name and whether the call errored — enough to build dashboards
 and alerts, not enough to answer "what was this client actually asking, and
@@ -193,14 +194,23 @@ config :anubis_mcp, :telemetry_capture_tool_payload, true
 
 With the flag enabled, the `:start` event's metadata gains `arguments` (the
 raw `params.arguments` map from the request) and the `:stop` event's
-metadata gains `result` (the value your callback returned):
+metadata gains `result` (the value your callback returned). `arguments` is
+only present on `:start`, and `result`/`is_error` only on `:stop` — attach to
+both events if you need both:
 
 ```elixir
-:telemetry.attach(
+:telemetry.attach_many(
   "log-tool-payloads",
-  [:anubis_mcp, :server, :tool_call, :stop],
-  fn _event, _measurements, %{tool: tool, arguments: args, result: result}, _config ->
-    Logger.info("tool_call", tool: tool, arguments: args, result: inspect(result))
+  [
+    [:anubis_mcp, :server, :tool_call, :start],
+    [:anubis_mcp, :server, :tool_call, :stop]
+  ],
+  fn
+    [:anubis_mcp, :server, :tool_call, :start], _measurements, %{tool: tool, arguments: args}, _config ->
+      Logger.info("tool_call_start", tool: tool, arguments: args)
+
+    [:anubis_mcp, :server, :tool_call, :stop], _measurements, %{tool: tool, result: result}, _config ->
+      Logger.info("tool_call_stop", tool: tool, result: inspect(result))
   end,
   nil
 )

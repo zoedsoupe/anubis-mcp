@@ -746,8 +746,14 @@ defmodule Anubis.Server.SessionTest do
 
   describe "tool_call telemetry opt-in payload capture" do
     setup do
-      original_config = Application.get_env(:anubis_mcp, :telemetry_capture_tool_payload)
-      on_exit(fn -> Application.put_env(:anubis_mcp, :telemetry_capture_tool_payload, original_config) end)
+      original_config = Application.fetch_env(:anubis_mcp, :telemetry_capture_tool_payload)
+
+      on_exit(fn ->
+        case original_config do
+          {:ok, value} -> Application.put_env(:anubis_mcp, :telemetry_capture_tool_payload, value)
+          :error -> Application.delete_env(:anubis_mcp, :telemetry_capture_tool_payload)
+        end
+      end)
 
       test_pid = self()
       handler_id = "test-tool-call-payload-#{System.unique_integer([:positive])}"
