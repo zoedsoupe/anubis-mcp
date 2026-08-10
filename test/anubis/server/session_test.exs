@@ -802,7 +802,7 @@ defmodule Anubis.Server.SessionTest do
     end
 
     test "arguments/result are absent from span metadata when the flag is unset (default)", %{session: session} do
-      Application.put_env(:anubis_mcp, :telemetry_capture_tool_payload, false)
+      Application.delete_env(:anubis_mcp, :telemetry_capture_tool_payload)
 
       request = build_request("tools/call", %{"name" => "no_tasks", "arguments" => %{"x" => 1}}, 1)
 
