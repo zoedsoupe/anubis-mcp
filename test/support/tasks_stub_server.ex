@@ -11,6 +11,7 @@ defmodule TasksStubServer do
     * `must_be_task` — `:required`. Echoes the message immediately.
     * `no_tasks` — defaults to `:forbidden`. Returns `"ok"`.
     * `always_fails` — `:optional`. Returns a `CallToolResult` with `isError: true`.
+    * `capture_context` — `:optional`. Sends its request context to the test process.
   """
 
   use Anubis.Server,
@@ -100,10 +101,28 @@ defmodule TasksStubServer do
     end
   end
 
+  defmodule CaptureContext do
+    @moduledoc "Sends the worker frame context to the test process."
+    use Component, type: :tool, task_support: :optional, scopes: ["mcp.message"]
+
+    alias Anubis.Server.Response
+
+    schema do
+      field(:noop, :string)
+    end
+
+    @impl true
+    def execute(_params, frame) do
+      if pid = frame.assigns[:test_pid], do: send(pid, {:task_context, frame.context})
+      {:reply, Response.text(Response.tool(), "ok"), frame}
+    end
+  end
+
   component TasksStubServer.WaitSignalAdd
   component TasksStubServer.MustBeTask
   component TasksStubServer.NoTasks
   component TasksStubServer.AlwaysFails
+  component TasksStubServer.CaptureContext
 
   @impl true
   def init(_client_info, frame), do: {:ok, frame}

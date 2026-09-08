@@ -31,6 +31,7 @@ defmodule Anubis.Server.Session.Tasks do
   @type store :: %{adapter: module(), name: term()}
   @type state :: map()
   @type frame_fn :: (state() -> Frame.t())
+  @type request_frame_fn :: (state(), map() | nil -> Frame.t())
 
   @doc """
   Builds the task store configuration from the `:task_store` session option.
@@ -109,11 +110,11 @@ defmodule Anubis.Server.Session.Tasks do
   and tool task policy, then spawns the worker task and replies with the
   CreateTaskResult.
   """
-  @spec create_for_tools_call(map(), map(), GenServer.from(), state(), frame_fn()) ::
+  @spec create_for_tools_call(map(), map(), GenServer.from(), state(), request_frame_fn()) ::
           {:reply, {:ok, binary()}, state()}
-  def create_for_tools_call(%{"id" => req_id, "params" => params} = request, _ctx, _from, state, frame_fn) do
+  def create_for_tools_call(%{"id" => req_id, "params" => params} = request, ctx, _from, state, frame_fn) do
     if supported_for_tools_call?(state) do
-      do_create_for_tools_call(request, params, req_id, state, frame_fn)
+      do_create_for_tools_call(request, params, req_id, ctx, state, frame_fn)
     else
       error = Error.protocol(:method_not_found, %{message: "Server does not support task-augmented tools/call"})
       {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
@@ -358,9 +359,9 @@ defmodule Anubis.Server.Session.Tasks do
     adapter.delete(name, session_id, task_id)
   end
 
-  defp do_create_for_tools_call(request, params, req_id, state, frame_fn) do
+  defp do_create_for_tools_call(request, params, req_id, ctx, state, frame_fn) do
     tool_name = params["name"]
-    frame = frame_fn.(state)
+    frame = frame_fn.(state, ctx)
     tool = lookup_tool(state.server_module, frame, tool_name)
 
     cond do
@@ -377,11 +378,11 @@ defmodule Anubis.Server.Session.Tasks do
         {:reply, {:ok, encode_reply(Error.build_json_rpc(error, req_id))}, state}
 
       true ->
-        spawn_worker(request, tool, params, req_id, state, frame_fn)
+        spawn_worker(request, tool, params, req_id, ctx, state, frame_fn)
     end
   end
 
-  defp spawn_worker(request, _tool, params, req_id, state, frame_fn) do
+  defp spawn_worker(request, _tool, params, req_id, ctx, state, frame_fn) do
     requested_ttl = get_in(params, ["task", "ttl"])
     ttl = clamp_ttl(requested_ttl)
 
@@ -397,7 +398,7 @@ defmodule Anubis.Server.Session.Tasks do
 
     state = store_put(state, task)
 
-    frame = state |> frame_fn.() |> Map.put(:task_id, task.id)
+    frame = state |> frame_fn.(ctx) |> Map.put(:task_id, task.id)
 
     request = %{request | "params" => Map.delete(params, "task")}
 
