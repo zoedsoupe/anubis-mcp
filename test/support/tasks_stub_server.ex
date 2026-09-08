@@ -102,15 +102,29 @@ defmodule TasksStubServer do
   end
 
   defmodule CaptureContext do
-    @moduledoc "Sends the worker frame context to the test process."
+    @moduledoc """
+    Captures the task worker request context for lifecycle tests.
+
+    The invoking test supplies a process in `frame.assigns[:test_pid]` and
+    receives the worker context in this message:
+
+        {:task_context, %Anubis.Server.Context{}}
+    """
     use Component, type: :tool, task_support: :optional, scopes: ["mcp.message"]
 
+    alias Anubis.Server.Frame
     alias Anubis.Server.Response
 
     schema do
       field(:noop, :string)
     end
 
+    @doc """
+    Sends the worker frame context to the configured test process.
+
+    Returns an `"ok"` tool response with the frame unchanged.
+    """
+    @spec execute(map(), Frame.t()) :: {:reply, Response.t(), Frame.t()}
     @impl true
     def execute(_params, frame) do
       if pid = frame.assigns[:test_pid], do: send(pid, {:task_context, frame.context})
