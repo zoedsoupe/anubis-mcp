@@ -1,6 +1,9 @@
 defmodule Anubis.MCP.ID do
   @moduledoc false
 
+  # 256 bits, drawn from :crypto.strong_rand_bytes/1 for session IDs.
+  @session_id_bytes 32
+
   @doc """
   Generates a unique request ID.
 
@@ -80,8 +83,18 @@ defmodule Anubis.MCP.ID do
   @doc """
   Generates a unique session ID.
 
-  Creates a standard ID with a "session_" prefix for clarity.
-  Session IDs are used to track HTTP sessions in transports.
+  Creates a "session_" prefixed ID drawn from a cryptographically strong
+  source. Session IDs are used to track HTTP sessions in transports.
+
+  Unlike `generate/0`, no timestamp or process component is mixed in: the
+  session ID is what identifies a session on every later request, so the MCP
+  specification asks for one that is "globally unique and cryptographically
+  secure". A structured ID would narrow the search for anyone guessing, and
+  would tell them when the session began.
+
+  The encoding is URL-safe Base64 without padding, so the ID stays within the
+  visible ASCII range the specification requires of the `Mcp-Session-Id`
+  header.
 
   ## Examples
 
@@ -91,7 +104,7 @@ defmodule Anubis.MCP.ID do
   """
   @spec generate_session_id() :: String.t()
   def generate_session_id do
-    "session_" <> generate()
+    "session_" <> Base.url_encode64(:crypto.strong_rand_bytes(@session_id_bytes), padding: false)
   end
 
   @doc """

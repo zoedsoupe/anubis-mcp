@@ -74,6 +74,40 @@ defmodule Anubis.MCP.IDTest do
     end
   end
 
+  describe "generate_session_id/0" do
+    test "generates an ID with session_ prefix" do
+      id = ID.generate_session_id()
+
+      assert String.starts_with?(id, "session_")
+    end
+
+    test "carries 256 bits of randomness" do
+      "session_" <> rest = ID.generate_session_id()
+
+      assert {:ok, bytes} = Base.url_decode64(rest, padding: false)
+      assert byte_size(bytes) == 32
+    end
+
+    test "carries no timestamp or process component" do
+      "session_" <> rest = ID.generate_session_id()
+
+      refute ID.valid?(rest)
+      assert is_nil(ID.timestamp_from_id(rest))
+    end
+
+    test "stays within the visible ASCII range required for the header" do
+      id = ID.generate_session_id()
+
+      assert id |> String.to_charlist() |> Enum.all?(&(&1 >= 0x21 and &1 <= 0x7E))
+    end
+
+    test "does not repeat" do
+      ids = for _ <- 1..1_000, do: ID.generate_session_id()
+
+      assert length(Enum.uniq(ids)) == 1_000
+    end
+  end
+
   describe "timestamp_from_id/1" do
     test "extracts timestamp from a valid ID" do
       id = ID.generate()
