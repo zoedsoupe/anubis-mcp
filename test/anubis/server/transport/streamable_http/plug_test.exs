@@ -746,4 +746,115 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert response["result"]["protocolVersion"]
     end
   end
+
+  describe "DNS rebinding protection" do
+    setup do
+      setup_session_config()
+      on_exit(&cleanup_session_config/0)
+
+      name = Registry.transport_name(StubServer, :streamable_http)
+      sup = Registry.task_supervisor_name(StubServer)
+
+      {:ok, _transport} =
+        start_supervised({StreamableHTTP, server: StubServer, name: name, task_supervisor: sup})
+
+      :ok
+    end
+
+    # A complete POST with Accept set: without it a 406 would hide both decisions.
+    defp call(opts, host, origin) do
+      :post
+      |> conn("http://#{host}:4000/", ~s({"jsonrpc":"2.0","method":"ping","id":1}))
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("accept", "application/json, text/event-stream")
+      |> then(fn conn ->
+        if origin, do: put_req_header(conn, "origin", origin), else: conn
+      end)
+      |> StreamableHTTPPlug.call(opts)
+    end
+
+    defp assert_passes(opts, host, origin) do
+      unchecked = StreamableHTTPPlug.init(server: StubServer)
+
+      assert call(opts, host, origin).status == call(unchecked, host, origin).status,
+             "expected host #{host} / origin #{inspect(origin)} to pass"
+    end
+
+    test "both checks are off by default" do
+      opts = StreamableHTTPPlug.init(server: StubServer)
+
+      refute call(opts, "evil.example", "http://evil.example").status in [403, 421]
+    end
+
+    test "allowed_hosts: :loopback rejects a foreign Host with 421" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_hosts: :loopback)
+
+      for host <- ["evil.example", "10.0.0.1", "0.0.0.0", "169.254.1.1"] do
+        conn = call(opts, host, nil)
+        assert conn.status == 421, "expected Host #{host} to be refused"
+        {:ok, body} = Jason.decode(conn.resp_body)
+        assert body["error"]["data"]["data"]["message"] == "Misdirected request"
+      end
+    end
+
+    test "allowed_hosts: :loopback accepts the loopback hosts, port-agnostic" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_hosts: :loopback)
+
+      for host <- ["localhost", "127.0.0.1", "127.0.0.2", "[::1]"] do
+        assert_passes(opts, host, nil)
+      end
+    end
+
+    test "allowed_hosts accepts an explicit list of hostnames" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_hosts: ["app.example"])
+
+      assert_passes(opts, "app.example", nil)
+      assert call(opts, "localhost", nil).status == 421
+    end
+
+    test "allowed_origins: :loopback rejects a foreign Origin with 403" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_origins: :loopback)
+
+      conn = call(opts, "localhost", "http://evil.example")
+
+      assert conn.status == 403
+      {:ok, body} = Jason.decode(conn.resp_body)
+      assert body["error"]["data"]["data"]["message"] == "Forbidden origin"
+    end
+
+    test "allowed_origins: :loopback accepts loopback origins and no Origin at all" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_origins: :loopback)
+
+      origins = ["http://localhost:3000", "http://127.0.0.1:8080", "http://127.0.0.2:9000", "http://[::1]:4000", nil]
+
+      for origin <- origins do
+        assert_passes(opts, "localhost", origin)
+      end
+    end
+
+    test "allowed_origins accepts an explicit list of origins" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_origins: ["https://app.example"])
+
+      assert_passes(opts, "app.example", "https://app.example")
+      assert call(opts, "app.example", "http://localhost:3000").status == 403
+    end
+
+    test "a rebound request is refused by Host before Origin is consulted" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_hosts: :loopback, allowed_origins: :loopback)
+
+      assert call(opts, "evil.example", "http://evil.example").status == 421
+    end
+
+    test "the checks run before the request is otherwise processed" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_hosts: :loopback)
+
+      # No Accept header: the 421 instead of a 406 shows the Host gate runs first.
+      conn =
+        :post
+        |> conn("http://evil.example:4000/", "")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 421
+    end
+  end
 end

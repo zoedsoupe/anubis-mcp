@@ -26,6 +26,14 @@ if Code.ensure_loaded?(Plug) do
     - `:server` - The server process name (required)
     - `:session_header` - Custom header name for session ID (default: "mcp-session-id")
     - `:request_timeout` - Request timeout in milliseconds (default: 30000)
+    - `:allowed_hosts` - Which `Host` headers to serve (default: `:all`). `:all`
+      performs no check, `:loopback` accepts only localhost, 127.0.0.0/8 and ::1,
+      and a list accepts exactly those hostnames (port-agnostic). See "DNS
+      rebinding protection" below.
+    - `:allowed_origins` - Which `Origin` headers to accept (default: `:all`).
+      Same values as `:allowed_hosts`, matched against the origin's host; a list
+      matches the full origin (scheme, host and port). A request carrying no
+      `Origin` always passes.
     - `:subscriber_metadata` - A 1-arity function `(Plug.Conn.t() -> map())` called
       when an SSE stream is opened. Its return value is stored verbatim as the
       subscriber's opaque metadata (see
@@ -34,6 +42,42 @@ if Code.ensure_loaded?(Plug) do
       Tag subscribers by tenant, user, feature scope, etc. derived from the request.
       Defaults to `fn _conn -> %{} end`. Use a remote function capture
       (`&MyApp.sse_metadata/1`) so it survives compile-time plug option escaping.
+
+    ## DNS rebinding protection
+
+    The MCP specification's security warning for this transport asks servers to
+    validate the `Origin` header, bind to localhost when running locally, and
+    authenticate connections. Without that, a page the user merely visits can
+    drive their local MCP server from the browser: the page's hostname is
+    rebound to 127.0.0.1, the browser then talks to the local server with the
+    attacker's hostname in `Host` and `Origin`, and the same-origin policy is
+    bypassed. The official SDKs defend this by validating the `Host` header,
+    with `Origin` as a second check, and both were assigned advisories for
+    shipping that protection disabled by default (CVE-2025-66414,
+    CVE-2025-66416).
+
+    Only the application knows which hosts and origins are legitimate, so the
+    checks are opt-in here, as they are on the official SDKs' low-level
+    transports. An application that binds loopback should turn both on:
+
+        forward "/mcp",
+          to: StreamableHTTP.Plug,
+          init_opts: [server: MyServer, allowed_hosts: :loopback, allowed_origins: :loopback]
+
+    An application a browser reaches from a known site lists what it serves:
+
+        forward "/mcp",
+          to: StreamableHTTP.Plug,
+          init_opts: [
+            server: MyServer,
+            allowed_hosts: ["app.example"],
+            allowed_origins: ["https://app.example"]
+          ]
+
+    A rejected `Host` is answered with 421 and logged as `rejected_host`; a
+    rejected `Origin` with 403, logged as `forbidden_origin`. Both run before
+    the request is otherwise processed. `/.well-known/oauth-protected-resource`
+    is not covered: it serves public authorization metadata.
     """
 
     @behaviour Plug
@@ -57,6 +101,8 @@ if Code.ensure_loaded?(Plug) do
     require Message
 
     @default_session_header "mcp-session-id"
+    @default_allowed_hosts :all
+    @default_allowed_origins :all
     @default_timeout 30_000
 
     # Plug callbacks
@@ -67,12 +113,16 @@ if Code.ensure_loaded?(Plug) do
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
       subscriber_metadata = Keyword.get(opts, :subscriber_metadata, &__MODULE__.default_subscriber_metadata/1)
+      allowed_hosts = Keyword.get(opts, :allowed_hosts, @default_allowed_hosts)
+      allowed_origins = Keyword.get(opts, :allowed_origins, @default_allowed_origins)
 
       %{
         server: server,
         session_header: session_header,
         timeout: request_timeout,
-        subscriber_metadata: subscriber_metadata
+        subscriber_metadata: subscriber_metadata,
+        allowed_hosts: allowed_hosts,
+        allowed_origins: allowed_origins
       }
     end
 
@@ -118,6 +168,68 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_request(conn, opts) do
+      with :ok <- validate_host(conn, opts),
+           :ok <- validate_origin(conn, opts) do
+        dispatch_request(conn, opts)
+      else
+        {:error, :host, host} ->
+          Logging.transport_event("rejected_host", %{host: host}, level: :warning)
+
+          send_error(conn, 421, "Misdirected request")
+
+        {:error, :origin, origin} ->
+          Logging.transport_event("forbidden_origin", %{origin: origin}, level: :warning)
+
+          send_error(conn, 403, "Forbidden origin")
+      end
+    end
+
+    # `conn.host` already has the port and IPv6 brackets stripped, so hostnames compare directly.
+    defp validate_host(conn, opts) do
+      host = conn.host
+
+      case Map.get(opts, :allowed_hosts, @default_allowed_hosts) do
+        :all -> :ok
+        :loopback -> if loopback_host?(host), do: :ok, else: {:error, :host, host}
+        allowed when is_list(allowed) -> if host in allowed, do: :ok, else: {:error, :host, host}
+      end
+    end
+
+    # No Origin passes: native clients send none, and a browser cannot omit it.
+    defp validate_origin(conn, opts) do
+      case {Map.get(opts, :allowed_origins, @default_allowed_origins), get_req_header(conn, "origin")} do
+        {:all, _} -> :ok
+        {_, []} -> :ok
+        {:loopback, [origin | _]} -> check_origin(origin, loopback_origin?(origin))
+        {allowed, [origin | _]} when is_list(allowed) -> check_origin(origin, origin in allowed)
+      end
+    end
+
+    defp check_origin(_origin, true), do: :ok
+    defp check_origin(origin, false), do: {:error, :origin, origin}
+
+    defp loopback_origin?(origin) do
+      case URI.parse(origin) do
+        %URI{host: host} when is_binary(host) -> loopback_host?(host)
+        _ -> false
+      end
+    end
+
+    # All of 127.0.0.0/8 and ::1 are loopback, not only "127.0.0.1": parse the
+    # host as an address and test the range.
+    defp loopback_host?("localhost"), do: true
+
+    defp loopback_host?(host) when is_binary(host) do
+      case :inet.parse_strict_address(String.to_charlist(host)) do
+        {:ok, {127, _, _, _}} -> true
+        {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} -> true
+        _ -> false
+      end
+    end
+
+    defp loopback_host?(_), do: false
+
+    defp dispatch_request(conn, opts) do
       case validate_protocol_version_header(conn, opts) do
         :ok ->
           case conn.method do
@@ -666,7 +778,9 @@ if Code.ensure_loaded?(Plug) do
         case status do
           404 -> Error.protocol(:invalid_request, data)
           405 -> Error.protocol(:method_not_found, data)
+          403 -> Error.protocol(:invalid_request, data)
           406 -> Error.protocol(:invalid_request, data)
+          421 -> Error.protocol(:invalid_request, data)
           _ -> Error.protocol(:internal_error, data)
         end
 
