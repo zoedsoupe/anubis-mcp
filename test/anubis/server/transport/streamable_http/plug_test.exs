@@ -763,8 +763,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
 
     # A complete POST with Accept set: without it a 406 would hide both decisions.
     defp call(opts, host, origin) do
+      request = build_request("ping", %{})
+      {:ok, body} = Message.encode_request(request, 1)
+
       :post
-      |> conn("http://#{host}:4000/", ~s({"jsonrpc":"2.0","method":"ping","id":1}))
+      |> conn("http://#{host}:4000/", body)
       |> put_req_header("content-type", "application/json")
       |> put_req_header("accept", "application/json, text/event-stream")
       |> then(fn conn ->
@@ -784,6 +787,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       opts = StreamableHTTPPlug.init(server: StubServer)
 
       refute call(opts, "evil.example", "http://evil.example").status in [403, 421]
+    end
+
+    test "init rejects an allowlist that is not :all, :loopback or a list of strings" do
+      assert_raise ArgumentError, ~r/allowed_hosts/, fn ->
+        StreamableHTTPPlug.init(server: StubServer, allowed_hosts: :localhost)
+      end
+
+      assert_raise ArgumentError, ~r/allowed_origins/, fn ->
+        StreamableHTTPPlug.init(server: StubServer, allowed_origins: ["https://app.example", :all])
+      end
     end
 
     test "allowed_hosts: :loopback rejects a foreign Host with 421" do

@@ -84,6 +84,7 @@ if Code.ensure_loaded?(Plug) do
 
     use Anubis.Logging
 
+    import Peri
     import Plug.Conn
 
     alias Anubis.MCP.Error
@@ -105,6 +106,8 @@ if Code.ensure_loaded?(Plug) do
     @default_allowed_origins :all
     @default_timeout 30_000
 
+    defschema :allowlist, {:either, {{:enum, [:all, :loopback]}, {:list, :string}}}
+
     # Plug callbacks
 
     @impl Plug
@@ -113,8 +116,8 @@ if Code.ensure_loaded?(Plug) do
       session_header = Keyword.get(opts, :session_header, @default_session_header)
       request_timeout = Keyword.get(opts, :request_timeout, @default_timeout)
       subscriber_metadata = Keyword.get(opts, :subscriber_metadata, &__MODULE__.default_subscriber_metadata/1)
-      allowed_hosts = Keyword.get(opts, :allowed_hosts, @default_allowed_hosts)
-      allowed_origins = Keyword.get(opts, :allowed_origins, @default_allowed_origins)
+      allowed_hosts = allowlist!(opts, :allowed_hosts, @default_allowed_hosts)
+      allowed_origins = allowlist!(opts, :allowed_origins, @default_allowed_origins)
 
       %{
         server: server,
@@ -124,6 +127,19 @@ if Code.ensure_loaded?(Plug) do
         allowed_hosts: allowed_hosts,
         allowed_origins: allowed_origins
       }
+    end
+
+    defp allowlist!(opts, key, default) do
+      value = Keyword.get(opts, key, default)
+
+      case allowlist(value) do
+        {:ok, value} ->
+          value
+
+        {:error, _} ->
+          raise ArgumentError,
+                "#{inspect(key)} must be :all, :loopback or a list of strings, got: #{inspect(value)}"
+      end
     end
 
     @doc false
