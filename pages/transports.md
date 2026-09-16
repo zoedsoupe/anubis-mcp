@@ -86,6 +86,7 @@ The plug accepts a few options besides `server`:
 - `:session_header` renames the session id header, which defaults to `mcp-session-id`.
 - `:request_timeout` bounds each request, defaulting to 30 seconds.
 - `:subscriber_metadata` takes a function from `Plug.Conn` to a map, letting you tag SSE subscribers with data derived from the request, such as a tenant id.
+- `:allowed_hosts` and `:allowed_origins` turn on DNS rebinding protection. Each takes `:all` (the default, no check), `:loopback`, or a list; a rejected `Host` is answered 421 and a rejected `Origin` 403, before authorization. See the plug's own documentation for when to turn them on.
 
 ### Sessions
 

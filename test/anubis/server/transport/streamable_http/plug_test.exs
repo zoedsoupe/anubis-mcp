@@ -797,6 +797,14 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert_raise ArgumentError, ~r/allowed_origins/, fn ->
         StreamableHTTPPlug.init(server: StubServer, allowed_origins: ["https://app.example", :all])
       end
+
+      assert_raise ArgumentError, ~r/allowed_origins/, fn ->
+        StreamableHTTPPlug.init(server: StubServer, allowed_origins: ["https://app.example", nil])
+      end
+
+      assert_raise ArgumentError, ~r/allowed_hosts.*nil/, fn ->
+        StreamableHTTPPlug.init(server: StubServer, allowed_hosts: nil)
+      end
     end
 
     test "allowed_hosts: :loopback rejects a foreign Host with 421" do
@@ -868,6 +876,23 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 421
+    end
+
+    test "the checks run before authorization" do
+      key = {ServerSupervisor, StubServer, :authorization_config}
+      :persistent_term.put(key, OAuthTestHelper.auth_config())
+      on_exit(fn -> :persistent_term.erase(key) end)
+
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_hosts: :loopback)
+
+      assert call(opts, "evil.example", nil).status == 421
+      assert call(opts, "localhost", nil).status == 401
+    end
+
+    test "an Origin that is not valid UTF-8 is refused, not a crash" do
+      opts = StreamableHTTPPlug.init(server: StubServer, allowed_origins: :loopback)
+
+      assert call(opts, "localhost", "http://" <> <<255>> <> ".example").status == 403
     end
   end
 end

@@ -76,8 +76,9 @@ if Code.ensure_loaded?(Plug) do
 
     A rejected `Host` is answered with 421 and logged as `rejected_host`; a
     rejected `Origin` with 403, logged as `forbidden_origin`. Both run before
-    the request is otherwise processed. `/.well-known/oauth-protected-resource`
-    is not covered: it serves public authorization metadata.
+    authorization and before the request is otherwise processed.
+    `/.well-known/oauth-protected-resource` is not covered: it serves public
+    authorization metadata.
     """
 
     @behaviour Plug
@@ -106,7 +107,7 @@ if Code.ensure_loaded?(Plug) do
     @default_allowed_origins :all
     @default_timeout 30_000
 
-    defschema :allowlist, {:either, {{:enum, [:all, :loopback]}, {:list, :string}}}
+    defschema :allowlist, {:required, {:either, {{:enum, [:all, :loopback]}, {:list, {:required, :string}}}}}
 
     # Plug callbacks
 
@@ -171,22 +172,14 @@ if Code.ensure_loaded?(Plug) do
       if conn.request_path == "/.well-known/oauth-protected-resource" do
         handle_well_known(conn, opts)
       else
-        case authorize(conn, opts) do
-          {:ok, conn, claims} ->
-            opts
-            |> Map.put(:auth_claims, claims)
-            |> then(&handle_request(conn, &1))
-
-          {:halt, conn} ->
-            conn
-        end
+        handle_request(conn, opts)
       end
     end
 
     defp handle_request(conn, opts) do
       with :ok <- validate_host(conn, opts),
            :ok <- validate_origin(conn, opts) do
-        dispatch_request(conn, opts)
+        authorize_and_dispatch(conn, opts)
       else
         {:error, :host, host} ->
           Logging.transport_event("rejected_host", %{host: host}, level: :warning)
@@ -197,6 +190,18 @@ if Code.ensure_loaded?(Plug) do
           Logging.transport_event("forbidden_origin", %{origin: origin}, level: :warning)
 
           send_error(conn, 403, "Forbidden origin")
+      end
+    end
+
+    defp authorize_and_dispatch(conn, opts) do
+      case authorize(conn, opts) do
+        {:ok, conn, claims} ->
+          opts
+          |> Map.put(:auth_claims, claims)
+          |> then(&dispatch_request(conn, &1))
+
+        {:halt, conn} ->
+          conn
       end
     end
 
@@ -211,7 +216,7 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    # No Origin passes: native clients send none, and a browser cannot omit it.
+    # No Origin passes: native clients and same-origin GETs (the SSE stream) send none.
     defp validate_origin(conn, opts) do
       case {Map.get(opts, :allowed_origins, @default_allowed_origins), get_req_header(conn, "origin")} do
         {:all, _} -> :ok
@@ -236,7 +241,7 @@ if Code.ensure_loaded?(Plug) do
     defp loopback_host?("localhost"), do: true
 
     defp loopback_host?(host) when is_binary(host) do
-      case :inet.parse_strict_address(String.to_charlist(host)) do
+      case :inet.parse_strict_address(:binary.bin_to_list(host)) do
         {:ok, {127, _, _, _}} -> true
         {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} -> true
         _ -> false
