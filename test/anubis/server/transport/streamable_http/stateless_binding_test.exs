@@ -104,6 +104,23 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     end
   end
 
+  describe "a body a parser already decoded" do
+    test "is validated against the version it declares", %{opts: opts} do
+      body = %{"jsonrpc" => "2.0", "id" => 1, "method" => "server/discover", "params" => %{"_meta" => meta(@client_info)}}
+
+      conn =
+        :post
+        |> conn("/", body)
+        |> put_req_header("accept", "application/json, text/event-stream")
+        |> put_req_header("mcp-protocol-version", @version)
+        |> put_req_header("mcp-method", "server/discover")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 200
+      assert JSON.decode!(conn.resp_body)["result"]["supportedVersions"] == [@version]
+    end
+  end
+
   describe "tools/call" do
     test "runs init/2 with the request's client info and the connection's assigns", %{opts: opts} do
       identity = call_who_am_i(opts, assigns: %{user: "alice"})
