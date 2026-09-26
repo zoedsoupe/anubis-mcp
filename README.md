@@ -28,6 +28,8 @@ end
 | 1.x        | 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25 |
 | 2.x        | 2025-03-26, 2025-06-18, 2025-11-25 |
 
+Servers also serve 2026-07-28, the stateless revision, over Streamable HTTP when they declare it in `protocol_versions:`; see [Transports](pages/transports.md#stateless-requests-2026-07-28).
+
 Breaking changes in 2.0:
 
 - Support for spec version 2024-11-05 was dropped; 2025-03-26 is the new floor.

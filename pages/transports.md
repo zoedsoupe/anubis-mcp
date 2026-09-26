@@ -97,6 +97,25 @@ Each connecting client gets its own session process, identified by the session i
  session_idle_timeout: to_timeout(minute: 10)}
 ```
 
+### Stateless requests (2026-07-28)
+
+Protocol revision 2026-07-28 drops the `initialize` handshake and the session: every request carries its protocol version, client info and capabilities in `params._meta`. The plug serves it once the server declares it, next to the handshake versions it keeps serving:
+
+```elixir
+use Anubis.Server,
+  name: "my-server",
+  version: "1.0.0",
+  capabilities: [:tools],
+  protocol_versions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]
+```
+
+The `MCP-Protocol-Version` header picks the era for each request. Without it, or with a handshake version, nothing changes. With `2026-07-28`:
+
+- `Mcp-Method` must name the body's method, and `Mcp-Name` the tool, prompt or resource for `tools/call`, `prompts/get` and `resources/read`; a mismatch, or a `_meta` version different from the header, is a 400 with `-32020`.
+- The request is served by a session started for it alone and stopped once it answers. `init/2` runs for it with that request's client info, and the frame does not carry over to the next request. The `[:server, :init]` and `[:server, :terminate]` telemetry events fire once per such request.
+- No `mcp-session-id` is read or sent, GET and DELETE are 405, and a notification is a 202 with no body.
+- A version the server does not declare is a 400 with `-32022` listing the stateless versions it serves. A server that declares none answers as before, so clients that speak both eras fall back to `initialize`.
+
 ### Conditional startup
 
 When running inside a Phoenix release, the HTTP-transport server follows the endpoint's lead: it starts only when Phoenix is serving requests, so nodes started for a migration or a remote console do not spin up MCP sessions. Outside Phoenix it starts unconditionally. To override the detection, pass `start:` explicitly:

@@ -132,6 +132,11 @@ defmodule Anubis.Server do
   request with an encodable JSON-RPC error. Return an `Anubis.MCP.Error` struct
   to control the error code sent to the client; any other term is wrapped as an
   internal error with a stringified message.
+
+  Requests of the stateless era (2026-07-28 onward) have no handshake. Over
+  Streamable HTTP each one is served by a session of its own, and `init/2` runs
+  for every such request, with the client info that request carries, before
+  it is handled. The frame it returns lives only as long as the request.
   """
   @callback init(client_info :: map(), Frame.t()) :: {:ok, Frame.t()} | {:error, term()}
 
