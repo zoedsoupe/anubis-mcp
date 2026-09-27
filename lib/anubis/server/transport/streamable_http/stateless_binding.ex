@@ -57,6 +57,7 @@ if Code.ensure_loaded?(Plug) do
     require Message
 
     @protocol_version_key Schema.protocol_version_key()
+    @client_capabilities_key "io.modelcontextprotocol/clientCapabilities"
     @base64_prefix "=?base64?"
     @base64_suffix "?="
 
@@ -135,14 +136,14 @@ if Code.ensure_loaded?(Plug) do
     @spec call(Plug.Conn.t(), String.t(), map(), map()) :: Plug.Conn.t()
     def call(%Plug.Conn{method: "POST"} = conn, version, context, opts) do
       with :ok <- validate_accept_header(conn),
-           {:ok, message, conn} <- read_single_message(conn, opts) do
-        serve(conn, message, version, context, opts)
+           {:ok, raw, conn} <- read_json(conn, opts) do
+        admit(conn, raw, version, context, opts)
       else
         {:error, :invalid_accept_header} ->
           send_error(conn, 406, Error.protocol(:invalid_request, %{message: "Client must accept application/json"}), nil)
 
         {:error, reason} ->
-          send_decode_error(conn, reason)
+          send_decode_error(conn, reason, nil)
       end
     end
 
@@ -151,6 +152,30 @@ if Code.ensure_loaded?(Plug) do
       |> put_resp_header("allow", "POST")
       |> send_error(405, Error.protocol(:method_not_found, %{message: "Method not allowed"}), nil)
     end
+
+    # A request's _meta is checked for shape before the schema runs, so a missing
+    # field is the -32602 the stateless era defines rather than a schema miss.
+    defp admit(conn, raw, version, context, opts) do
+      with :ok <- validate_request_meta(raw),
+           {:ok, message} <- Message.validate_message(raw) do
+        serve(conn, message, version, context, opts)
+      else
+        {:error, reason} -> send_decode_error(conn, reason, request_id(raw))
+      end
+    end
+
+    defp validate_request_meta(%{"id" => _, "method" => _} = message) do
+      case get_in(message, ["params", "_meta"]) do
+        %{@protocol_version_key => version, @client_capabilities_key => capabilities}
+        when is_binary(version) and is_map(capabilities) ->
+          :ok
+
+        _incomplete ->
+          {:error, :invalid_meta}
+      end
+    end
+
+    defp validate_request_meta(_message), do: :ok
 
     defp serve(conn, message, version, context, opts) do
       cond do
@@ -295,21 +320,24 @@ if Code.ensure_loaded?(Plug) do
         else: {:error, :invalid_accept_header}
     end
 
-    defp read_single_message(conn, opts) do
+    defp read_json(conn, opts) do
       with {:ok, body, conn} <- read_request_body(conn, opts),
-           {:ok, [message]} <- decode(body) do
-        {:ok, message, conn}
-      else
-        {:ok, [_ | _]} -> {:error, :batch}
-        {:ok, []} -> {:error, :invalid_request}
-        {:error, reason} -> {:error, reason}
+           {:ok, raw} <- parse(body) do
+        {:ok, raw, conn}
       end
     end
 
-    defp decode(body) when is_binary(body), do: Message.decode(body)
+    # Plug.Parsers puts a top-level JSON array under "_json".
+    defp parse(%{"_json" => _batch}), do: {:error, :batch}
+    defp parse(body) when is_map(body), do: {:ok, body}
 
-    defp decode(body) when is_map(body) do
-      with {:ok, message} <- Message.validate_message(body), do: {:ok, [message]}
+    defp parse(body) when is_binary(body) do
+      case JSON.decode(body) do
+        {:ok, message} when is_map(message) -> {:ok, message}
+        {:ok, list} when is_list(list) -> {:error, :batch}
+        {:ok, _other} -> {:error, :invalid_request}
+        {:error, _reason} -> {:error, :parse_error}
+      end
     end
 
     defp read_request_body(%{body_params: %Unfetched{aspect: :body_params}} = conn, %{timeout: timeout}) do
@@ -318,20 +346,25 @@ if Code.ensure_loaded?(Plug) do
 
     defp read_request_body(%{body_params: body} = conn, _opts), do: {:ok, body, conn}
 
-    defp send_decode_error(conn, :method_not_found) do
-      send_error(conn, 404, Error.protocol(:method_not_found, %{message: "Method not found"}), nil)
+    defp send_decode_error(conn, :method_not_found, id) do
+      send_error(conn, 404, Error.protocol(:method_not_found, %{message: "Method not found"}), id)
     end
 
-    defp send_decode_error(conn, :batch) do
-      send_error(conn, 400, Error.protocol(:invalid_request, %{message: "Batched requests are not supported"}), nil)
+    defp send_decode_error(conn, :invalid_meta, id) do
+      message = "_meta must carry #{@protocol_version_key} and #{@client_capabilities_key}"
+      send_error(conn, 400, Error.protocol(:invalid_params, %{message: message}), id)
     end
 
-    defp send_decode_error(conn, reason) when reason in [:parse_error, :invalid_json] do
-      send_error(conn, 400, Error.protocol(:parse_error, %{message: "Parse error"}), nil)
+    defp send_decode_error(conn, :batch, id) do
+      send_error(conn, 400, Error.protocol(:invalid_request, %{message: "Batched requests are not supported"}), id)
     end
 
-    defp send_decode_error(conn, _reason) do
-      send_error(conn, 400, Error.protocol(:invalid_request, %{message: "Invalid Request"}), nil)
+    defp send_decode_error(conn, reason, id) when reason in [:parse_error, :invalid_json] do
+      send_error(conn, 400, Error.protocol(:parse_error, %{message: "Parse error"}), id)
+    end
+
+    defp send_decode_error(conn, _reason, id) do
+      send_error(conn, 400, Error.protocol(:invalid_request, %{message: "Invalid Request"}), id)
     end
 
     defp send_error(conn, status, %Error{} = error, id) do

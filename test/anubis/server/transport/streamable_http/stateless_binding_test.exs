@@ -189,17 +189,37 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       assert_header_mismatch(conn, "mcp-name")
     end
 
-    test "rejects a body that does not declare the header's protocol version", %{opts: opts} do
+    test "answers a request without _meta with -32602 and its id", %{opts: opts} do
       body = %{"jsonrpc" => "2.0", "id" => 7, "method" => "tools/call", "params" => %{"name" => "who_am_i_tool"}}
 
-      conn =
-        body
-        |> JSON.encode!()
-        |> stateless_conn([{"mcp-method", "tools/call"}, {"mcp-name", "who_am_i_tool"}])
-        |> StreamableHTTPPlug.call(opts)
+      conn = post_raw(opts, body, [{"mcp-method", "tools/call"}, {"mcp-name", "who_am_i_tool"}])
+
+      assert conn.status == 400
+      assert %{"id" => 7, "error" => %{"code" => -32_602}} = JSON.decode!(conn.resp_body)
+    end
+
+    test "answers a _meta without clientCapabilities with -32602 and its id", %{opts: opts} do
+      meta = %{
+        "io.modelcontextprotocol/protocolVersion" => @version,
+        "io.modelcontextprotocol/clientInfo" => @client_info
+      }
+
+      body = %{"jsonrpc" => "2.0", "id" => 8, "method" => "server/discover", "params" => %{"_meta" => meta}}
+
+      conn = post_raw(opts, body, [{"mcp-method", "server/discover"}])
+
+      assert conn.status == 400
+      assert %{"id" => 8, "error" => %{"code" => -32_602}} = JSON.decode!(conn.resp_body)
+    end
+
+    test "still answers a complete _meta naming another version with a header mismatch", %{opts: opts} do
+      meta = %{meta(@client_info) | "io.modelcontextprotocol/protocolVersion" => "2099-01-01"}
+      body = %{"jsonrpc" => "2.0", "id" => 9, "method" => "server/discover", "params" => %{"_meta" => meta}}
+
+      conn = post_raw(opts, body, [{"mcp-method", "server/discover"}])
 
       assert_header_mismatch(conn, "MCP-Protocol-Version")
-      assert JSON.decode!(conn.resp_body)["id"] == 7
+      assert JSON.decode!(conn.resp_body)["id"] == 9
     end
   end
 
@@ -208,7 +228,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       conn = post_stateless(opts, "ping")
 
       assert conn.status == 404
-      assert JSON.decode!(conn.resp_body)["error"]["code"] == -32_601
+      assert %{"id" => 1, "error" => %{"code" => -32_601}} = JSON.decode!(conn.resp_body)
     end
 
     test "an unserved version is a 400 with -32022 naming the stateless versions", %{opts: opts} do
@@ -357,6 +377,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     %{"jsonrpc" => "2.0", "id" => 1, "method" => method, "params" => %{"_meta" => meta(@client_info)}}
     |> JSON.encode!()
     |> stateless_conn([{"mcp-method", method}])
+    |> StreamableHTTPPlug.call(opts)
+  end
+
+  defp post_raw(opts, body, headers) do
+    body
+    |> JSON.encode!()
+    |> stateless_conn(headers)
     |> StreamableHTTPPlug.call(opts)
   end
 
