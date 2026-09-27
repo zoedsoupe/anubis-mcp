@@ -406,7 +406,8 @@ defmodule Anubis.Server.Session do
       %{client_info: client_info} ->
         frame = prepare_frame(%{state | client_info: client_info}, transport_context)
 
-        case maybe_call_init(state.server_module, client_info, frame) do
+        # `clientInfo` is optional in this era, and `init/2` is typed to take a map.
+        case maybe_call_init(state.server_module, client_info || %{}, frame) do
           {:ok, frame} -> {:ok, %{state | frame: frame, initialized: true}}
           {:error, reason} -> {:error, Error.wrap_reason(reason)}
         end

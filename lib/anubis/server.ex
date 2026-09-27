@@ -136,7 +136,8 @@ defmodule Anubis.Server do
   Requests of the stateless era (2026-07-28 onward) have no handshake. Over
   Streamable HTTP each one is served by a session of its own, and `init/2` runs
   for every such request, with the client info that request carries, before
-  it is handled. The frame it returns lives only as long as the request.
+  it is handled; `clientInfo` is optional in that era, and a request without
+  it passes an empty map. The frame it returns lives only as long as the request.
   """
   @callback init(client_info :: map(), Frame.t()) :: {:ok, Frame.t()} | {:error, term()}
 

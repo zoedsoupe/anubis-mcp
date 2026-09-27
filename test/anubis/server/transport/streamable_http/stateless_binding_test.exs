@@ -55,7 +55,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     component(WhoAmITool)
 
     @impl true
-    def init(client_info, frame), do: {:ok, Frame.assign(frame, :initialized_for, client_info["name"])}
+    def init(client_info, frame) when is_map(client_info),
+      do: {:ok, Frame.assign(frame, :initialized_for, client_info["name"])}
   end
 
   setup do
@@ -154,6 +155,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
                "leaked" => nil,
                "client" => "BindingProbe"
              }
+    end
+
+    test "runs init/2 with an empty map when the request declares no client info", %{opts: opts} do
+      assert %{"initialized_for" => nil, "client" => nil} = call_who_am_i(opts, client_info: nil)
     end
 
     test "keeps one request's assigns and client info out of the next", %{opts: opts} do
@@ -424,13 +429,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     Enum.reduce(headers, conn, fn {name, value}, conn -> put_req_header(conn, name, value) end)
   end
 
-  defp meta(client_info) do
-    %{
-      "io.modelcontextprotocol/protocolVersion" => @version,
-      "io.modelcontextprotocol/clientInfo" => client_info,
-      "io.modelcontextprotocol/clientCapabilities" => %{}
-    }
+  defp meta(nil) do
+    %{"io.modelcontextprotocol/protocolVersion" => @version, "io.modelcontextprotocol/clientCapabilities" => %{}}
   end
+
+  defp meta(client_info), do: Map.put(meta(nil), "io.modelcontextprotocol/clientInfo", client_info)
 
   defp assert_header_mismatch(conn, header) do
     assert conn.status == 400
