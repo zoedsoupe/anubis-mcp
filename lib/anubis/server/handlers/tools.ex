@@ -6,6 +6,8 @@ defmodule Anubis.Server.Handlers.Tools do
   alias Anubis.Server.Component.Tool
   alias Anubis.Server.Frame
   alias Anubis.Server.Handlers
+  alias Anubis.Server.Handlers.InputRequests
+  alias Anubis.Server.InputRequired
   alias Anubis.Server.Response
 
   @spec handle_list(map, Frame.t(), module()) ::
@@ -33,6 +35,7 @@ defmodule Anubis.Server.Handlers.Tools do
 
     if tool = find_tool_module(registered_tools, tool_name) do
       with :ok <- check_scopes(tool, frame),
+           {:ok, frame} <- InputRequests.admit(request, frame, {"tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(params, tool, frame),
            do: forward_to(server, tool, params, frame)
@@ -43,10 +46,12 @@ defmodule Anubis.Server.Handlers.Tools do
   end
 
   def handle_call(%{"params" => %{"name" => tool_name}} = request, frame, server) do
+    # Private functions
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
       with :ok <- check_scopes(tool, frame),
+           {:ok, frame} <- InputRequests.admit(request, frame, {"tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(%{}, tool, frame),
            do: forward_to(server, tool, params, frame)
@@ -55,8 +60,6 @@ defmodule Anubis.Server.Handlers.Tools do
       {:error, Error.protocol(:invalid_params, payload), frame}
     end
   end
-
-  # Private functions
 
   defp check_scopes(%Tool{scopes: []}, _frame), do: :ok
 
@@ -110,6 +113,9 @@ defmodule Anubis.Server.Handlers.Tools do
       {:reply, %Response{} = response, frame} ->
         maybe_validate_output_schema(tool, response, frame)
 
+      {:reply, %InputRequired{} = input, frame} ->
+        InputRequests.respond(input, frame, {"tools/call", tool.name})
+
       {:noreply, frame} ->
         {:reply, %{"content" => [], "isError" => false}, frame}
 
@@ -122,6 +128,9 @@ defmodule Anubis.Server.Handlers.Tools do
     case handler.execute(params, frame) do
       {:reply, %Response{} = response, frame} ->
         maybe_validate_output_schema(tool, response, frame)
+
+      {:reply, %InputRequired{} = input, frame} ->
+        InputRequests.respond(input, frame, {"tools/call", tool.name})
 
       {:noreply, frame} ->
         {:reply, %{"content" => [], "isError" => false}, frame}

@@ -6,6 +6,8 @@ defmodule Anubis.Server.Handlers.Resources do
   alias Anubis.Server.Component.URITemplate
   alias Anubis.Server.Frame
   alias Anubis.Server.Handlers
+  alias Anubis.Server.Handlers.InputRequests
+  alias Anubis.Server.InputRequired
   alias Anubis.Server.Response
   alias Anubis.Server.Stateless
 
@@ -47,25 +49,28 @@ defmodule Anubis.Server.Handlers.Resources do
 
   @spec handle_read(map(), Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
-  def handle_read(%{"params" => %{"uri" => uri}}, frame, server) when is_binary(uri) do
+  def handle_read(%{"params" => %{"uri" => uri}} = request, frame, server) when is_binary(uri) do
     resources = Handlers.get_server_resources(server, frame)
     templates = Handlers.get_server_resource_templates(server, frame)
 
-    case find_static_resource(resources, uri) do
-      %Resource{} = resource ->
-        with :ok <- check_scopes(resource, frame) do
-          read_single_resource(server, resource, uri, frame)
-        end
-
-      nil ->
-        try_resource_templates(templates, server, uri, frame)
+    with {:ok, frame} <- InputRequests.admit(request, frame, {"resources/read", uri}) do
+      read_resource(find_static_resource(resources, uri), templates, server, uri, frame)
     end
   end
+
+  defp read_resource(%Resource{} = resource, _templates, server, uri, frame) do
+    with :ok <- check_scopes(resource, frame) do
+      read_single_resource(server, resource, uri, frame)
+    end
+  end
+
+  defp read_resource(nil, templates, server, uri, frame), do: try_resource_templates(templates, server, uri, frame)
 
   @spec handle_subscribe(map(), Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_subscribe(%{"params" => %{"uri" => uri}}, frame, server) when is_binary(uri) do
     if subscribe_enabled?(server) do
+      # Private functions
       with :ok <- check_scopes_for_uri(server, uri, frame) do
         {:reply, %{}, Frame.subscribe_resource(frame, uri)}
       end
@@ -83,8 +88,6 @@ defmodule Anubis.Server.Handlers.Resources do
       {:error, Error.protocol(:method_not_found, %{method: "resources/unsubscribe"}), frame}
     end
   end
-
-  # Private functions
 
   defp check_scopes(%Resource{scopes: []}, _frame), do: :ok
 
@@ -178,6 +181,9 @@ defmodule Anubis.Server.Handlers.Resources do
         content = Response.to_protocol(response, uri, mime_type)
         {:reply, %{"contents" => [content]}, frame}
 
+      {:reply, %InputRequired{} = input, frame} ->
+        InputRequests.respond(input, frame, {"resources/read", uri})
+
       {:noreply, frame} ->
         content = %{"uri" => uri, "mimeType" => mime_type, "text" => ""}
         {:reply, %{"contents" => [content]}, frame}
@@ -192,6 +198,9 @@ defmodule Anubis.Server.Handlers.Resources do
       {:reply, %Response{} = response, frame} ->
         content = Response.to_protocol(response, uri, mime_type)
         {:reply, %{"contents" => [content]}, frame}
+
+      {:reply, %InputRequired{} = input, frame} ->
+        InputRequests.respond(input, frame, {"resources/read", uri})
 
       {:noreply, frame} ->
         content = %{"uri" => uri, "mimeType" => mime_type, "text" => ""}

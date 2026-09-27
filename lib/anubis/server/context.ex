@@ -46,6 +46,15 @@ defmodule Anubis.Server.Context do
 
   They are `nil` (and `client_capabilities` empty) before a legacy session has
   been initialized.
+
+  ## Multi round-trip fields
+
+  `input_responses` holds the answers a client sent to an
+  `Anubis.Server.InputRequired`, keyed as the input requests were, and
+  `request_state` the verified term a handler attached with
+  `Anubis.Server.InputRequired.state/2`. They are set for the `tools/call`,
+  `prompts/get` and `resources/read` request that carries them, and are empty
+  and `nil` otherwise.
   """
 
   @type auth_claims :: %{
@@ -69,7 +78,9 @@ defmodule Anubis.Server.Context do
           protocol_version: String.t() | nil,
           protocol_module: module() | nil,
           client_capabilities: map(),
-          log_level: String.t() | nil
+          log_level: String.t() | nil,
+          input_responses: %{String.t() => map()},
+          request_state: term()
         }
 
   defstruct session_id: nil,
@@ -81,5 +92,7 @@ defmodule Anubis.Server.Context do
             protocol_version: nil,
             protocol_module: nil,
             client_capabilities: %{},
-            log_level: nil
+            log_level: nil,
+            input_responses: %{},
+            request_state: nil
 end

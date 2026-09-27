@@ -249,6 +249,41 @@ end
 
 Each connected client gets its own session process with its own frame, so assigns are naturally isolated per session.
 
+## Asking the client for input
+
+In the stateless era (2026-07-28), a server that needs something from the user or the client's model mid-request does not send its own request: a `tools/call`, `prompts/get` or `resources/read` handler returns an `Anubis.Server.InputRequired` instead of a response. The client gathers the answers and retries the original request with them, and the handler reads them from the frame.
+
+```elixir
+alias Anubis.Server.{Frame, InputRequired, Response}
+
+@impl true
+def execute(%{"to" => to, "text" => text}, frame) do
+  case Frame.input_response(frame, "confirm") do
+    %{"action" => "accept"} ->
+      MyApp.Messages.send(to, text)
+      {:reply, Response.text(Response.tool(), "Sent."), frame}
+
+    _not_yet ->
+      input =
+        InputRequired.new()
+        |> InputRequired.elicit("confirm", "Send \"#{text}\" to #{to}?", %{"type" => "object"})
+
+      {:reply, input, frame}
+  end
+end
+```
+
+- `InputRequired.elicit/4`, `sample/3` and `list_roots/2` add the three kinds of input request. Each needs the matching client capability; one the client did not declare is refused with `-32021`, so check `Frame.client_supports?/2` to offer an alternative.
+- A client may answer only part of what was asked, or nothing, and may never retry. Ask again for what is missing rather than failing; answers the handler did not ask for are simply there to ignore.
+- `InputRequired.state/2` attaches a term that comes back on the retry as `Frame.request_state/1`, for handlers that work in several rounds. It travels signed with HMAC-SHA256 and bound to the authenticated subject, to the tool, prompt or resource, and to a ten-minute expiry (`:request_state_ttl`); a state that fails any of these is refused with `-32602` before the handler runs. Signing needs a secret of at least 32 bytes:
+
+  ```elixir
+  config :anubis_mcp, request_state_secret: System.fetch_env!("MCP_REQUEST_STATE_SECRET")
+  ```
+
+  A server that authenticates outside `Anubis.Server.Authorization` has no subject on the frame, so it puts its own principal in the state and checks it on the retry.
+- Handshake-era requests cannot receive this result; a handler serving both eras checks `frame.context.protocol_version` before returning one.
+
 ## Notifications
 
 Servers can push notifications to connected clients. Call these from inside server callbacks:
