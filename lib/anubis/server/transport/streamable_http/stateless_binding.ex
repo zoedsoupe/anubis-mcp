@@ -191,15 +191,7 @@ if Code.ensure_loaded?(Plug) do
           send_resp(conn, 202, "")
 
         Message.is_request(message) ->
-          case validate_headers(conn, message, version) do
-            :ok ->
-              if accepts_response?(conn, message),
-                do: with_session(conn, message, opts, &serve_request(conn, &1, &2, message, version, context, opts)),
-                else: send_error(conn, 406, not_acceptable(), request_id(message))
-
-            {:error, %Error{} = error} ->
-              send_error(conn, 400, error, request_id(message))
-          end
+          validate_and_serve(conn, message, version, context, opts)
 
         true ->
           error = Error.protocol(:invalid_request, %{message: "Clients send only requests and notifications"})
@@ -376,12 +368,23 @@ if Code.ensure_loaded?(Plug) do
       ServerSupervisor.terminate_session(server, session)
     end
 
-    # A subscription is answered with a stream, which a client must accept.
-    defp accepts_response?(conn, %{"method" => "subscriptions/listen"}) do
-      conn |> get_req_header("accept") |> List.first("") |> String.contains?("text/event-stream")
+    defp validate_and_serve(conn, message, version, context, opts) do
+      with :ok <- validate_headers(conn, message, version),
+           :ok <- accepts_response(conn, message) do
+        with_session(conn, message, opts, &serve_request(conn, &1, &2, message, version, context, opts))
+      else
+        {:error, :not_acceptable} -> send_error(conn, 406, not_acceptable(), request_id(message))
+        {:error, %Error{} = error} -> send_error(conn, 400, error, request_id(message))
+      end
     end
 
-    defp accepts_response?(_conn, _message), do: true
+    # A subscription is answered with a stream, which a client must accept.
+    defp accepts_response(conn, %{"method" => "subscriptions/listen"}) do
+      accept = conn |> get_req_header("accept") |> List.first("")
+      if String.contains?(accept, "text/event-stream"), do: :ok, else: {:error, :not_acceptable}
+    end
+
+    defp accepts_response(_conn, _message), do: :ok
 
     defp not_acceptable do
       Error.protocol(:invalid_request, %{message: "Client must accept text/event-stream"})
