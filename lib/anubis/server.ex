@@ -85,9 +85,10 @@ defmodule Anubis.Server do
 
   ## Sending Notifications
 
-  Notification functions use `send(self(), ...)` and must be called from within the
-  Session process (i.e., inside callbacks). For sending from external processes or tasks,
-  use `send/2` with the session PID directly.
+  Notification functions deliver to the Session serving the caller, so they work
+  from any callback: the Session's own (`init/2`, `handle_info/2`, ...) and the
+  request handlers of tools, prompts and resources, which run in a task the
+  Session starts. From any other process, use `send/2` with the session PID.
 
       # Inside a callback:
       def handle_info(:data_changed, frame) do
@@ -749,19 +750,29 @@ defmodule Anubis.Server do
 
   def validate_server_info!(_, name, version) when is_binary(name) and is_binary(version), do: :ok
 
-  # Notification Functions — all use send(self(), ...) to the current Session process
+  # Notification Functions — all deliver to the Session serving the caller, see session/0
+
+  @session_key :"$anubis_session"
+
+  @doc false
+  @spec put_session(pid()) :: term()
+  def put_session(session) when is_pid(session), do: Process.put(@session_key, session)
+
+  # Request handlers run in a task the Session starts, which records the Session
+  # here; every other callback runs in the Session itself.
+  defp session, do: Process.get(@session_key, self())
 
   @doc """
   Sends a resources list changed notification.
 
-  **Must be called from within a Session callback** — the current process must be
-  the Session GenServer. Calling from outside a callback will silently lose the message.
+  **Must be called from a callback** — a Session callback or a tool, prompt or
+  resource handler. From any other process the message is lost.
 
   For external processes, use `send(session_pid, {:send_notification, "notifications/resources/list_changed", %{}})`.
   """
   @spec send_resources_list_changed :: :ok
   def send_resources_list_changed do
-    send(self(), {:send_notification, "notifications/resources/list_changed", %{}})
+    send(session(), {:send_notification, "notifications/resources/list_changed", %{}})
     :ok
   end
 
@@ -772,48 +783,48 @@ defmodule Anubis.Server do
   received a `resources/subscribe` request for this URI. Calls for
   unsubscribed URIs are silently dropped.
 
-  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
+  **Must be called from a callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_resource_updated(uri :: String.t(), timestamp :: DateTime.t() | nil) :: :ok
   def send_resource_updated(uri, timestamp \\ nil) do
     params = %{"uri" => uri}
     params = if timestamp, do: Map.put(params, "timestamp", timestamp), else: params
-    send(self(), {:send_resource_update, uri, params})
+    send(session(), {:send_resource_update, uri, params})
     :ok
   end
 
   @doc """
   Sends a prompts list changed notification.
 
-  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
+  **Must be called from a callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_prompts_list_changed :: :ok
   def send_prompts_list_changed do
-    send(self(), {:send_notification, "notifications/prompts/list_changed", %{}})
+    send(session(), {:send_notification, "notifications/prompts/list_changed", %{}})
     :ok
   end
 
   @doc """
   Sends a tools list changed notification.
 
-  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
+  **Must be called from a callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_tools_list_changed :: :ok
   def send_tools_list_changed do
-    send(self(), {:send_notification, "notifications/tools/list_changed", %{}})
+    send(session(), {:send_notification, "notifications/tools/list_changed", %{}})
     :ok
   end
 
   @doc """
   Sends a log message to the client.
 
-  **Must be called from within a Session callback** — see `send_resources_list_changed/0` for details.
+  **Must be called from a callback** — see `send_resources_list_changed/0` for details.
   """
   @spec send_log_message(level :: Logger.level(), message :: String.t(), metadata :: map() | nil) :: :ok
   def send_log_message(level, message, data \\ nil) do
     params = %{"level" => level, "message" => message}
     params = if data, do: Map.put(params, "data", data), else: params
-    send(self(), {:send_notification, "notifications/log/message", params})
+    send(session(), {:send_notification, "notifications/log/message", params})
     :ok
   end
 
@@ -832,7 +843,7 @@ defmodule Anubis.Server do
     params = %{"progressToken" => progress_token, "progress" => progress}
     params = if total, do: Map.put(params, "total", total), else: params
     params = if message, do: Map.put(params, "message", message), else: params
-    send(self(), {:send_notification, "notifications/progress", params})
+    send(session(), {:send_notification, "notifications/progress", params})
     :ok
   end
 
@@ -840,7 +851,7 @@ defmodule Anubis.Server do
   Sends a `notifications/tasks/status` notification with the current state of
   the given task.
 
-  **Must be called from within a Session callback** — see
+  **Must be called from a callback** — see
   `send_resources_list_changed/0` for details.
 
   Per spec (2025-11-25), receivers MAY send these notifications when a task's
@@ -850,7 +861,7 @@ defmodule Anubis.Server do
   """
   @spec send_task_status(task_id :: String.t()) :: :ok
   def send_task_status(task_id) when is_binary(task_id) do
-    send(self(), {:send_task_status, task_id})
+    send(session(), {:send_task_status, task_id})
     :ok
   end
 
@@ -881,7 +892,7 @@ defmodule Anubis.Server do
       end)
 
     timeout = Keyword.get(opts, :timeout, 30_000)
-    send(self(), {:send_sampling_request, params, timeout})
+    send(session(), {:send_sampling_request, params, timeout})
     :ok
   end
 
@@ -891,7 +902,7 @@ defmodule Anubis.Server do
   @spec send_roots_request(list({:timeout, non_neg_integer() | nil})) :: :ok
   def send_roots_request(opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 30_000)
-    send(self(), {:send_roots_request, timeout})
+    send(session(), {:send_roots_request, timeout})
     :ok
   end
 
@@ -954,7 +965,7 @@ defmodule Anubis.Server do
         "requestedSchema" => requested_schema
       }
 
-      send(self(), {:send_elicitation_request, params, requested_schema, timeout})
+      send(session(), {:send_elicitation_request, params, requested_schema, timeout})
       :ok
     end
   end

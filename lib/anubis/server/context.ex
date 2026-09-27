@@ -57,6 +57,12 @@ defmodule Anubis.Server.Context do
   and `nil` otherwise. `request_digest` is a SHA-256 of that request's
   parameters, less `_meta`, `inputResponses` and `requestState`: the signed
   state is bound to it, so a retry must repeat the original request.
+
+  ## Request meta field
+
+  `request_meta` carries the `_meta` of the request a handler is serving, such
+  as its `progressToken`. Empty map outside a request, or when the client sent
+  none.
   """
 
   @type auth_claims :: %{
@@ -83,7 +89,8 @@ defmodule Anubis.Server.Context do
           log_level: String.t() | nil,
           input_responses: %{String.t() => map()},
           request_state: term(),
-          request_digest: binary() | nil
+          request_digest: binary() | nil,
+          request_meta: map()
         }
 
   defstruct session_id: nil,
@@ -98,5 +105,6 @@ defmodule Anubis.Server.Context do
             log_level: nil,
             input_responses: %{},
             request_state: nil,
-            request_digest: nil
+            request_digest: nil,
+            request_meta: %{}
 end
