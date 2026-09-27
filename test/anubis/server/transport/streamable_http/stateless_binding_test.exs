@@ -150,6 +150,50 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     end
   end
 
+  describe "limits" do
+    test "an id past 256 bytes is -32600 and is not echoed", %{opts: opts} do
+      id = String.duplicate("x", 257)
+      conn = post_raw(opts, discover_body(id), [{"mcp-method", "server/discover"}])
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_600}, "id" => echoed} = JSON.decode!(conn.resp_body)
+      refute echoed == id
+    end
+
+    test "an integer id outside 64 bits is -32600", %{opts: opts} do
+      conn = post_raw(opts, discover_body(9_223_372_036_854_775_808), [{"mcp-method", "server/discover"}])
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_600}} = JSON.decode!(conn.resp_body)
+    end
+
+    test "ids at the bounds are served", %{opts: opts} do
+      for id <- [String.duplicate("x", 256), 9_223_372_036_854_775_807, -9_223_372_036_854_775_808] do
+        conn = post_raw(opts, discover_body(id), [{"mcp-method", "server/discover"}])
+        assert %{"id" => ^id, "result" => _} = JSON.decode!(conn.resp_body)
+      end
+    end
+
+    test "an unbounded progressToken is -32602 with the request id", %{opts: opts} do
+      body = put_in(discover_body(5), ["params", "_meta", "progressToken"], String.duplicate("t", 257))
+      conn = post_raw(opts, body, [{"mcp-method", "server/discover"}])
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_602}, "id" => 5} = JSON.decode!(conn.resp_body)
+    end
+
+    test "an integer literal longer than 64 characters is a parse error", %{opts: opts} do
+      body =
+        ~s({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"n":#{String.duplicate("9", 65)},"_meta":) <>
+          JSON.encode!(meta(@client_info)) <> "}}"
+
+      conn = body |> stateless_conn([{"mcp-method", "server/discover"}]) |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_700}} = JSON.decode!(conn.resp_body)
+    end
+  end
+
   describe "a batch" do
     test "is a 400 with -32600", %{opts: opts} do
       body = JSON.encode!([%{"jsonrpc" => "2.0", "id" => 1, "method" => "server/discover", "params" => %{}}])
@@ -533,5 +577,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     assert conn.status == 400
     assert %{"error" => %{"code" => -32_600, "data" => %{"message" => message}}} = JSON.decode!(conn.resp_body)
     assert message =~ "Batched"
+  end
+
+  defp discover_body(id) do
+    %{"jsonrpc" => "2.0", "id" => id, "method" => "server/discover", "params" => %{"_meta" => meta(@client_info)}}
   end
 end

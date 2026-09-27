@@ -38,6 +38,14 @@ if Code.ensure_loaded?(Plug) do
     `Mcp-Param-*` headers are not validated: they mirror tool arguments a tool
     opts into with `x-mcp-header`, which no component declares yet.
 
+    ## Limits
+
+    A request id must be a string of at most 256 bytes or an integer in the
+    64-bit range; otherwise the request is `-32600` and the error carries no
+    echo of it. A `progressToken` outside the same bounds is `-32602`. A body
+    this binding decodes itself refuses integer literals longer than 64
+    characters as a parse error, before converting them.
+
     ## Status codes
 
     JSON-RPC errors that the specification ties to a status keep it: `-32601`
@@ -65,6 +73,9 @@ if Code.ensure_loaded?(Plug) do
 
     require Message
 
+    @max_id_bytes 256
+    @max_integer_literal 64
+    @int64_limit 9_223_372_036_854_775_808
     @protocol_version_key Schema.protocol_version_key()
     @client_capabilities_key "io.modelcontextprotocol/clientCapabilities"
     @base64_prefix "=?base64?"
@@ -165,7 +176,8 @@ if Code.ensure_loaded?(Plug) do
     # A request's _meta is checked for shape before the schema runs, so a missing
     # field is the -32602 the stateless era defines rather than a schema miss.
     defp admit(conn, raw, version, context, opts) do
-      with :ok <- validate_request_meta(raw),
+      with :ok <- validate_id(raw),
+           :ok <- validate_request_meta(raw),
            {:ok, message} <- Message.validate_message(raw) do
         serve(conn, message, version, context, opts)
       else
@@ -173,11 +185,19 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    # Ids and progress tokens are echoed on every response and notification of a
+    # request, so an unbounded one costs the server to encode again and again.
+    defp validate_id(%{"id" => id}) do
+      if bounded_id?(id), do: :ok, else: {:error, :unbounded_id}
+    end
+
+    defp validate_id(_message), do: :ok
+
     defp validate_request_meta(%{"id" => _, "method" => _} = message) do
       case get_in(message, ["params", "_meta"]) do
-        %{@protocol_version_key => version, @client_capabilities_key => capabilities}
+        %{@protocol_version_key => version, @client_capabilities_key => capabilities} = meta
         when is_binary(version) and is_map(capabilities) ->
-          :ok
+          if bounded_id?(Map.get(meta, "progressToken", 0)), do: :ok, else: {:error, :unbounded_progress_token}
 
         _incomplete ->
           {:error, :invalid_meta}
@@ -445,13 +465,32 @@ if Code.ensure_loaded?(Plug) do
     defp parse(body) when is_map(body), do: {:ok, body}
 
     defp parse(body) when is_binary(body) do
-      case JSON.decode(body) do
+      case decode(body) do
         {:ok, message} when is_map(message) -> {:ok, message}
         {:ok, list} when is_list(list) -> {:error, :batch}
         {:ok, _other} -> {:error, :invalid_request}
         {:error, _reason} -> {:error, :parse_error}
       end
     end
+
+    # Converting an integer literal costs more than linear time in its length, so
+    # literals longer than any id, token or argument needs are refused unread.
+    defp decode(body) do
+      case JSON.decode(body, nil, integer: &bounded_integer/1) do
+        {term, nil, rest} -> if String.trim(rest) == "", do: {:ok, term}, else: {:error, :parse_error}
+        {:error, reason} -> {:error, reason}
+      end
+    catch
+      :throw, :integer_too_long -> {:error, :parse_error}
+    end
+
+    defp bounded_integer(literal) do
+      if byte_size(literal) > @max_integer_literal, do: throw(:integer_too_long), else: String.to_integer(literal)
+    end
+
+    defp bounded_id?(id) when is_binary(id), do: byte_size(id) <= @max_id_bytes
+    defp bounded_id?(id) when is_integer(id), do: id >= -@int64_limit and id < @int64_limit
+    defp bounded_id?(_id), do: false
 
     defp read_request_body(%{body_params: %Unfetched{aspect: :body_params}} = conn, %{timeout: timeout}) do
       Plug.Conn.read_body(conn, read_timeout: timeout)
@@ -465,6 +504,16 @@ if Code.ensure_loaded?(Plug) do
 
     defp send_decode_error(conn, :invalid_meta, id) do
       message = "_meta must carry #{@protocol_version_key} and #{@client_capabilities_key}"
+      send_error(conn, 400, Error.protocol(:invalid_params, %{message: message}), id)
+    end
+
+    defp send_decode_error(conn, :unbounded_id, _id) do
+      message = "Request ids must be a string of at most #{@max_id_bytes} bytes or a 64-bit integer"
+      send_error(conn, 400, Error.protocol(:invalid_request, %{message: message}), nil)
+    end
+
+    defp send_decode_error(conn, :unbounded_progress_token, id) do
+      message = "progressToken must be a string of at most #{@max_id_bytes} bytes or a 64-bit integer"
       send_error(conn, 400, Error.protocol(:invalid_params, %{message: message}), id)
     end
 
@@ -493,7 +542,7 @@ if Code.ensure_loaded?(Plug) do
     defp raw_request_id(conn, opts) do
       case read_request_body(conn, opts) do
         {:ok, body, conn} when is_binary(body) ->
-          case JSON.decode(body) do
+          case decode(body) do
             {:ok, message} -> {request_id(message), conn}
             _ -> {nil, conn}
           end
@@ -506,7 +555,7 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp request_id(%{"id" => id}), do: id
+    defp request_id(%{"id" => id}), do: if(bounded_id?(id), do: id)
     defp request_id(_message), do: nil
   end
 end

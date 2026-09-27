@@ -113,6 +113,7 @@ The `MCP-Protocol-Version` header picks the era for each request. Without it, or
 - The request is served by a session started for it alone and stopped once it answers. `init/2` runs for it with that request's client info, and the frame does not carry over to the next request. The `[:server, :init]` and `[:server, :terminate]` telemetry events fire once per such request.
 - No `mcp-session-id` is read or sent, GET and DELETE are 405, and a notification is a 202 with no body.
 - A version the server does not declare is a 400 with `-32022` listing the stateless versions it serves. A server that declares none answers as before, so clients that speak both eras fall back to `initialize`.
+- A request id must be a string of at most 256 bytes or a 64-bit integer (`-32600` otherwise, with no echo of it), and a `progressToken` has the same bounds (`-32602`). A body the plug decodes itself refuses integer literals longer than 64 characters.
 
 #### Progress and cancellation
 
