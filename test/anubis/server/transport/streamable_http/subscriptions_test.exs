@@ -170,6 +170,21 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
       close(stream)
     end
 
+    test "is refused with a 406 when the client does not accept a stream", %{opts: opts, session_sup: session_sup} do
+      conn =
+        :post
+        |> conn("/", listen_body(%{"toolsListChanged" => true}))
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-protocol-version", @version)
+        |> put_req_header("mcp-method", "subscriptions/listen")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 406
+      assert %{"id" => 7, "error" => %{"code" => -32_600}} = JSON.decode!(conn.resp_body)
+      assert DynamicSupervisor.count_children(session_sup).active == 0
+    end
+
     test "keeps the session with no idle expiry while it listens", %{opts: opts} do
       {stream, session} = open(opts, %{"toolsListChanged" => true})
 
@@ -221,20 +236,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
   defp open(opts, filter) do
     test_pid = self()
 
-    body =
-      JSON.encode!(%{
-        "jsonrpc" => "2.0",
-        "id" => 7,
-        "method" => "subscriptions/listen",
-        "params" => %{
-          "notifications" => filter,
-          "_meta" => %{
-            "io.modelcontextprotocol/protocolVersion" => @version,
-            "io.modelcontextprotocol/clientInfo" => %{"name" => "Listener", "version" => "1.0.0"},
-            "io.modelcontextprotocol/clientCapabilities" => %{}
-          }
-        }
-      })
+    body = listen_body(filter)
 
     stream =
       Task.async(fn ->
@@ -268,6 +270,22 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
       {:message_queue_len, 0} -> :ok
       _pending -> drain(session)
     end
+  end
+
+  defp listen_body(filter) do
+    JSON.encode!(%{
+      "jsonrpc" => "2.0",
+      "id" => 7,
+      "method" => "subscriptions/listen",
+      "params" => %{
+        "notifications" => filter,
+        "_meta" => %{
+          "io.modelcontextprotocol/protocolVersion" => @version,
+          "io.modelcontextprotocol/clientInfo" => %{"name" => "Listener", "version" => "1.0.0"},
+          "io.modelcontextprotocol/clientCapabilities" => %{}
+        }
+      }
+    })
   end
 
   defp close(stream) do

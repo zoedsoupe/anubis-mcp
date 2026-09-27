@@ -192,8 +192,13 @@ if Code.ensure_loaded?(Plug) do
 
         Message.is_request(message) ->
           case validate_headers(conn, message, version) do
-            :ok -> with_session(conn, message, opts, &serve_request(conn, &1, &2, message, version, context, opts))
-            {:error, %Error{} = error} -> send_error(conn, 400, error, request_id(message))
+            :ok ->
+              if accepts_response?(conn, message),
+                do: with_session(conn, message, opts, &serve_request(conn, &1, &2, message, version, context, opts)),
+                else: send_error(conn, 406, not_acceptable(), request_id(message))
+
+            {:error, %Error{} = error} ->
+              send_error(conn, 400, error, request_id(message))
           end
 
         true ->
@@ -369,6 +374,17 @@ if Code.ensure_loaded?(Plug) do
 
     defp stop_session(server, session) do
       ServerSupervisor.terminate_session(server, session)
+    end
+
+    # A subscription is answered with a stream, which a client must accept.
+    defp accepts_response?(conn, %{"method" => "subscriptions/listen"}) do
+      conn |> get_req_header("accept") |> List.first("") |> String.contains?("text/event-stream")
+    end
+
+    defp accepts_response?(_conn, _message), do: true
+
+    defp not_acceptable do
+      Error.protocol(:invalid_request, %{message: "Client must accept text/event-stream"})
     end
 
     defp validate_accept_header(conn) do
