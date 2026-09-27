@@ -73,6 +73,20 @@ defmodule Anubis.Server.CacheHintsTest do
     def cache_hints(_method), do: %{ttl_ms: 5_000, scope: :private}
   end
 
+  defmodule OwnHintsServer do
+    @moduledoc false
+    use Anubis.Server,
+      name: "own-hints",
+      version: "1.0.0",
+      capabilities: [:resources],
+      protocol_versions: ["2026-07-28"]
+
+    @impl true
+    def handle_request(%{"method" => "resources/read"}, frame) do
+      {:reply, %{"contents" => [%{"uri" => "notes://own", "text" => "own"}], "ttlMs" => 60_000}, frame}
+    end
+  end
+
   defmodule BrokenServer do
     @moduledoc false
     use Anubis.Server,
@@ -136,6 +150,15 @@ defmodule Anubis.Server.CacheHintsTest do
     result = JSON.decode!(response)["result"]
     refute Map.has_key?(result, "ttlMs")
     refute Map.has_key?(result, "resultType")
+  end
+
+  test "a handler keeps its own TTL, except on a retry" do
+    session = start_session(OwnHintsServer)
+
+    assert %{"ttlMs" => 60_000} = result(session, "resources/read", %{"uri" => "notes://own"})
+
+    retry = %{"uri" => "notes://own", "inputResponses" => %{"ok" => %{"action" => "accept"}}}
+    assert %{"ttlMs" => 0, "cacheScope" => "private"} = result(session, "resources/read", retry)
   end
 
   test "hints outside the contract fail loudly" do

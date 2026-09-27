@@ -221,6 +221,9 @@ defmodule Anubis.Server.Stateless do
   always `"complete"`. The server identity is advertised under the result
   `_meta`, which a handler may already have populated.
 
+  A complete result gets `cache_hints` under any it set itself, except that a
+  multi round-trip retry (`retry?`) always says `"ttlMs" => 0`.
+
   ## Examples
 
       iex> info = %{"name" => "demo", "version" => "1.0.0"}
@@ -231,11 +234,12 @@ defmodule Anubis.Server.Stateless do
         "_meta" => %{"io.modelcontextprotocol/serverInfo" => %{"name" => "demo", "version" => "1.0.0"}}
       }
   """
-  @spec shape_result(map(), map() | nil, map() | nil) :: map()
-  def shape_result(result, server_info, cache_hints \\ nil) when is_map(result) and not is_struct(result) do
+  @spec shape_result(map(), map() | nil, map() | nil, boolean()) :: map()
+  def shape_result(result, server_info, cache_hints \\ nil, retry? \\ false)
+      when is_map(result) and not is_struct(result) do
     result
     |> Map.put_new("resultType", "complete")
-    |> put_cache_hints(cache_hints)
+    |> put_cache_hints(cache_hints, retry?)
     |> put_server_info(server_info)
   end
 
@@ -281,9 +285,14 @@ defmodule Anubis.Server.Stateless do
             "scope: :public | :private}, got: #{inspect(hints)}"
   end
 
-  # Only a complete result is cacheable; a handler's own hints are kept.
-  defp put_cache_hints(%{"resultType" => "complete"} = result, %{} = hints), do: Map.merge(hints, result)
-  defp put_cache_hints(result, _hints), do: result
+  # Only a complete result is cacheable; a handler's own hints are kept, except
+  # a retry's TTL, since the cache key does not hold the client input it used.
+  defp put_cache_hints(%{"resultType" => "complete"} = result, %{} = hints, retry?) do
+    merged = Map.merge(hints, result)
+    if retry?, do: Map.put(merged, "ttlMs", 0), else: merged
+  end
+
+  defp put_cache_hints(result, _hints, _retry?), do: result
 
   defp maybe_put_instructions(result, server) do
     if Anubis.exported?(server, :server_instructions, 0) do
