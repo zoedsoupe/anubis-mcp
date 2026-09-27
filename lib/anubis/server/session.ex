@@ -103,9 +103,10 @@ defmodule Anubis.Server.Session do
     * `:timeout` — request timeout in ms (default: 30s)
     * `:owner` — a process whose exit stops the session. A transport that
       starts a session for a single stateless request passes itself, so the
-      session never outlives the request. Such a session calls the server's
-      `init/2` for each stateless request it serves, with that request's client
-      info, because no handshake ever runs it.
+      session never outlives the request, and it does not expire when idle.
+      Such a session calls the server's `init/2` for each stateless request it
+      serves, with that request's client info, because no handshake ever runs
+      it.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -940,6 +941,10 @@ defmodule Anubis.Server.Session do
   defp normalize_headers(_), do: %{}
 
   # Session expiry management
+
+  # A session with an owner lives exactly as long as the request that owns it,
+  # which for a subscription stream may be idle for hours.
+  defp schedule_session_expiry(%{owner_ref: ref} = state) when is_reference(ref), do: state
 
   defp schedule_session_expiry(%{session_idle_timeout: timeout} = state) do
     timer = Process.send_after(self(), :session_expired, timeout)

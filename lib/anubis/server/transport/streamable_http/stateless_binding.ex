@@ -18,6 +18,11 @@ if Code.ensure_loaded?(Plug) do
     a fresh session per request keeps one request's assigns and client metadata
     out of the next.
 
+    A `subscriptions/listen` request keeps its session for as long as its
+    response stream stays open: the session's notifications are routed to the
+    request, which `Anubis.Server.Transport.StreamableHTTP.SubscriptionStream`
+    serves.
+
     ## Header validation
 
     The binding mirrors body fields into headers, and the server must reject a
@@ -52,6 +57,8 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.Server.Stateless
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.Session
+    alias Anubis.Server.Transport.StreamableHTTP
+    alias Anubis.Server.Transport.StreamableHTTP.SubscriptionStream
     alias Plug.Conn.Unfetched
 
     require Message
@@ -184,7 +191,7 @@ if Code.ensure_loaded?(Plug) do
 
         Message.is_request(message) ->
           case validate_headers(conn, message, version) do
-            :ok -> dispatch(conn, message, context, opts)
+            :ok -> with_session(conn, message, opts, &serve_request(conn, &1, &2, message, version, context, opts))
             {:error, %Error{} = error} -> send_error(conn, 400, error, request_id(message))
           end
 
@@ -249,13 +256,56 @@ if Code.ensure_loaded?(Plug) do
 
     defp decode_header_value(value), do: {:ok, value}
 
-    defp dispatch(conn, message, context, opts) do
-      case start_session(opts) do
-        {:ok, session} ->
+    defp serve_request(conn, session, session_id, %{"method" => "subscriptions/listen"} = message, version, context, opts) do
+      case StreamableHTTP.register_sse_handler(opts.transport, session_id) do
+        :ok ->
           try do
-            conn
-            |> put_resp_content_type("application/json")
-            |> reply(Session.dispatch_request(session, message, context, timeout: opts.timeout), message)
+            listen(conn, session, message, version, context, opts)
+          after
+            StreamableHTTP.unregister_sse_handler(opts.transport, session_id, self())
+          end
+
+        {:error, reason} ->
+          Logging.transport_event("sse_registration_failed", %{reason: reason}, level: :error)
+          send_error(conn, 500, Error.wrap_reason(reason), request_id(message))
+      end
+    end
+
+    defp serve_request(conn, session, _session_id, message, _version, context, opts) do
+      json_reply(conn, Session.dispatch_request(session, message, context, timeout: opts.timeout), message)
+    end
+
+    # The session's notifications are routed here from registration on, so none
+    # emitted while the request is dispatched is lost before the stream opens.
+    defp listen(conn, session, message, version, context, opts) do
+      case Session.dispatch_request(session, message, context, timeout: opts.timeout) do
+        {:ok, response} when is_binary(response) -> open_stream(conn, session, message, version, response)
+        other -> json_reply(conn, other, message)
+      end
+    end
+
+    defp open_stream(conn, session, message, version, response) do
+      case JSON.decode(response) do
+        {:ok, %{"result" => %{"notifications" => honored}}} ->
+          {:ok, protocol_module} = ProtocolRegistry.get(version)
+          SubscriptionStream.serve(conn, session, message["id"], honored, protocol_module)
+
+        _error ->
+          json_reply(conn, {:ok, response}, message)
+      end
+    end
+
+    defp json_reply(conn, result, message) do
+      conn
+      |> put_resp_content_type("application/json")
+      |> reply(result, message)
+    end
+
+    defp with_session(conn, message, opts, fun) do
+      case start_session(opts) do
+        {:ok, session, session_id} ->
+          try do
+            fun.(session, session_id)
           catch
             :exit, reason ->
               Logging.transport_event("session_call_failed", %{reason: reason}, level: :error)
@@ -296,9 +346,11 @@ if Code.ensure_loaded?(Plug) do
 
     defp start_session(%{server: server} = opts) do
       config = ServerSupervisor.get_session_config(server)
+      session_id = ID.generate_session_id()
 
-      ServerSupervisor.start_session(server,
-        session_id: ID.generate_session_id(),
+      server
+      |> ServerSupervisor.start_session(
+        session_id: session_id,
         server_module: server,
         transport: config.transport,
         timeout: opts.timeout,
@@ -306,6 +358,10 @@ if Code.ensure_loaded?(Plug) do
         task_store: Map.get(config, :task_store),
         owner: self()
       )
+      |> case do
+        {:ok, session} -> {:ok, session, session_id}
+        {:error, reason} -> {:error, reason}
+      end
     end
 
     defp stop_session(server, session) do

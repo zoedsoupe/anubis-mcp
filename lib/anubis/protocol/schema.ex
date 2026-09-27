@@ -65,6 +65,18 @@ defmodule Anubis.Protocol.Schema do
   def log_levels, do: @log_levels
 
   @doc """
+  Returns the `_meta` key every message of a `subscriptions/listen` stream
+  carries its subscription id under.
+
+  ## Examples
+
+      iex> Anubis.Protocol.Schema.subscription_id_key()
+      "io.modelcontextprotocol/subscriptionId"
+  """
+  @spec subscription_id_key() :: String.t()
+  def subscription_id_key, do: @subscription_id_key
+
+  @doc """
   Returns the `_meta` key a stateless-era request declares its protocol
   version under.
 
