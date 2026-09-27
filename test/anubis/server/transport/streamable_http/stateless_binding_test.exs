@@ -119,6 +119,29 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       assert conn.status == 200
       assert JSON.decode!(conn.resp_body)["result"]["supportedVersions"] == [@version]
     end
+
+    test "is a batch when Plug.Parsers put an array under _json", %{opts: opts} do
+      message = %{"jsonrpc" => "2.0", "id" => 1, "method" => "server/discover", "params" => %{}}
+
+      :post
+      |> conn("/", %{"_json" => [message]})
+      |> stateless_headers()
+      |> StreamableHTTPPlug.call(opts)
+      |> assert_batch_refused()
+    end
+  end
+
+  describe "a batch" do
+    test "is a 400 with -32600", %{opts: opts} do
+      body = JSON.encode!([%{"jsonrpc" => "2.0", "id" => 1, "method" => "server/discover", "params" => %{}}])
+
+      :post
+      |> conn("/", body)
+      |> put_req_header("content-type", "application/json")
+      |> stateless_headers()
+      |> StreamableHTTPPlug.call(opts)
+      |> assert_batch_refused()
+    end
   end
 
   describe "tools/call" do
@@ -414,5 +437,18 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     error = JSON.decode!(conn.resp_body)["error"]
     assert error["code"] == -32_020
     assert inspect(error) =~ header
+  end
+
+  defp stateless_headers(conn) do
+    conn
+    |> put_req_header("accept", "application/json, text/event-stream")
+    |> put_req_header("mcp-protocol-version", @version)
+    |> put_req_header("mcp-method", "server/discover")
+  end
+
+  defp assert_batch_refused(conn) do
+    assert conn.status == 400
+    assert %{"error" => %{"code" => -32_600, "data" => %{"message" => message}}} = JSON.decode!(conn.resp_body)
+    assert message =~ "Batched"
   end
 end
