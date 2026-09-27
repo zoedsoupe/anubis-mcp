@@ -398,9 +398,7 @@ if Code.ensure_loaded?(Plug) do
 
     defp accepts_response(_conn, _message), do: :ok
 
-    defp accepts_stream?(conn) do
-      conn |> get_req_header("accept") |> List.first("") |> String.contains?("text/event-stream")
-    end
+    defp accepts_stream?(conn), do: accepts?(conn, "text/event-stream")
 
     defp not_acceptable do
       Error.protocol(:invalid_request, %{message: "Client must accept text/event-stream"})

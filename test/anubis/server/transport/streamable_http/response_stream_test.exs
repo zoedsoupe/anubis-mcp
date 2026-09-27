@@ -162,6 +162,14 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     assert %{"result" => %{"content" => [%{"text" => "done"}]}} = JSON.decode!(conn.resp_body)
   end
 
+  test "a client that marks the stream unacceptable gets JSON, progress or not", %{opts: opts} do
+    conn = call(opts, %{"progressToken" => "tok"}, "application/json, text/event-stream;q=0")
+
+    assert [content_type | _] = get_resp_header(conn, "content-type")
+    assert content_type =~ "application/json"
+    assert %{"result" => %{"content" => [%{"text" => "done"}]}} = JSON.decode!(conn.resp_body)
+  end
+
   test "notifications that are not request-scoped stay off the response", %{opts: opts} do
     conn = call(opts, %{"progressToken" => "tok"}, "application/json, text/event-stream")
 
