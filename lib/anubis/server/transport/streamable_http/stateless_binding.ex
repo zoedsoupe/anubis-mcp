@@ -58,6 +58,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.Session
     alias Anubis.Server.Transport.StreamableHTTP
+    alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
     alias Anubis.Server.Transport.StreamableHTTP.SubscriptionStream
     alias Plug.Conn.Unfetched
 
@@ -257,7 +258,9 @@ if Code.ensure_loaded?(Plug) do
     defp decode_header_value(value), do: {:ok, value}
 
     defp serve_request(conn, session, session_id, %{"method" => "subscriptions/listen"} = message, version, context, opts) do
-      case StreamableHTTP.register_sse_handler(opts.transport, session_id) do
+      metadata = StreamableHTTPPlug.resolve_subscriber_metadata(opts, conn)
+
+      case StreamableHTTP.register_sse_handler(opts.transport, session_id, metadata) do
         :ok ->
           try do
             listen(conn, session, message, version, context, opts)

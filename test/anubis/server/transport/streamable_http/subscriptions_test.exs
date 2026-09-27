@@ -160,6 +160,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
       assert DynamicSupervisor.count_children(session_sup).active == 0
     end
 
+    test "registers the stream with the plug's subscriber metadata", %{transport: transport} do
+      opts = StreamableHTTPPlug.init(server: ListeningServer, subscriber_metadata: fn _conn -> %{tenant: "acme"} end)
+
+      {stream, _session} = open(opts, %{"toolsListChanged" => true})
+
+      assert StreamableHTTP.handler_count(transport, &(&1[:tenant] == "acme")) == 1
+
+      close(stream)
+    end
+
     test "keeps the session with no idle expiry while it listens", %{opts: opts} do
       {stream, session} = open(opts, %{"toolsListChanged" => true})
 

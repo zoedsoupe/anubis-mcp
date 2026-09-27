@@ -82,7 +82,9 @@ if Code.ensure_loaded?(Plug) do
     @spec default_subscriber_metadata(Plug.Conn.t()) :: %{}
     def default_subscriber_metadata(_conn), do: %{}
 
-    defp resolve_subscriber_metadata(opts, conn) do
+    @doc false
+    @spec resolve_subscriber_metadata(map(), Plug.Conn.t()) :: map()
+    def resolve_subscriber_metadata(opts, conn) do
       fun = Map.get(opts, :subscriber_metadata, &__MODULE__.default_subscriber_metadata/1)
 
       case fun.(conn) do
