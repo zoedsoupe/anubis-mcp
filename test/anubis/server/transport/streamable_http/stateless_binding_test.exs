@@ -299,6 +299,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       assert get_resp_header(conn, "mcp-session-id") == []
     end
 
+    test "ignores spaces and tabs around an Mcp-Name", %{opts: opts} do
+      conn = post_tool_call(opts, headers: [{"mcp-name", "who_am_i_tool \t "}])
+
+      assert conn.status == 200
+    end
+
     test "accepts an Mcp-Name in the base64 sentinel form", %{opts: opts} do
       encoded = "=?base64?" <> Base.encode64("who_am_i_tool") <> "?="
       conn = post_tool_call(opts, headers: [{"mcp-name", encoded}])

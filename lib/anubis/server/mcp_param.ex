@@ -27,8 +27,9 @@ defmodule Anubis.Server.McpParam do
   @doc """
   Decodes a header value that may carry the `=?base64?…?=` sentinel.
 
-  A value without the sentinel, or with only its prefix, is returned as
-  written. A sentinel around invalid Base64 is `:error`.
+  Spaces and tabs around the value are not part of it (RFC 9110, section 5.5)
+  and are dropped first. A value without the sentinel, or with only its
+  prefix, is returned as written. A sentinel around invalid Base64 is `:error`.
 
   ## Examples
 
@@ -40,9 +41,16 @@ defmodule Anubis.Server.McpParam do
 
       iex> Anubis.Server.McpParam.decode_header_value("=?base64?SGVsbG8?=")
       :error
+
+      iex> Anubis.Server.McpParam.decode_header_value("  test_tool \t")
+      {:ok, "test_tool"}
   """
   @spec decode_header_value(String.t()) :: {:ok, String.t()} | :error
-  def decode_header_value(@base64_prefix <> rest = value) do
+  def decode_header_value(value) when is_binary(value) do
+    value |> String.replace(~r/\A[ \t]+|[ \t]+\z/, "") |> decode_trimmed()
+  end
+
+  defp decode_trimmed(@base64_prefix <> rest = value) do
     if String.ends_with?(rest, @base64_suffix) do
       rest
       |> binary_part(0, byte_size(rest) - byte_size(@base64_suffix))
@@ -52,7 +60,7 @@ defmodule Anubis.Server.McpParam do
     end
   end
 
-  def decode_header_value(value) when is_binary(value), do: {:ok, value}
+  defp decode_trimmed(value), do: {:ok, value}
 
   @doc """
   Puts the `x-mcp-header` annotations of a component schema into the JSON
@@ -97,8 +105,6 @@ defmodule Anubis.Server.McpParam do
   defp check(_value, nil, name), do: {:error, "Missing required header Mcp-Param-#{name}"}
 
   defp check(value, header, name) do
-    header = Regex.replace(~r/\A[ \t]+|[ \t]+\z/, header, "")
-
     with true <- header_value?(header),
          {:ok, decoded} <- decode_header_value(header) do
       if decoded == wire_value(value),
