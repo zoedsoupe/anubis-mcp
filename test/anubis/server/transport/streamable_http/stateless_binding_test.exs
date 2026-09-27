@@ -315,6 +315,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
         )
 
       ref = Process.monitor(session)
+      # The owner's DOWN reaches the session on its own path, so the monitor is
+      # made to land first: signals from this process to the session stay ordered.
+      :sys.get_state(session)
       send(owner, :stop)
 
       assert_receive {:DOWN, ^ref, :process, ^session, :shutdown}
