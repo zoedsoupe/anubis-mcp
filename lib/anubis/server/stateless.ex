@@ -23,8 +23,8 @@ defmodule Anubis.Server.Stateless do
   @log_level_key "io.modelcontextprotocol/logLevel"
   @server_info_key "io.modelcontextprotocol/serverInfo"
 
-  @discover_ttl_ms 0
-  @discover_cache_scope "private"
+  @cacheable_methods ~w(server/discover tools/list prompts/list resources/list resources/templates/list resources/read)
+  @default_cache_hints %{ttl_ms: 0, scope: :private}
 
   @type t :: %{
           protocol_version: String.t(),
@@ -201,12 +201,14 @@ defmodule Anubis.Server.Stateless do
   """
   @spec discover_result(module(), module()) :: map()
   def discover_result(server, protocol_module) when is_atom(protocol_module) do
-    result = %{
-      "supportedVersions" => supported_versions(server.supported_protocol_versions()),
-      "capabilities" => protocol_module.server_capabilities(server.server_capabilities()),
-      "ttlMs" => @discover_ttl_ms,
-      "cacheScope" => @discover_cache_scope
-    }
+    result =
+      Map.merge(
+        %{
+          "supportedVersions" => supported_versions(server.supported_protocol_versions()),
+          "capabilities" => protocol_module.server_capabilities(server.server_capabilities())
+        },
+        cache_hints(server, "server/discover", false)
+      )
 
     maybe_put_instructions(result, server)
   end
@@ -229,12 +231,59 @@ defmodule Anubis.Server.Stateless do
         "_meta" => %{"io.modelcontextprotocol/serverInfo" => %{"name" => "demo", "version" => "1.0.0"}}
       }
   """
-  @spec shape_result(map(), map() | nil) :: map()
-  def shape_result(result, server_info) when is_map(result) and not is_struct(result) do
+  @spec shape_result(map(), map() | nil, map() | nil) :: map()
+  def shape_result(result, server_info, cache_hints \\ nil) when is_map(result) and not is_struct(result) do
     result
     |> Map.put_new("resultType", "complete")
+    |> put_cache_hints(cache_hints)
     |> put_server_info(server_info)
   end
+
+  @doc """
+  Returns the `ttlMs` and `cacheScope` a complete stateless result of `method`
+  carries, or `nil` for a method whose results are not cacheable.
+
+  They come from the server's `c:Anubis.Server.cache_hints/1` when it defines
+  one, and are `0` and `"private"` otherwise. A multi round-trip retry
+  (`retry?`) depends on client input the cache key does not hold, so its result
+  is always stale at once.
+
+  ## Examples
+
+      iex> Anubis.Server.Stateless.cache_hints(StubServer, "tools/list", false)
+      %{"ttlMs" => 0, "cacheScope" => "private"}
+
+      iex> Anubis.Server.Stateless.cache_hints(StubServer, "tools/call", false)
+      nil
+  """
+  @spec cache_hints(module(), String.t(), boolean()) :: %{String.t() => term()} | nil
+  def cache_hints(server, method, retry?) when method in @cacheable_methods do
+    hints =
+      if Anubis.exported?(server, :cache_hints, 1),
+        do: server.cache_hints(method),
+        else: @default_cache_hints
+
+    hints
+    |> then(&if(retry?, do: %{&1 | ttl_ms: 0}, else: &1))
+    |> wire_hints(server, method)
+  end
+
+  def cache_hints(_server, _method, _retry?), do: nil
+
+  defp wire_hints(%{ttl_ms: ttl, scope: scope}, _server, _method)
+       when is_integer(ttl) and ttl >= 0 and scope in [:public, :private] do
+    %{"ttlMs" => ttl, "cacheScope" => Atom.to_string(scope)}
+  end
+
+  defp wire_hints(hints, server, method) do
+    raise ArgumentError,
+          "#{inspect(server)}.cache_hints(#{inspect(method)}) must return %{ttl_ms: non_neg_integer, " <>
+            "scope: :public | :private}, got: #{inspect(hints)}"
+  end
+
+  # Only a complete result is cacheable; a handler's own hints are kept.
+  defp put_cache_hints(%{"resultType" => "complete"} = result, %{} = hints), do: Map.merge(hints, result)
+  defp put_cache_hints(result, _hints), do: result
 
   defp maybe_put_instructions(result, server) do
     if Anubis.exported?(server, :server_instructions, 0) do

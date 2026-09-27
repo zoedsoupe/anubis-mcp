@@ -252,6 +252,28 @@ defmodule Anubis.Server do
   @callback server_tools(tools :: [Tool.t()], frame :: Frame.t()) :: [Tool.t()]
 
   @doc """
+  Returns the caching hints for a cacheable stateless-era result.
+
+  Revision 2026-07-28 requires `ttlMs` and `cacheScope` on the complete results
+  of `server/discover`, `tools/list`, `prompts/list`, `resources/list`,
+  `resources/templates/list` and `resources/read`. Optional; without it every
+  such result says `ttl_ms: 0` (stale at once) and `scope: :private`.
+
+  `:public` means the result is the same for every caller, so a shared cache
+  may serve it to anyone; answer `:private` for anything that varies with the
+  caller, such as a tool list filtered per user. A handler that puts `"ttlMs"`
+  or `"cacheScope"` in its own result keeps them. Results of a multi
+  round-trip retry, which carry client input, always say `ttl_ms: 0`.
+
+  ## Examples
+
+      @impl Anubis.Server
+      def cache_hints("tools/list"), do: %{ttl_ms: to_timeout(minute: 5), scope: :private}
+      def cache_hints(_method), do: %{ttl_ms: 0, scope: :private}
+  """
+  @callback cache_hints(method :: String.t()) :: %{ttl_ms: non_neg_integer(), scope: :public | :private}
+
+  @doc """
   Called when a session is being auto-recovered after expiry.
 
   Invoked during `auto_initialize/1` instead of the normal client handshake.
@@ -352,6 +374,7 @@ defmodule Anubis.Server do
                       handle_roots: 3,
                       handle_elicitation: 3,
                       server_instructions: 0,
+                      cache_hints: 1,
                       handle_session_expired: 2,
                       serialize_assigns: 1
 

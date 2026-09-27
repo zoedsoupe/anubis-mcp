@@ -114,6 +114,18 @@ The `MCP-Protocol-Version` header picks the era for each request. Without it, or
 - No `mcp-session-id` is read or sent, GET and DELETE are 405, and a notification is a 202 with no body.
 - A version the server does not declare is a 400 with `-32022` listing the stateless versions it serves. A server that declares none answers as before, so clients that speak both eras fall back to `initialize`.
 
+#### Caching hints
+
+The complete results of `server/discover`, `tools/list`, `prompts/list`, `resources/list`, `resources/templates/list` and `resources/read` carry `ttlMs` and `cacheScope`, as the revision requires. They default to `0` and `"private"`: stale at once, and never shared between callers. A server that knows better says so per method:
+
+```elixir
+@impl true
+def cache_hints("tools/list"), do: %{ttl_ms: to_timeout(minute: 5), scope: :private}
+def cache_hints(_method), do: %{ttl_ms: 0, scope: :private}
+```
+
+Use `:public` only for a result that is the same for every caller; a list filtered per user is `:private`. An input-required result carries no hints, and the result of a multi round-trip retry is always `ttlMs: 0`.
+
 #### Subscriptions
 
 `subscriptions/listen` answers with an SSE stream that stays open. It opens with `notifications/subscriptions/acknowledged`, naming the part of the client's filter the server honors: a list-changed flag for a capability declared with `list_changed?: true`, and a resource URI when `resources` is declared with `subscribe?: true` and the URI passes the same scope check as `resources/subscribe`. Only those notifications follow, each carrying the subscription id in `_meta`.
