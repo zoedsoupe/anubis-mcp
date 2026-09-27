@@ -171,17 +171,20 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
     end
 
     test "is refused with a 406 when the client does not accept a stream", %{opts: opts, session_sup: session_sup} do
-      conn =
-        :post
-        |> conn("/", listen_body(%{"toolsListChanged" => true}))
-        |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json")
-        |> put_req_header("mcp-protocol-version", @version)
-        |> put_req_header("mcp-method", "subscriptions/listen")
-        |> StreamableHTTPPlug.call(opts)
+      for accept <- ["application/json", "application/json, text/event-stream;q=0"] do
+        conn =
+          :post
+          |> conn("/", listen_body(%{"toolsListChanged" => true}))
+          |> put_req_header("content-type", "application/json")
+          |> put_req_header("accept", accept)
+          |> put_req_header("mcp-protocol-version", @version)
+          |> put_req_header("mcp-method", "subscriptions/listen")
+          |> StreamableHTTPPlug.call(opts)
 
-      assert conn.status == 406
-      assert %{"id" => 7, "error" => %{"code" => -32_600}} = JSON.decode!(conn.resp_body)
+        assert conn.status == 406, accept
+        assert %{"id" => 7, "error" => %{"code" => -32_600}} = JSON.decode!(conn.resp_body)
+      end
+
       assert DynamicSupervisor.count_children(session_sup).active == 0
     end
 

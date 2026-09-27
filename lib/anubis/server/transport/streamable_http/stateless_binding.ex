@@ -380,8 +380,7 @@ if Code.ensure_loaded?(Plug) do
 
     # A subscription is answered with a stream, which a client must accept.
     defp accepts_response(conn, %{"method" => "subscriptions/listen"}) do
-      accept = conn |> get_req_header("accept") |> List.first("")
-      if String.contains?(accept, "text/event-stream"), do: :ok, else: {:error, :not_acceptable}
+      if accepts?(conn, "text/event-stream"), do: :ok, else: {:error, :not_acceptable}
     end
 
     defp accepts_response(_conn, _message), do: :ok
