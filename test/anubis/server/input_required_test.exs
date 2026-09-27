@@ -253,6 +253,12 @@ defmodule Anubis.Server.InputRequiredTest do
       assert %{"code" => -32_602} = error(session, "wizard", %{"step1" => %{}}, state: state, auth: %{sub: "mallory"})
     end
 
+    test "on a server with no secret is invalid params, not a crash", %{session: session} do
+      Application.delete_env(:anubis_mcp, :request_state_secret)
+
+      assert %{"code" => -32_602} = error(session, "wizard", %{"step1" => %{}}, state: "v1.AAAA.AAAA")
+    end
+
     test "past its TTL is refused", %{session: session} do
       Application.put_env(:anubis_mcp, :request_state_ttl, 0)
       %{"requestState" => state} = call(session, "wizard")
@@ -296,9 +302,16 @@ defmodule Anubis.Server.InputRequiredTest do
     test "refuses strings it did not sign" do
       frame = Frame.new()
 
-      for token <- ["", "v1", "v1.a.b", "v2.AAAA.AAAA", "not a token"] do
+      for token <- ["", "v1", "v1.a.b", "v1.AAAA.AAAA", "v2.AAAA.AAAA", "not a token"] do
         assert {:error, :invalid} = RequestState.verify(token, frame, {"tools/call", "wizard"})
       end
+    end
+
+    test "refuses every state when no secret is configured" do
+      token = RequestState.sign(:state, Frame.new(), {"tools/call", "wizard"})
+      Application.delete_env(:anubis_mcp, :request_state_secret)
+
+      assert {:error, :invalid} = RequestState.verify(token, Frame.new(), {"tools/call", "wizard"})
     end
 
     test "cannot sign without a secret" do

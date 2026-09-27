@@ -30,7 +30,8 @@ defmodule Anubis.Server.RequestState do
 
       config :anubis_mcp, request_state_secret: System.fetch_env!("MCP_REQUEST_STATE_SECRET")
 
-  The secret must be a binary of at least 32 bytes. Signing without one raises.
+  The secret must be a binary of at least 32 bytes. Signing without one raises;
+  verifying without one refuses the state as `:invalid`.
   """
 
   alias Anubis.Server.Frame
@@ -48,8 +49,9 @@ defmodule Anubis.Server.RequestState do
   def sign(term, %Frame{} = frame, binding) do
     expires_at = System.system_time(:millisecond) + ttl()
     payload = :erlang.term_to_binary({term, Frame.subject(frame), issued_for(frame, binding), expires_at})
+    {:ok, mac} = mac(payload, signing_secret())
 
-    Enum.join([@prefix, encode(payload), encode(mac(payload))], ".")
+    Enum.join([@prefix, encode(payload), encode(mac)], ".")
   end
 
   @doc """
@@ -84,7 +86,8 @@ defmodule Anubis.Server.RequestState do
     with [@prefix, encoded_payload, encoded_mac] <- String.split(token, "."),
          {:ok, payload} <- decode(encoded_payload),
          {:ok, given_mac} <- decode(encoded_mac),
-         true <- :crypto.hash_equals(mac(payload), given_mac) do
+         {:ok, mac} <- mac(payload, secret()),
+         true <- byte_size(mac) == byte_size(given_mac) and :crypto.hash_equals(mac, given_mac) do
       {:ok, payload}
     else
       _invalid -> {:error, :invalid}
@@ -100,7 +103,8 @@ defmodule Anubis.Server.RequestState do
 
   defp unexpired(_expires_at), do: {:error, :invalid}
 
-  defp mac(payload), do: :crypto.mac(:hmac, :sha256, secret(), payload)
+  defp mac(payload, {:ok, secret}), do: {:ok, :crypto.mac(:hmac, :sha256, secret, payload)}
+  defp mac(_payload, :error), do: :error
 
   defp encode(binary), do: Base.url_encode64(binary, padding: false)
   defp decode(encoded), do: Base.url_decode64(encoded, padding: false)
@@ -109,13 +113,18 @@ defmodule Anubis.Server.RequestState do
 
   defp secret do
     case Application.get_env(:anubis_mcp, :request_state_secret) do
-      secret when is_binary(secret) and byte_size(secret) >= @min_secret_bytes ->
-        secret
+      secret when is_binary(secret) and byte_size(secret) >= @min_secret_bytes -> {:ok, secret}
+      _missing -> :error
+    end
+  end
 
-      _missing ->
-        raise ArgumentError,
-              "config :anubis_mcp, :request_state_secret must be a binary of at least " <>
-                "#{@min_secret_bytes} bytes to sign a requestState"
+  # A server that emits state without a secret is misconfigured, so signing
+  # raises; verifying is driven by the client, and refuses the state instead.
+  defp signing_secret do
+    with :error <- secret() do
+      raise ArgumentError,
+            "config :anubis_mcp, :request_state_secret must be a binary of at least " <>
+              "#{@min_secret_bytes} bytes to sign a requestState"
     end
   end
 end
