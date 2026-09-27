@@ -816,17 +816,22 @@ defmodule Anubis.Server do
   end
 
   @doc """
-  Sends a log message to the client.
+  Sends a log message to the client, as a `notifications/message`.
+
+  The notification carries `level` and `data`. `data` is `message` alone, or
+  `%{"message" => message, "data" => data}` when `data` is given.
 
   **Must be called from a callback** — see `send_resources_list_changed/0` for details.
   """
-  @spec send_log_message(level :: Logger.level(), message :: String.t(), metadata :: map() | nil) :: :ok
+  @spec send_log_message(level :: Logger.level(), message :: String.t(), metadata :: term()) :: :ok
   def send_log_message(level, message, data \\ nil) do
-    params = %{"level" => level, "message" => message}
-    params = if data, do: Map.put(params, "data", data), else: params
-    send(session(), {:send_notification, "notifications/log/message", params})
+    params = %{"level" => to_string(level), "data" => log_data(message, data)}
+    send(session(), {:send_notification, "notifications/message", params})
     :ok
   end
+
+  defp log_data(message, nil), do: message
+  defp log_data(message, data), do: %{"message" => message, "data" => data}
 
   @type progress_token :: String.t() | non_neg_integer
   @type progress_step :: number

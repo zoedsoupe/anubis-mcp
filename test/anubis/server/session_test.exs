@@ -248,18 +248,26 @@ defmodule Anubis.Server.SessionTest do
   describe "send_notification/3" do
     setup :initialized_server
 
-    test "sends notification to transport", %{server: session} do
-      assert :ok =
-               :info
-               |> Anubis.Server.send_log_message("hello")
-               |> then(fn _ ->
-                 send(
-                   session,
-                   {:send_notification, "notifications/log/message", %{"level" => :info, "message" => "hello"}}
-                 )
+    test "sends a log message as the spec's notifications/message", %{server: session, transport: transport} do
+      :ok = StubTransport.set_test_pid(transport, self())
 
-                 :ok
-               end)
+      assert :ok = Anubis.Server.send_log_message(:info, "hello", %{"index" => "products"})
+
+      assert_receive {:send_notification, "notifications/message", params}
+      assert params == %{"level" => "info", "data" => %{"message" => "hello", "data" => %{"index" => "products"}}}
+
+      send(session, {:send_notification, "notifications/message", params})
+
+      assert_receive {:send_message, data}, 200
+      assert {:ok, [decoded]} = Message.decode(data)
+      assert decoded["method"] == "notifications/message"
+      assert decoded["params"]["level"] == "info"
+    end
+
+    test "a log message without data carries the message as its data" do
+      Anubis.Server.send_log_message(:warning, "disk almost full")
+
+      assert_receive {:send_notification, "notifications/message", %{"level" => "warning", "data" => "disk almost full"}}
     end
   end
 
