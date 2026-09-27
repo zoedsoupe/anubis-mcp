@@ -496,7 +496,7 @@ defmodule Anubis.Server.Session do
 
   @impl GenServer
   def handle_info({:send_notification, "notifications/message" = method, %{"level" => level} = params}, state) do
-    if logged?(level, state.log_level), do: send_notification(method, params, state), else: {:noreply, state}
+    if logged?(level, log_threshold(state)), do: send_notification(method, params, state), else: {:noreply, state}
   end
 
   def handle_info({:send_notification, method, params}, state) do
@@ -1207,6 +1207,15 @@ defmodule Anubis.Server.Session do
   # RFC 5424 severities, as `logging/setLevel` names them. Without a threshold
   # from the client, every message is sent.
   @log_levels ~w(debug info notice warning error critical alert emergency)
+
+  # A stateless request declares its own level in `_meta`; a handshake-era
+  # session keeps the one `logging/setLevel` set.
+  defp log_threshold(state) do
+    case Stateless.context(state.request_context) do
+      %{log_level: level} when is_binary(level) -> level
+      _other -> state.log_level
+    end
+  end
 
   defp logged?(_level, nil), do: true
 

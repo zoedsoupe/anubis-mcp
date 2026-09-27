@@ -47,6 +47,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
 
     @impl true
     def execute(_params, frame) do
+      Anubis.Server.send_log_message(:debug, "detail")
       Anubis.Server.send_log_message(:info, "working")
       {:reply, Response.text(Response.tool(), "logged"), frame}
     end
