@@ -14,6 +14,8 @@ defmodule Anubis.Server.RequestState do
       issued to one user is refused for another;
     * the originating request, its method plus the tool or prompt name or the
       resource URI, so state cannot move to a different request;
+    * a digest of that request's parameters (`request_digest` on the frame's
+      context), so a retry cannot keep the state and change the arguments;
     * an expiry, `:request_state_ttl` milliseconds after it was issued
       (default: ten minutes).
 
@@ -45,7 +47,7 @@ defmodule Anubis.Server.RequestState do
   @spec sign(term(), Frame.t(), binding()) :: String.t()
   def sign(term, %Frame{} = frame, binding) do
     expires_at = System.system_time(:millisecond) + ttl()
-    payload = :erlang.term_to_binary({term, Frame.subject(frame), binding, expires_at})
+    payload = :erlang.term_to_binary({term, Frame.subject(frame), issued_for(frame, binding), expires_at})
 
     Enum.join([@prefix, encode(payload), encode(mac(payload))], ".")
   end
@@ -61,7 +63,7 @@ defmodule Anubis.Server.RequestState do
   def verify(token, %Frame{} = frame, binding) when is_binary(token) do
     with {:ok, payload} <- authenticate(token),
          {:ok, {term, principal, issued_for, expires_at}} <- to_term(payload),
-         :ok <- match(principal == Frame.subject(frame) and issued_for == binding),
+         :ok <- match(principal == Frame.subject(frame) and issued_for == issued_for(frame, binding)),
          :ok <- unexpired(expires_at) do
       {:ok, term}
     else
@@ -69,6 +71,8 @@ defmodule Anubis.Server.RequestState do
       _malformed -> {:error, :invalid}
     end
   end
+
+  defp issued_for(%Frame{context: context}, binding), do: {binding, context.request_digest}
 
   defp to_term(payload) do
     {:ok, :erlang.binary_to_term(payload, [:safe])}

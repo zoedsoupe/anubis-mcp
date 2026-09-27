@@ -234,6 +234,19 @@ defmodule Anubis.Server.InputRequiredTest do
       assert %{"code" => -32_602} = error(session, "greet", %{}, state: state)
     end
 
+    test "presented with other arguments is refused", %{session: session} do
+      %{"requestState" => state} = call(session, "wizard", nil, arguments: %{"amount" => 10})
+
+      assert %{"resultType" => "input_required"} =
+               call(session, "wizard", %{"step1" => %{"action" => "accept"}}, state: state, arguments: %{"amount" => 10})
+
+      assert %{"code" => -32_602} =
+               error(session, "wizard", %{"step1" => %{"action" => "accept"}},
+                 state: state,
+                 arguments: %{"amount" => 1000}
+               )
+    end
+
     test "issued to another principal is refused", %{session: session} do
       %{"requestState" => state} = call(session, "wizard", nil, auth: %{sub: "alice"})
 
@@ -317,7 +330,7 @@ defmodule Anubis.Server.InputRequiredTest do
   end
 
   defp tool_params(tool, responses, opts) do
-    %{"name" => tool, "arguments" => %{}}
+    %{"name" => tool, "arguments" => Keyword.get(opts, :arguments, %{})}
     |> then(&if(responses, do: Map.put(&1, "inputResponses", responses), else: &1))
     |> then(&if(opts[:state], do: Map.put(&1, "requestState", opts[:state]), else: &1))
   end

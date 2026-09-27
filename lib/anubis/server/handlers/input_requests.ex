@@ -21,6 +21,7 @@ defmodule Anubis.Server.Handlers.InputRequests do
   def admit(request, %Frame{} = frame, binding) do
     params = request["params"] || %{}
     responses = answered(params["inputResponses"])
+    frame = %{frame | context: %{frame.context | request_digest: digest(params)}}
 
     case verify_state(params["requestState"], frame, binding) do
       {:ok, state} ->
@@ -68,6 +69,11 @@ defmodule Anubis.Server.Handlers.InputRequests do
 
   defp put_state(result, {:set, term}, frame, binding),
     do: Map.put(result, "requestState", RequestState.sign(term, frame, binding))
+
+  defp digest(params) do
+    salient = Map.drop(params, ["_meta", "inputResponses", "requestState"])
+    :crypto.hash(:sha256, :erlang.term_to_binary(salient, [:deterministic]))
+  end
 
   defp verify_state(nil, _frame, _binding), do: {:ok, nil}
   defp verify_state(token, frame, binding) when is_binary(token), do: RequestState.verify(token, frame, binding)
