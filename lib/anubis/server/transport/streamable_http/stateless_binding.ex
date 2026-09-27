@@ -59,6 +59,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.Server.Transport.Session
     alias Anubis.Server.Transport.StreamableHTTP
     alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
+    alias Anubis.Server.Transport.StreamableHTTP.ResponseStream
     alias Anubis.Server.Transport.StreamableHTTP.SubscriptionStream
     alias Plug.Conn.Unfetched
 
@@ -271,8 +272,20 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp serve_request(conn, session, _session_id, message, _version, context, opts) do
-      json_reply(conn, Session.dispatch_request(session, message, context, timeout: opts.timeout), message)
+    defp serve_request(conn, session, session_id, message, _version, context, opts) do
+      metadata = StreamableHTTPPlug.resolve_subscriber_metadata(opts, conn)
+
+      with true <- accepts_stream?(conn),
+           :ok <- StreamableHTTP.register_sse_handler(opts.transport, session_id, metadata) do
+        try do
+          ResponseStream.serve(conn, session, message, context, opts, &json_reply(&1, &2, message))
+        after
+          StreamableHTTP.unregister_sse_handler(opts.transport, session_id, self())
+        end
+      else
+        _json_only ->
+          json_reply(conn, Session.dispatch_request(session, message, context, timeout: opts.timeout), message)
+      end
     end
 
     # The session's notifications are routed here from registration on, so none
@@ -380,10 +393,14 @@ if Code.ensure_loaded?(Plug) do
 
     # A subscription is answered with a stream, which a client must accept.
     defp accepts_response(conn, %{"method" => "subscriptions/listen"}) do
-      if accepts?(conn, "text/event-stream"), do: :ok, else: {:error, :not_acceptable}
+      if accepts_stream?(conn), do: :ok, else: {:error, :not_acceptable}
     end
 
     defp accepts_response(_conn, _message), do: :ok
+
+    defp accepts_stream?(conn) do
+      conn |> get_req_header("accept") |> List.first("") |> String.contains?("text/event-stream")
+    end
 
     defp not_acceptable do
       Error.protocol(:invalid_request, %{message: "Client must accept text/event-stream"})
