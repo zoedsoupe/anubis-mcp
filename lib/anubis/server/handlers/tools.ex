@@ -8,7 +8,9 @@ defmodule Anubis.Server.Handlers.Tools do
   alias Anubis.Server.Handlers
   alias Anubis.Server.Handlers.InputRequests
   alias Anubis.Server.InputRequired
+  alias Anubis.Server.McpParam
   alias Anubis.Server.Response
+  alias Anubis.Server.Stateless
 
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
@@ -34,7 +36,8 @@ defmodule Anubis.Server.Handlers.Tools do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with :ok <- check_scopes(tool, frame),
+      with :ok <- check_param_headers(tool, params, frame),
+           :ok <- check_scopes(tool, frame),
            {:ok, frame} <- InputRequests.admit(request, frame, {server, "tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(params, tool, frame),
@@ -50,7 +53,8 @@ defmodule Anubis.Server.Handlers.Tools do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with :ok <- check_scopes(tool, frame),
+      with :ok <- check_param_headers(tool, %{}, frame),
+           :ok <- check_scopes(tool, frame),
            {:ok, frame} <- InputRequests.admit(request, frame, {server, "tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(%{}, tool, frame),
@@ -58,6 +62,18 @@ defmodule Anubis.Server.Handlers.Tools do
     else
       payload = %{message: "Tool not found: #{tool_name}"}
       {:error, Error.protocol(:invalid_params, payload), frame}
+    end
+  end
+
+  # Only a stateless request arrives with its arguments mirrored into headers.
+  defp check_param_headers(%Tool{input_schema: schema}, arguments, %Frame{context: context} = frame) do
+    if Stateless.era(context.protocol_module) == :stateless do
+      case McpParam.validate(schema, arguments, context.headers) do
+        :ok -> :ok
+        {:error, error} -> {:error, error, frame}
+      end
+    else
+      :ok
     end
   end
 

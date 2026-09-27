@@ -115,6 +115,18 @@ The `MCP-Protocol-Version` header picks the era for each request. Without it, or
 - A version the server does not declare is a 400 with `-32022` listing the stateless versions it serves. A server that declares none answers as before, so clients that speak both eras fall back to `initialize`.
 - A request id must be a string of at most 256 bytes or a 64-bit integer (`-32600` otherwise, with no echo of it), and a `progressToken` has the same bounds (`-32602`). A body the plug decodes itself refuses integer literals longer than 64 characters.
 
+#### Tool parameters in headers
+
+A tool can ask 2026-07-28 clients to mirror a parameter into an `Mcp-Param-{Name}` header, so that a proxy or load balancer can route on it without reading the body:
+
+```elixir
+schema do
+  field :region, :string, required: true, mcp_header: "Region"
+end
+```
+
+The parameter's schema then carries `"x-mcp-header": "Region"`. The name must be an HTTP token, unique regardless of case within the tool, on a string, integer or boolean parameter that is not inside a list; building the schema raises otherwise. A `tools/call` whose header is missing for an argument the body carries, disagrees with it after `=?base64?…?=` decoding, or holds characters a header value cannot, is refused with `-32020` and HTTP 400. Handshake-era requests are not checked.
+
 #### Progress and cancellation
 
 A client that accepts `text/event-stream` may get its answer as a stream. The response turns into SSE once the handler emits a `notifications/progress` for the request (or a `notifications/message`, when the request set a log level), or once the request outlives the transport's keepalive interval; the notifications come in order, and the JSON-RPC response ends the stream. A request answered before either happens is a single JSON object.

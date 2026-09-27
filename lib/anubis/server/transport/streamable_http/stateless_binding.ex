@@ -35,8 +35,8 @@ if Code.ensure_loaded?(Plug) do
         and `resources/read` (`params.uri`), and is compared after decoding the
         `=?base64?…?=` sentinel.
 
-    `Mcp-Param-*` headers are not validated: they mirror tool arguments a tool
-    opts into with `x-mcp-header`, which no component declares yet.
+    `Mcp-Param-*` headers are checked against the tool's arguments when the
+    tool call is handled; see `Anubis.Server.McpParam`.
 
     ## Limits
 
@@ -62,6 +62,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Message
     alias Anubis.Protocol.Registry, as: ProtocolRegistry
     alias Anubis.Protocol.Schema
+    alias Anubis.Server.McpParam
     alias Anubis.Server.Stateless
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.Session
@@ -78,8 +79,6 @@ if Code.ensure_loaded?(Plug) do
     @int64_limit 9_223_372_036_854_775_808
     @protocol_version_key Schema.protocol_version_key()
     @client_capabilities_key "io.modelcontextprotocol/clientCapabilities"
-    @base64_prefix "=?base64?"
-    @base64_suffix "?="
 
     # Error replies are small; a reply longer than this is a result, and is not
     # decoded just to learn that.
@@ -250,7 +249,7 @@ if Code.ensure_loaded?(Plug) do
           {:error, Error.protocol(:header_mismatch, %{message: "Missing required header #{header}"})}
 
         [value | _] ->
-          case decode_header_value(value) do
+          case McpParam.decode_header_value(value) do
             {:ok, ^body_value} -> :ok
             {:ok, decoded} -> mismatch(header, decoded, body_value)
             :error -> {:error, Error.protocol(:header_mismatch, %{message: "Malformed #{header} header"})}
@@ -262,18 +261,6 @@ if Code.ensure_loaded?(Plug) do
       message = "#{header} header value #{inspect(header_value)} does not match body value #{inspect(body_value)}"
       {:error, Error.protocol(:header_mismatch, %{message: message})}
     end
-
-    defp decode_header_value(@base64_prefix <> rest = value) do
-      if String.ends_with?(rest, @base64_suffix) do
-        rest
-        |> binary_part(0, byte_size(rest) - byte_size(@base64_suffix))
-        |> Base.decode64()
-      else
-        {:ok, value}
-      end
-    end
-
-    defp decode_header_value(value), do: {:ok, value}
 
     defp serve_request(conn, session, session_id, %{"method" => "subscriptions/listen"} = message, version, context, opts) do
       metadata = StreamableHTTPPlug.resolve_subscriber_metadata(opts, conn)
