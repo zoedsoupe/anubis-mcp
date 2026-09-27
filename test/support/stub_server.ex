@@ -9,7 +9,7 @@ defmodule StubServer do
   use Anubis.Server,
     name: "Test Server",
     version: "1.0.0",
-    capabilities: [:tools, :prompts, :resources]
+    capabilities: [:tools, :prompts, :resources, :logging]
 
   import Anubis.Server.Frame, only: [assign: 3]
 

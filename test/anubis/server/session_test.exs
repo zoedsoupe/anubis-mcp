@@ -264,6 +264,19 @@ defmodule Anubis.Server.SessionTest do
       assert decoded["params"]["level"] == "info"
     end
 
+    test "sends only messages at or above the level the client set", %{server: session, transport: transport} do
+      :ok = StubTransport.set_test_pid(transport, self())
+      set_level = build_request("logging/setLevel", %{"level" => "warning"}, "set-level")
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, set_level, %{}})
+
+      send(session, {:send_notification, "notifications/message", %{"level" => "info", "data" => "chatter"}})
+      send(session, {:send_notification, "notifications/message", %{"level" => "error", "data" => "broken"}})
+
+      assert_receive {:send_message, data}, 200
+      assert {:ok, [%{"params" => %{"level" => "error"}}]} = Message.decode(data)
+      refute_received {:send_message, _}
+    end
+
     test "a log message without data carries the message as its data" do
       Anubis.Server.send_log_message(:warning, "disk almost full")
 
