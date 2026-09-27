@@ -41,6 +41,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
       {:noreply, frame}
     end
 
+    def handle_info({:whoami, pid}, frame) do
+      context = frame.context
+      send(pid, {:whoami, context.client_info["name"], context.headers["mcp-method"], context.protocol_version})
+      {:noreply, frame}
+    end
+
     def handle_info(:tools_changed, frame) do
       Anubis.Server.send_tools_list_changed()
       {:noreply, frame}
@@ -158,6 +164,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
       {stream, session} = open(opts, %{"toolsListChanged" => true})
 
       assert :sys.get_state(session).expiry_timer == nil
+
+      close(stream)
+    end
+
+    test "callbacks after the listen reply still see the listen request's context", %{opts: opts} do
+      {stream, session} = open(opts, %{"toolsListChanged" => true})
+
+      send(session, {:whoami, self()})
+
+      assert_receive {:whoami, "Listener", "subscriptions/listen", @version}, 2_000
 
       close(stream)
     end
