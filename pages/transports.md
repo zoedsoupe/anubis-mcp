@@ -114,6 +114,12 @@ The `MCP-Protocol-Version` header picks the era for each request. Without it, or
 - No `mcp-session-id` is read or sent, GET and DELETE are 405, and a notification is a 202 with no body.
 - A version the server does not declare is a 400 with `-32022` listing the stateless versions it serves. A server that declares none answers as before, so clients that speak both eras fall back to `initialize`.
 
+#### Progress and cancellation
+
+A client that accepts `text/event-stream` may get its answer as a stream. The response turns into SSE once the handler emits a `notifications/progress` for the request (or a `notifications/message`, when the request set a log level), or once the request outlives the transport's keepalive interval; the notifications come in order, and the JSON-RPC response ends the stream. A request answered before either happens is a single JSON object.
+
+Closing the response is how a client cancels a request in this revision, and a disconnect is only visible when the server writes. A long request therefore writes a keepalive comment every interval, and the first write that fails stops the request's session, which terminates the handler. With `keepalive: false` on the transport, or a client that accepts only JSON, a disconnect goes unnoticed until the handler returns.
+
 #### Caching hints
 
 The complete results of `server/discover`, `tools/list`, `prompts/list`, `resources/list`, `resources/templates/list` and `resources/read` carry `ttlMs` and `cacheScope`, as the revision requires. They default to `0` and `"private"`: stale at once, and never shared between callers. A server that knows better says so per method:

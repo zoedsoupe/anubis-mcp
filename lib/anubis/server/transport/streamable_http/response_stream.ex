@@ -7,7 +7,8 @@ if Code.ensure_loaded?(Plug) do
     `Anubis.Server.Transport.StreamableHTTP.StatelessBinding` registers the
     request as the SSE handler of its session and hands it here when the client
     accepts `text/event-stream`. The request is dispatched in a task. If the
-    session emits a request-scoped notification before the reply, the response
+    session emits a request-scoped notification before the reply, or the
+    request outlives a keepalive interval of the transport, the response
     becomes an SSE stream carrying the notifications in order and ending with
     the JSON-RPC response; otherwise it stays a single JSON object, with the
     status codes the binding gives it.
@@ -17,8 +18,12 @@ if Code.ensure_loaded?(Plug) do
     else the session emits, such as a list change, belongs on a
     `subscriptions/listen` stream and is dropped here.
 
-    A client that closes the stream cancels the request: the dispatch stops and
-    the session, owned by the request, stops with it.
+    A client that disconnects cancels the request, as the specification
+    requires of Streamable HTTP. A disconnect is only visible to a write, so a
+    long request writes a keepalive comment every interval: the write that
+    fails stops the dispatch, and the session, owned by the request, stops with
+    it and terminates the handler. With keepalive disabled on the transport, a
+    disconnect goes unnoticed until the reply is written.
     """
 
     use Anubis.Logging
@@ -84,7 +89,8 @@ if Code.ensure_loaded?(Plug) do
         {:sse_message, notification, _event_id} ->
           forward(state, notification)
 
-        :sse_keepalive when state.streaming? ->
+        :sse_keepalive ->
+          state = open(state)
           write(state, fn conn -> Plug.Conn.chunk(conn, ": keepalive\n\n") end)
 
         _other ->

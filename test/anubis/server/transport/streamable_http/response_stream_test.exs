@@ -4,10 +4,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
   import Plug.Conn
   import Plug.Test
 
+  alias Anubis.Server.Component
   alias Anubis.Server.Registry
   alias Anubis.Server.Supervisor, as: ServerSupervisor
   alias Anubis.Server.Transport.StreamableHTTP
   alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
+  alias Plug.Adapters.Test.Conn
 
   @moduletag capture_log: true
 
@@ -15,7 +17,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
 
   defmodule ProgressTool do
     @moduledoc false
-    use Anubis.Server.Component, type: :tool
+    use Component, type: :tool
 
     alias Anubis.Server.Frame
     alias Anubis.Server.Response
@@ -34,6 +36,45 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     end
   end
 
+  defmodule SlowTool do
+    @moduledoc false
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+    end
+
+    @impl true
+    def execute(_params, frame) do
+      send(ResponseStreamTest, {:tool_running, self()})
+
+      receive do
+        :finish -> {:reply, Response.text(Response.tool(), "finished"), frame}
+      end
+    end
+  end
+
+  defmodule ClosedSocket do
+    @moduledoc false
+    # The test adapter, except that the client has gone away by the first chunk.
+    alias Conn, as: TestConn
+
+    defdelegate send_resp(payload, status, headers, body), to: TestConn
+    defdelegate send_file(payload, status, headers, path, offset, length), to: TestConn
+    defdelegate send_chunked(payload, status, headers), to: TestConn
+    defdelegate read_req_body(payload, opts), to: TestConn
+    defdelegate inform(payload, status, headers), to: TestConn
+    defdelegate upgrade(payload, protocol, opts), to: TestConn
+    defdelegate push(payload, path, headers), to: TestConn
+    defdelegate get_peer_data(payload), to: TestConn
+    defdelegate get_http_protocol(payload), to: TestConn
+    defdelegate get_sock_data(payload), to: TestConn
+    defdelegate get_ssl_data(payload), to: TestConn
+
+    def chunk(_payload, _body), do: {:error, :closed}
+  end
+
   defmodule StreamingServer do
     @moduledoc false
     use Anubis.Server,
@@ -43,6 +84,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
       protocol_versions: ["2026-07-28"]
 
     component(ProgressTool, name: "progress")
+    component(SlowTool, name: "slow")
   end
 
   setup do
@@ -109,7 +151,47 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     refute Enum.any?(events(conn), &(&1["method"] == "notifications/tools/list_changed"))
   end
 
-  defp call(opts, extra_meta, accept) do
+  test "a request that outlives a keepalive is answered over SSE", %{opts: opts} do
+    Process.register(self(), ResponseStreamTest)
+    request = Task.async(fn -> call(opts, %{}, "application/json, text/event-stream", "slow") end)
+
+    assert_receive {:tool_running, tool}
+    send(request.pid, :sse_keepalive)
+    send(tool, :finish)
+    conn = Task.await(request)
+
+    assert [content_type | _] = get_resp_header(conn, "content-type")
+    assert content_type =~ "text/event-stream"
+    assert chunks(conn) =~ ": keepalive"
+    assert [%{"id" => 1, "result" => %{"content" => [%{"text" => "finished"}]}}] = events(conn)
+  end
+
+  test "a client that disconnects cancels the running tool", %{opts: opts} do
+    Process.register(self(), ResponseStreamTest)
+
+    request =
+      Task.async(fn ->
+        opts
+        |> request(%{}, "application/json, text/event-stream", "slow")
+        |> Map.update!(:adapter, fn {_test_conn, state} -> {ClosedSocket, state} end)
+        |> StreamableHTTPPlug.call(opts)
+      end)
+
+    assert_receive {:tool_running, tool}
+    tool_ref = Process.monitor(tool)
+    send(request.pid, :sse_keepalive)
+
+    assert_receive {:DOWN, ^tool_ref, :process, ^tool, _reason}
+    Task.await(request)
+  end
+
+  defp call(opts, extra_meta, accept, tool \\ "progress") do
+    opts
+    |> request(extra_meta, accept, tool)
+    |> StreamableHTTPPlug.call(opts)
+  end
+
+  defp request(_opts, extra_meta, accept, tool) do
     meta =
       Map.merge(
         %{
@@ -125,7 +207,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
         "jsonrpc" => "2.0",
         "id" => 1,
         "method" => "tools/call",
-        "params" => %{"name" => "progress", "arguments" => %{}, "_meta" => meta}
+        "params" => %{"name" => tool, "arguments" => %{}, "_meta" => meta}
       })
 
     :post
@@ -134,11 +216,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     |> put_req_header("accept", accept)
     |> put_req_header("mcp-protocol-version", @version)
     |> put_req_header("mcp-method", "tools/call")
-    |> put_req_header("mcp-name", "progress")
-    |> StreamableHTTPPlug.call(opts)
+    |> put_req_header("mcp-name", tool)
   end
 
-  defp events(%Plug.Conn{adapter: {Plug.Adapters.Test.Conn, %{chunks: chunks}}}) do
-    for "data: " <> data <- String.split(chunks || "", "\n"), do: JSON.decode!(data)
+  defp events(conn) do
+    for "data: " <> data <- String.split(chunks(conn), "\n"), do: JSON.decode!(data)
   end
+
+  defp chunks(%Plug.Conn{adapter: {Conn, %{chunks: chunks}}}), do: chunks || ""
 end
