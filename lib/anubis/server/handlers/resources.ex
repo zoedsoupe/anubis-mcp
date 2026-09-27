@@ -53,7 +53,7 @@ defmodule Anubis.Server.Handlers.Resources do
     resources = Handlers.get_server_resources(server, frame)
     templates = Handlers.get_server_resource_templates(server, frame)
 
-    with {:ok, frame} <- InputRequests.admit(request, frame, {"resources/read", uri}) do
+    with {:ok, frame} <- InputRequests.admit(request, frame, {server, "resources/read", uri}) do
       read_resource(find_static_resource(resources, uri), templates, server, uri, frame)
     end
   end
@@ -182,7 +182,7 @@ defmodule Anubis.Server.Handlers.Resources do
         {:reply, %{"contents" => [content]}, frame}
 
       {:reply, %InputRequired{} = input, frame} ->
-        InputRequests.respond(input, frame, {"resources/read", uri})
+        InputRequests.respond(input, frame, {server, "resources/read", uri})
 
       {:noreply, frame} ->
         content = %{"uri" => uri, "mimeType" => mime_type, "text" => ""}
@@ -193,14 +193,14 @@ defmodule Anubis.Server.Handlers.Resources do
     end
   end
 
-  defp read_single_resource(_server, %Resource{handler: handler, mime_type: mime_type}, uri, frame, vars) do
+  defp read_single_resource(server, %Resource{handler: handler, mime_type: mime_type}, uri, frame, vars) do
     case handler.read(%{"uri" => uri, "params" => vars}, frame) do
       {:reply, %Response{} = response, frame} ->
         content = Response.to_protocol(response, uri, mime_type)
         {:reply, %{"contents" => [content]}, frame}
 
       {:reply, %InputRequired{} = input, frame} ->
-        InputRequests.respond(input, frame, {"resources/read", uri})
+        InputRequests.respond(input, frame, {server, "resources/read", uri})
 
       {:noreply, frame} ->
         content = %{"uri" => uri, "mimeType" => mime_type, "text" => ""}

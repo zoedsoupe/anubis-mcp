@@ -153,6 +153,18 @@ defmodule Anubis.Server.InputRequiredTest do
     component(DraftResource, name: "draft")
   end
 
+  defmodule OtherServer do
+    @moduledoc false
+
+    use Anubis.Server,
+      name: "other-server",
+      version: "1.0.0",
+      capabilities: [:tools],
+      protocol_versions: ["2026-07-28"]
+
+    component(WizardTool, name: "wizard")
+  end
+
   setup do
     Application.put_env(:anubis_mcp, :request_state_secret, @secret)
 
@@ -247,6 +259,16 @@ defmodule Anubis.Server.InputRequiredTest do
                )
     end
 
+    test "issued by another server is refused", %{session: session} do
+      %{"requestState" => state} = call(session, "wizard")
+      other = start_session(OtherServer)
+
+      assert %{"resultType" => "input_required"} =
+               call(session, "wizard", %{"step1" => %{"action" => "accept"}}, state: state)
+
+      assert %{"code" => -32_602} = error(other, "wizard", %{"step1" => %{"action" => "accept"}}, state: state)
+    end
+
     test "issued to another principal is refused", %{session: session} do
       %{"requestState" => state} = call(session, "wizard", nil, auth: %{sub: "alice"})
 
@@ -303,22 +325,22 @@ defmodule Anubis.Server.InputRequiredTest do
       frame = Frame.new()
 
       for token <- ["", "v1", "v1.a.b", "v1.AAAA.AAAA", "v2.AAAA.AAAA", "not a token"] do
-        assert {:error, :invalid} = RequestState.verify(token, frame, {"tools/call", "wizard"})
+        assert {:error, :invalid} = RequestState.verify(token, frame, {__MODULE__, "tools/call", "wizard"})
       end
     end
 
     test "refuses every state when no secret is configured" do
-      token = RequestState.sign(:state, Frame.new(), {"tools/call", "wizard"})
+      token = RequestState.sign(:state, Frame.new(), {__MODULE__, "tools/call", "wizard"})
       Application.delete_env(:anubis_mcp, :request_state_secret)
 
-      assert {:error, :invalid} = RequestState.verify(token, Frame.new(), {"tools/call", "wizard"})
+      assert {:error, :invalid} = RequestState.verify(token, Frame.new(), {__MODULE__, "tools/call", "wizard"})
     end
 
     test "cannot sign without a secret" do
       Application.delete_env(:anubis_mcp, :request_state_secret)
 
       assert_raise ArgumentError, ~r/request_state_secret/, fn ->
-        RequestState.sign(:state, Frame.new(), {"tools/call", "wizard"})
+        RequestState.sign(:state, Frame.new(), {__MODULE__, "tools/call", "wizard"})
       end
     end
   end
@@ -372,19 +394,19 @@ defmodule Anubis.Server.InputRequiredTest do
     JSON.decode!(response)
   end
 
-  defp start_session do
+  defp start_session(server \\ InputServer) do
     session_id = "input-#{System.unique_integer([:positive])}"
-    transport_name = Registry.transport_name(InputServer, StubTransport)
+    transport_name = Registry.transport_name(server, StubTransport)
     start_supervised({StubTransport, name: transport_name}, id: transport_name)
 
-    task_sup = Registry.task_supervisor_name(InputServer)
+    task_sup = Registry.task_supervisor_name(server)
     start_supervised({Task.Supervisor, name: task_sup}, id: task_sup)
 
     start_supervised!(
       {Session,
        session_id: session_id,
-       server_module: InputServer,
-       name: Registry.session_name(InputServer, session_id),
+       server_module: server,
+       name: Registry.session_name(server, session_id),
        transport: [layer: StubTransport, name: transport_name],
        task_supervisor: task_sup},
       id: session_id

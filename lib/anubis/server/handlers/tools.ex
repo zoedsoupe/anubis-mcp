@@ -35,7 +35,7 @@ defmodule Anubis.Server.Handlers.Tools do
 
     if tool = find_tool_module(registered_tools, tool_name) do
       with :ok <- check_scopes(tool, frame),
-           {:ok, frame} <- InputRequests.admit(request, frame, {"tools/call", tool_name}),
+           {:ok, frame} <- InputRequests.admit(request, frame, {server, "tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(params, tool, frame),
            do: forward_to(server, tool, params, frame)
@@ -51,7 +51,7 @@ defmodule Anubis.Server.Handlers.Tools do
 
     if tool = find_tool_module(registered_tools, tool_name) do
       with :ok <- check_scopes(tool, frame),
-           {:ok, frame} <- InputRequests.admit(request, frame, {"tools/call", tool_name}),
+           {:ok, frame} <- InputRequests.admit(request, frame, {server, "tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(%{}, tool, frame),
            do: forward_to(server, tool, params, frame)
@@ -114,7 +114,7 @@ defmodule Anubis.Server.Handlers.Tools do
         maybe_validate_output_schema(tool, response, frame)
 
       {:reply, %InputRequired{} = input, frame} ->
-        InputRequests.respond(input, frame, {"tools/call", tool.name})
+        InputRequests.respond(input, frame, {server, "tools/call", tool.name})
 
       {:noreply, frame} ->
         {:reply, %{"content" => [], "isError" => false}, frame}
@@ -124,13 +124,13 @@ defmodule Anubis.Server.Handlers.Tools do
     end
   end
 
-  defp forward_to(_server, %Tool{handler: handler} = tool, params, frame) do
+  defp forward_to(server, %Tool{handler: handler} = tool, params, frame) do
     case handler.execute(params, frame) do
       {:reply, %Response{} = response, frame} ->
         maybe_validate_output_schema(tool, response, frame)
 
       {:reply, %InputRequired{} = input, frame} ->
-        InputRequests.respond(input, frame, {"tools/call", tool.name})
+        InputRequests.respond(input, frame, {server, "tools/call", tool.name})
 
       {:noreply, frame} ->
         {:reply, %{"content" => [], "isError" => false}, frame}

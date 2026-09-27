@@ -12,6 +12,8 @@ defmodule Anubis.Server.RequestState do
 
     * the authenticated principal (`Anubis.Server.Frame.subject/1`), so state
       issued to one user is refused for another;
+    * the server module that issued it, so state cannot cross to another
+      server sharing the application's secret;
     * the originating request, its method plus the tool or prompt name or the
       resource URI, so state cannot move to a different request;
     * a digest of that request's parameters (`request_digest` on the frame's
@@ -40,7 +42,7 @@ defmodule Anubis.Server.RequestState do
   @default_ttl_ms to_timeout(minute: 10)
   @min_secret_bytes 32
 
-  @type binding :: {method :: String.t(), target :: String.t()}
+  @type binding :: {server :: module(), method :: String.t(), target :: String.t()}
 
   @doc """
   Signs `term` for the request `binding` identifies, as the principal on `frame`.

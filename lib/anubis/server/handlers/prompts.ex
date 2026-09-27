@@ -35,7 +35,7 @@ defmodule Anubis.Server.Handlers.Prompts do
 
     if prompt = find_prompt_module(registered_prompts, prompt_name) do
       with :ok <- check_scopes(prompt, frame),
-           {:ok, frame} <- InputRequests.admit(request, frame, {"prompts/get", prompt_name}),
+           {:ok, frame} <- InputRequests.admit(request, frame, {server, "prompts/get", prompt_name}),
            {:ok, params} <- validate_params(params, prompt, frame),
            do: forward_to(server, prompt, params, frame)
     else
@@ -50,7 +50,7 @@ defmodule Anubis.Server.Handlers.Prompts do
 
     if prompt = find_prompt_module(registered_prompts, prompt_name) do
       with :ok <- check_scopes(prompt, frame),
-           {:ok, frame} <- InputRequests.admit(request, frame, {"prompts/get", prompt_name}),
+           {:ok, frame} <- InputRequests.admit(request, frame, {server, "prompts/get", prompt_name}),
            {:ok, params} <- validate_params(%{}, prompt, frame),
            do: forward_to(server, prompt, params, frame)
     else
@@ -92,7 +92,7 @@ defmodule Anubis.Server.Handlers.Prompts do
         {:reply, Response.to_protocol(response), frame}
 
       {:reply, %InputRequired{} = input, frame} ->
-        InputRequests.respond(input, frame, {"prompts/get", prompt.name})
+        InputRequests.respond(input, frame, {server, "prompts/get", prompt.name})
 
       {:noreply, frame} ->
         {:reply, %{"content" => [], "isError" => false}, frame}
@@ -102,13 +102,13 @@ defmodule Anubis.Server.Handlers.Prompts do
     end
   end
 
-  defp forward_to(_server, %Prompt{handler: handler} = prompt, params, frame) do
+  defp forward_to(server, %Prompt{handler: handler} = prompt, params, frame) do
     case handler.get_messages(params, frame) do
       {:reply, %Response{} = response, frame} ->
         {:reply, Response.to_protocol(response), frame}
 
       {:reply, %InputRequired{} = input, frame} ->
-        InputRequests.respond(input, frame, {"prompts/get", prompt.name})
+        InputRequests.respond(input, frame, {server, "prompts/get", prompt.name})
 
       {:noreply, frame} ->
         {:reply, %{"content" => [], "isError" => false}, frame}
