@@ -36,6 +36,22 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     end
   end
 
+  defmodule LogTool do
+    @moduledoc false
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+    end
+
+    @impl true
+    def execute(_params, frame) do
+      Anubis.Server.send_log_message(:info, "working")
+      {:reply, Response.text(Response.tool(), "logged"), frame}
+    end
+  end
+
   defmodule SlowTool do
     @moduledoc false
     use Component, type: :tool
@@ -85,6 +101,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
 
     component(ProgressTool, name: "progress")
     component(SlowTool, name: "slow")
+    component(LogTool, name: "log")
   end
 
   setup do
@@ -149,6 +166,14 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     conn = call(opts, %{"progressToken" => "tok"}, "application/json, text/event-stream")
 
     refute Enum.any?(events(conn), &(&1["method"] == "notifications/tools/list_changed"))
+  end
+
+  test "a log message streams ahead of the result when the request set a log level", %{opts: opts} do
+    conn = call(opts, %{"io.modelcontextprotocol/logLevel" => "info"}, "application/json, text/event-stream", "log")
+
+    assert [log, result] = events(conn)
+    assert %{"method" => "notifications/message", "params" => %{"level" => "info", "data" => "working"}} = log
+    assert %{"id" => 1, "result" => %{"content" => [%{"text" => "logged"}]}} = result
   end
 
   test "a request that outlives a keepalive is answered over SSE", %{opts: opts} do
