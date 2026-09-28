@@ -135,6 +135,9 @@ if Code.ensure_loaded?(Plug) do
           context = build_request_context(conn, Map.get(opts, :auth_claims))
           StatelessBinding.call(conn, version, context, opts)
 
+        :repeated ->
+          StatelessBinding.send_repeated_version(conn, opts)
+
         {:unsupported, version} ->
           Logging.transport_event("unsupported_protocol_version", %{version: version}, level: :warning)
 

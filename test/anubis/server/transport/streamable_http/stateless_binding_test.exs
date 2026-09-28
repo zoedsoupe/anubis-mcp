@@ -360,6 +360,19 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       end
     end
 
+    test "rejects a repeated MCP-Protocol-Version, whichever era each copy names", %{opts: opts} do
+      for copies <- [[@version, "2025-11-25"], ["2025-11-25", @version], [@version, @version]] do
+        conn = tool_call_conn([])
+        others = Enum.reject(conn.req_headers, &match?({"mcp-protocol-version", _}, &1))
+        repeated = for version <- copies, do: {"mcp-protocol-version", version}
+
+        conn = StreamableHTTPPlug.call(%{conn | req_headers: others ++ repeated}, opts)
+
+        assert_header_mismatch(conn, "Repeated mcp-protocol-version")
+        assert JSON.decode!(conn.resp_body)["id"] == 1, inspect(copies)
+      end
+    end
+
     test "answers a request without _meta with -32602 and its id", %{opts: opts} do
       body = %{"jsonrpc" => "2.0", "id" => 7, "method" => "tools/call", "params" => %{"name" => "who_am_i_tool"}}
 

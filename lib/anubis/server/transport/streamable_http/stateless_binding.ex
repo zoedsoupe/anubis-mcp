@@ -38,9 +38,10 @@ if Code.ensure_loaded?(Plug) do
     `Mcp-Param-*` headers are checked against the tool's arguments when the
     tool call is handled; see `Anubis.Server.McpParam`.
 
-    A request that repeats `Mcp-Method`, `Mcp-Name` or any `Mcp-Param-*`
-    header is refused with `-32020`, since an intermediary that routes on one
-    copy could see a different value from the one checked against the body.
+    A request that repeats `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name` or
+    any `Mcp-Param-*` header is refused with `-32020`, since an intermediary
+    that routes on one copy could see a different value from the one checked
+    against the body.
 
     ## Limits
 
@@ -88,7 +89,7 @@ if Code.ensure_loaded?(Plug) do
     # decoded just to learn that.
     @error_probe_bytes 4_096
 
-    @type classification :: :legacy | {:stateless, String.t()} | {:unsupported, String.t()}
+    @type classification :: :legacy | {:stateless, String.t()} | {:unsupported, String.t()} | :repeated
 
     @doc """
     Decides which era serves a request from its `MCP-Protocol-Version` header.
@@ -96,6 +97,10 @@ if Code.ensure_loaded?(Plug) do
     A request without the header, or naming a legacy version the server
     declares, stays on the session-oriented binding. A stateless version the
     server declares is served here. Anything else is unsupported.
+
+    On a server that serves a stateless version, a repeated header is
+    `:repeated`, because the copies could name different eras. A server that
+    serves none keeps reading the first copy.
 
     ## Examples
 
@@ -110,6 +115,12 @@ if Code.ensure_loaded?(Plug) do
         iex> conn = Plug.Conn.put_req_header(Plug.Test.conn(:post, "/"), "mcp-protocol-version", "2026-07-28")
         iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.classify(conn, ["2025-11-25"])
         {:unsupported, "2026-07-28"}
+
+        iex> conn = %{Plug.Test.conn(:post, "/") | req_headers: [{"mcp-protocol-version", "2025-11-25"}, {"mcp-protocol-version", "2026-07-28"}]}
+        iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.classify(conn, ["2026-07-28", "2025-11-25"])
+        :repeated
+        iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.classify(conn, ["2025-11-25"])
+        :legacy
     """
     @spec classify(Plug.Conn.t(), [String.t()]) :: classification()
     def classify(conn, declared_versions) do
@@ -117,12 +128,21 @@ if Code.ensure_loaded?(Plug) do
         [] ->
           :legacy
 
-        [version | _] ->
-          cond do
-            version not in declared_versions -> {:unsupported, version}
-            ProtocolRegistry.era(version) == {:ok, :stateless} -> {:stateless, version}
-            true -> :legacy
-          end
+        [_, _ | _] = versions ->
+          if serves_stateless?(declared_versions),
+            do: :repeated,
+            else: versions |> hd() |> classify_version(declared_versions)
+
+        [version] ->
+          classify_version(version, declared_versions)
+      end
+    end
+
+    defp classify_version(version, declared_versions) do
+      cond do
+        version not in declared_versions -> {:unsupported, version}
+        ProtocolRegistry.era(version) == {:ok, :stateless} -> {:stateless, version}
+        true -> :legacy
       end
     end
 
@@ -144,6 +164,18 @@ if Code.ensure_loaded?(Plug) do
     @spec send_unsupported(Plug.Conn.t(), String.t(), [String.t()], map()) :: Plug.Conn.t()
     def send_unsupported(conn, version, declared_versions, opts) do
       error = Error.unsupported_protocol_version(version, Stateless.supported_versions(declared_versions))
+
+      {id, conn} = raw_request_id(conn, opts)
+      send_error(conn, 400, error, id)
+    end
+
+    @doc """
+    Answers a request that repeats `MCP-Protocol-Version` with `HeaderMismatch`
+    (`-32020`, HTTP 400).
+    """
+    @spec send_repeated_version(Plug.Conn.t(), map()) :: Plug.Conn.t()
+    def send_repeated_version(conn, opts) do
+      error = Error.protocol(:header_mismatch, %{message: "Repeated mcp-protocol-version header"})
 
       {id, conn} = raw_request_id(conn, opts)
       send_error(conn, 400, error, id)
