@@ -38,6 +38,10 @@ if Code.ensure_loaded?(Plug) do
     `Mcp-Param-*` headers are checked against the tool's arguments when the
     tool call is handled; see `Anubis.Server.McpParam`.
 
+    A request that repeats `Mcp-Method`, `Mcp-Name` or any `Mcp-Param-*`
+    header is refused with `-32020`, since an intermediary that routes on one
+    copy could see a different value from the one checked against the body.
+
     ## Limits
 
     A request id must be a string of at most 256 bytes or an integer in the
@@ -220,11 +224,26 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp validate_headers(conn, message, version) do
-      with :ok <- match_protocol_version(message, version),
+      with :ok <- refuse_repeated_headers(conn),
+           :ok <- match_protocol_version(message, version),
            :ok <- match_header(conn, "mcp-method", message["method"]) do
         match_name(conn, message)
       end
     end
+
+    defp refuse_repeated_headers(conn) do
+      conn.req_headers
+      |> Enum.map(fn {name, _value} -> name end)
+      |> Enum.filter(&mirrored_header?/1)
+      |> Enum.frequencies()
+      |> Enum.find(fn {_name, count} -> count > 1 end)
+      |> case do
+        nil -> :ok
+        {name, _count} -> {:error, Error.protocol(:header_mismatch, %{message: "Repeated #{name} header"})}
+      end
+    end
+
+    defp mirrored_header?(name), do: name in ~w(mcp-method mcp-name) or String.starts_with?(name, "mcp-param-")
 
     defp match_protocol_version(%{"params" => %{"_meta" => %{@protocol_version_key => version}}}, version), do: :ok
 

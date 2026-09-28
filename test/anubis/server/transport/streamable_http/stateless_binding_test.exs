@@ -190,6 +190,18 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       end
     end
 
+    test "a repeated header is refused, even when every copy agrees", %{opts: opts} do
+      for second <- ["us-west1", "eu-west1"] do
+        conn =
+          "us-west1"
+          |> region_conn([{"mcp-param-region", "us-west1"}])
+          |> repeat_header("mcp-param-region", second)
+          |> StreamableHTTPPlug.call(opts)
+
+        assert_header_mismatch(conn, "Repeated mcp-param-region")
+      end
+    end
+
     test "the handshake era does not read them" do
       request = %{
         "jsonrpc" => "2.0",
@@ -336,6 +348,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       conn = post_tool_call(opts, headers: [{"mcp-name", "another_tool"}])
 
       assert_header_mismatch(conn, "mcp-name")
+    end
+
+    test "rejects a repeated Mcp-Method or Mcp-Name, even when every copy agrees", %{opts: opts} do
+      for header <- ["mcp-method", "mcp-name"] do
+        [{^header, value}] = Enum.filter(tool_call_conn([]).req_headers, &match?({^header, _}, &1))
+
+        conn = [] |> tool_call_conn() |> repeat_header(header, value) |> StreamableHTTPPlug.call(opts)
+
+        assert_header_mismatch(conn, "Repeated #{header}")
+      end
     end
 
     test "answers a request without _meta with -32602 and its id", %{opts: opts} do
@@ -643,6 +665,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
   end
 
   defp post_region(opts, region, headers) do
+    region |> region_conn(headers) |> StreamableHTTPPlug.call(opts)
+  end
+
+  defp region_conn(region, headers) do
     %{
       "jsonrpc" => "2.0",
       "id" => 1,
@@ -651,6 +677,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     }
     |> JSON.encode!()
     |> stateless_conn([{"mcp-method", "tools/call"}, {"mcp-name", "region"} | headers])
-    |> StreamableHTTPPlug.call(opts)
   end
+
+  # put_req_header/3 replaces a header, and a client can send one twice.
+  defp repeat_header(conn, name, value), do: %{conn | req_headers: conn.req_headers ++ [{name, value}]}
 end
