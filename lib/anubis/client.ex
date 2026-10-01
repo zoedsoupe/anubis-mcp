@@ -41,7 +41,6 @@ defmodule Anubis.Client do
   When starting the client, provide transport configuration:
 
     * `{:stdio, command: "cmd", args: ["arg1", "arg2"]}`
-    * `{:websocket, url: "ws://localhost:8000/ws"}`
     * `{:streamable_http, url: "http://localhost:8000/mcp"}`
 
   ## Process Naming
@@ -160,14 +159,13 @@ defmodule Anubis.Client do
   @typedoc """
   MCP client transport options
 
-  - `:layer` - The transport layer to use, either `Anubis.Transport.STDIO`, `Anubis.Transport.WebSocket`, or `Anubis.Transport.StreamableHTTP` (required)
+  - `:layer` - The transport layer to use, either `Anubis.Transport.STDIO` or `Anubis.Transport.StreamableHTTP` (required)
   - `:name` - The transport optional custom name
   """
   @type transport ::
           list(
             {:layer,
              Anubis.Transport.STDIO
-             | Anubis.Transport.WebSocket
              | Anubis.Transport.StreamableHTTP}
             | {:name, GenServer.server()}
           )
