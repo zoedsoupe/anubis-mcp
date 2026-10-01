@@ -1,8 +1,7 @@
 defmodule Anubis.MCP.Setup do
   @moduledoc false
 
-  import Anubis.MCP.Assertions
-  import ExUnit.Assertions, only: [assert: 1]
+  import ExUnit.Assertions, only: [assert: 1, assert: 2]
   import ExUnit.Callbacks, only: [start_supervised!: 1, start_supervised!: 2]
 
   alias Anubis.MCP.Builders
@@ -138,7 +137,6 @@ defmodule Anubis.MCP.Setup do
     assert_server_initialized(session)
 
     :ok = StubTransport.clear(transport)
-
     Map.merge(ctx, %{
       transport: transport,
       server: session,
@@ -217,5 +215,10 @@ defmodule Anubis.MCP.Setup do
     )
 
     Map.put(context, :client, client)
+  end
+
+  defp assert_server_initialized(server) when is_pid(server) do
+    state = :sys.get_state(server)
+    assert state.initialized, "Expected server session to be initialized"
   end
 end

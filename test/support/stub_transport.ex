@@ -17,7 +17,6 @@ defmodule StubTransport do
 
   @type state :: %{
           messages: [String.t()],
-          client: GenServer.name() | nil,
           session_id: String.t(),
           test_pid: pid() | nil
         }
@@ -30,7 +29,7 @@ defmodule StubTransport do
   """
   @impl true
   def start_link(opts \\ []) do
-    state = %{messages: [], client: nil, test_pid: nil}
+    state = %{messages: [], test_pid: nil}
 
     if name = opts[:name] do
       GenServer.start_link(__MODULE__, state, name: name)
@@ -46,14 +45,6 @@ defmodule StubTransport do
     GenServer.call(transport, :get_messages)
   end
 
-  def get_last_message(transport \\ __MODULE__) do
-    GenServer.call(transport, :get_last_message)
-  end
-
-  def set_client(transport \\ __MODULE__, client) do
-    GenServer.call(transport, {:set_client, client})
-  end
-
   @doc """
   Sets the test process to receive message notifications.
   """
@@ -66,18 +57,6 @@ defmodule StubTransport do
   """
   def clear(transport \\ __MODULE__) do
     GenServer.call(transport, :clear)
-  end
-
-  @doc """
-  Gets the count of messages sent.
-  """
-  def count(transport \\ __MODULE__) do
-    GenServer.call(transport, :count)
-  end
-
-  def send_to_client(transport \\ __MODULE__, response) when is_map(response) do
-    {:ok, response} = Builders.encode_message(response)
-    GenServer.call(transport, {:send_to_client, response})
   end
 
   @impl true
@@ -103,26 +82,12 @@ defmodule StubTransport do
     {:reply, state.messages |> Enum.reverse() |> Enum.map(&decode_message/1), state}
   end
 
-  def handle_call(:get_last_message, _from, %{messages: messages} = state) do
-    last = List.first(messages)
-    {:reply, if(last, do: decode_message(last)), state}
-  end
-
   def handle_call(:clear, _from, state) do
     {:reply, :ok, %{state | messages: []}}
   end
 
-  def handle_call({:set_client, client}, _from, state) do
-    GenServer.cast(client, :initialize)
-    {:reply, :ok, %{state | client: client}}
-  end
-
   def handle_call({:set_test_pid, test_pid}, _from, state) do
     {:reply, :ok, %{state | test_pid: test_pid}}
-  end
-
-  def handle_call(:count, _from, state) do
-    {:reply, length(state.messages), state}
   end
 
   def handle_call({:send_message, message}, _from, state) do
@@ -146,11 +111,6 @@ defmodule StubTransport do
     {:stop, :normal, :ok, state}
   end
 
-  def handle_call({:send_to_client, response}, _from, %{client: client} = state) do
-    GenServer.cast(client, {:response, response})
-    {:reply, :ok, state}
-  end
-
   defp decode_message(message) when is_binary(message) do
     %{} = message = Builders.decode_message(message)
     message
@@ -163,11 +123,8 @@ defmodule StubTransport do
       session_name =
         Anubis.Server.Registry.session_name(StubServer, state.session_id)
 
-      {:ok, response} = Session.dispatch_request(session_name, message, %{})
-
-      if state.client do
-        GenServer.cast(state.client, {:response, response})
-      end
+      {:ok, _response} = Session.dispatch_request(session_name, message, %{})
+      :ok
     end
   end
 

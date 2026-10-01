@@ -13,7 +13,6 @@ defmodule Anubis.MCP.Case do
     quote do
       use ExUnit.Case, async: unquote(async)
 
-      import Anubis.MCP.Assertions
       import Anubis.MCP.Builders
       import Anubis.MCP.Setup
 
