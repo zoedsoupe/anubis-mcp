@@ -13,7 +13,7 @@ defmodule Anubis do
                          ClientSTDIO,
                          ClientStreamableHTTP,
                          StubTransport,
-                         Anubis.MockTransport,
+                         FakeTransport,
                          BufferedMockTransport
                        ],
                        else: [ClientSTDIO, ClientStreamableHTTP]

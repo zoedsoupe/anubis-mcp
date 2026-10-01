@@ -551,7 +551,7 @@ defmodule Anubis.MCP.MessageTest do
           "total" => 100
         })
 
-      decoded = Jason.decode!(encoded)
+      decoded = JSON.decode!(encoded)
 
       assert decoded["jsonrpc"] == "2.0"
       assert decoded["method"] == "notifications/progress"
@@ -567,7 +567,7 @@ defmodule Anubis.MCP.MessageTest do
           "progress" => 50
         })
 
-      decoded = Jason.decode!(encoded)
+      decoded = JSON.decode!(encoded)
 
       assert decoded["jsonrpc"] == "2.0"
       assert decoded["method"] == "notifications/progress"
@@ -582,7 +582,7 @@ defmodule Anubis.MCP.MessageTest do
       {:ok, encoded} =
         Message.encode_log_message("info", "Test log message", "test-logger")
 
-      decoded = Jason.decode!(encoded)
+      decoded = JSON.decode!(encoded)
 
       assert decoded["jsonrpc"] == "2.0"
       assert decoded["method"] == "notifications/message"
@@ -595,7 +595,7 @@ defmodule Anubis.MCP.MessageTest do
       {:ok, encoded} =
         Message.encode_log_message("error", %{error: "Something went wrong"})
 
-      decoded = Jason.decode!(encoded)
+      decoded = JSON.decode!(encoded)
 
       assert decoded["jsonrpc"] == "2.0"
       assert decoded["method"] == "notifications/message"
