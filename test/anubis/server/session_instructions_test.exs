@@ -39,6 +39,26 @@ defmodule Anubis.Server.SessionInstructionsTest do
       capabilities: [:tools]
   end
 
+  defmodule InstructionsPerConnectionServer do
+    @moduledoc false
+
+    use Anubis.Server,
+      name: "instructions-per-connection-server",
+      version: "1.0.0",
+      capabilities: [:tools]
+
+    @impl Anubis.Server
+    def server_instructions, do: "Static fallback"
+
+    @impl Anubis.Server
+    def server_instructions(frame) do
+      case frame.assigns[:audience] do
+        nil -> "Instructions for an unknown caller"
+        audience -> "Instructions for #{audience}"
+      end
+    end
+  end
+
   describe "instructions via use option" do
     test "initialize response includes instructions" do
       {session, _transport} = start_session(InstructionsViaOptionServer)
@@ -84,6 +104,34 @@ defmodule Anubis.Server.SessionInstructionsTest do
     end
   end
 
+  describe "instructions per connection" do
+    test "the frame's assigns decide what the handshake answers with" do
+      {session, _transport} = start_session(InstructionsPerConnectionServer)
+
+      result = send_initialize(session, %{assigns: %{audience: "a support agent"}})
+
+      assert result["instructions"] == "Instructions for a support agent"
+    end
+
+    test "a connection carrying no assigns still gets an answer" do
+      {session, _transport} = start_session(InstructionsPerConnectionServer)
+
+      assert send_initialize(session)["instructions"] == "Instructions for an unknown caller"
+    end
+
+    test "arity 1 takes precedence over arity 0" do
+      {session, _transport} = start_session(InstructionsPerConnectionServer)
+
+      refute send_initialize(session)["instructions"] == "Static fallback"
+    end
+
+    test "a server defining only arity 0 is unaffected" do
+      {session, _transport} = start_session(InstructionsViaCallbackServer)
+
+      assert send_initialize(session)["instructions"] == "Dynamic instructions from callback"
+    end
+  end
+
   # Helpers
 
   defp start_session(server_module) do
@@ -110,9 +158,9 @@ defmodule Anubis.Server.SessionInstructionsTest do
     {session, transport}
   end
 
-  defp send_initialize(session) do
+  defp send_initialize(session, transport_context \\ %{}) do
     request = init_request("2025-03-26", %{"name" => "TestClient", "version" => "1.0.0"})
-    {:ok, response_json} = GenServer.call(session, {:mcp_request, request, %{}})
+    {:ok, response_json} = GenServer.call(session, {:mcp_request, request, transport_context})
     response = JSON.decode!(response_json)
     response["result"]
   end

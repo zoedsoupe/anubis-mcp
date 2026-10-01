@@ -192,6 +192,60 @@ defmodule Anubis.Server do
   @callback server_instructions() :: String.t() | nil
 
   @doc """
+  Returns the instructions for *this* connection, given the frame the handshake will answer with.
+
+  Optional, and takes precedence over `c:server_instructions/0` when defined. The frame carries
+  the transport's assigns — whatever a `Plug` put on the connection before the request reached
+  the server — so a server whose guidance depends on who is asking can vary it here.
+
+  `c:init/2` cannot serve this purpose: it runs when the client acknowledges the handshake,
+  after the `initialize` result carrying the instructions has already been sent.
+
+  ## Examples
+
+      @impl Anubis.Server
+      def server_instructions(frame) do
+        case frame.assigns[:plan] do
+          :enterprise -> "You may call `bulk_export`. Confirm the range before exporting."
+          _ -> "Exports run one record at a time."
+        end
+      end
+
+  Return `nil` to omit the field from the `initialize` result.
+  """
+  @callback server_instructions(frame :: Frame.t()) :: String.t() | nil
+
+  @doc """
+  Returns the tools *this* connection may list and call, given its frame.
+
+  Optional. It is applied to the compile-time components concatenated with the frame's runtime
+  tools, every time the list is built — which is both `tools/list` and the lookup `tools/call`
+  does, so a tool withheld here cannot be reached by name either.
+
+  The frame carries the transport's assigns, so a server whose surface depends on who is asking
+  resolves it here rather than at registration. `c:init/2` cannot serve this purpose: it runs
+  once per session, and on a session restored from a store it runs before the request's assigns
+  are attached.
+
+  Return the tools unchanged to serve everyone the same surface. A tool may also be returned
+  *rewritten* — a description or a schema that names something one caller may not be shown is a
+  connection-level decision, and the struct is the place to make it.
+
+  ## Examples
+
+      @impl Anubis.Server
+      def server_tools(tools, frame) do
+        if frame.assigns[:plan] == :enterprise do
+          tools
+        else
+          Enum.reject(tools, &(&1.name == "bulk_export"))
+        end
+      end
+
+  """
+  @callback server_tools(tools :: [Tool.t()], frame :: Frame.t()) :: [Tool.t()]
+
+  @doc """
   Called when a session is being auto-recovered after expiry.
 
   Invoked during `auto_initialize/1` instead of the normal client handshake.
@@ -275,7 +329,9 @@ defmodule Anubis.Server do
   """
   @callback serialize_assigns(assigns :: map()) :: map()
 
-  @optional_callbacks handle_notification: 2,
+  @optional_callbacks server_instructions: 1,
+                      server_tools: 2,
+                      handle_notification: 2,
                       handle_info: 2,
                       handle_call: 3,
                       handle_cast: 2,

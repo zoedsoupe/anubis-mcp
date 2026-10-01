@@ -58,7 +58,15 @@ defmodule Anubis.Server.Handlers do
   end
 
   def get_server_tools(module, frame) do
-    Enum.sort_by(module.__components__(:tool) ++ Frame.get_tools(frame), & &1.name)
+    tools = Enum.sort_by(module.__components__(:tool) ++ Frame.get_tools(frame), & &1.name)
+
+    # Resolved on every list and every call, because the frame is what carries the request's
+    # assigns — a surface decided at registration cannot see them.
+    if Anubis.exported?(module, :server_tools, 2) do
+      module.server_tools(tools, frame)
+    else
+      tools
+    end
   end
 
   def get_server_prompts(module, frame) do
