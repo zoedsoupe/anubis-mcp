@@ -755,7 +755,7 @@ defmodule Anubis.Server.Session do
 
   defp handle_request(%{"method" => "tools/call"} = request, ctx, from, state) do
     if Tasks.augmented_tools_call?(request) do
-      Tasks.create_for_tools_call(request, ctx, from, state, &prepare_frame/1)
+      Tasks.create_for_tools_call(request, ctx, from, state, &prepare_frame/2)
     else
       Scheduler.enqueue_or_dispatch(request, ctx, from, state, scheduler_callbacks())
     end

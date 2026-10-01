@@ -32,6 +32,37 @@ defmodule Anubis.Server.TasksTest do
       send(pid, {:proceed, :alpha})
     end
 
+    test "preserves the authenticated request context in the worker frame", %{
+      session: session
+    } do
+      auth = %{
+        sub: "actor-123",
+        aud: "https://server.example/mcp",
+        scope: "mcp.message",
+        scopes: ["mcp.message"],
+        client_id: "client-123",
+        iat: 1_700_000_000,
+        exp: 1_700_000_300,
+        raw_claims: %{"iss" => "https://authorization.example"}
+      }
+
+      transport_context = %{
+        assigns: %{test_pid: self()},
+        req_headers: [{"x-request-id", "task-request"}],
+        remote_ip: {203, 0, 113, 42},
+        auth: auth
+      }
+
+      request = build_request_with_task("capture_context", %{}, "req-context")
+      decoded = call_session(session, request, transport_context)
+
+      assert is_binary(decoded["result"]["task"]["taskId"])
+      assert_receive {:task_context, context}, 500
+      assert context.auth == auth
+      assert context.headers == %{"x-request-id" => "task-request"}
+      assert context.remote_ip == {203, 0, 113, 42}
+    end
+
     test "rejects forbidden tool with -32601", %{session: session} do
       decoded = call_session(session, build_request_with_task("no_tasks", %{}, "req-1"))
       assert decoded["error"]["code"] == -32_601
@@ -409,8 +440,9 @@ defmodule Anubis.Server.TasksTest do
     )
   end
 
-  defp call_session(session, request) do
-    {:ok, raw} = GenServer.call(session, {:mcp_request, request, with_test_pid()})
+  defp call_session(session, request, transport_context \\ nil) do
+    transport_context = transport_context || with_test_pid()
+    {:ok, raw} = GenServer.call(session, {:mcp_request, request, transport_context})
     decode_one(raw)
   end
 
