@@ -7,6 +7,7 @@ defmodule Anubis.Server.Handlers.Resources do
   alias Anubis.Server.Frame
   alias Anubis.Server.Handlers
   alias Anubis.Server.Response
+  alias Anubis.Server.Stateless
 
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
@@ -138,7 +139,7 @@ defmodule Anubis.Server.Handlers.Resources do
 
   defp try_resource_templates([], _server, uri, frame, nil) do
     payload = %{message: "Resource not found: #{uri}"}
-    error = Error.resource(:not_found, payload)
+    error = Error.resource_not_found(payload, Stateless.era(frame.context.protocol_module))
     {:error, error, frame}
   end
 

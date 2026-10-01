@@ -301,4 +301,32 @@ defmodule Anubis.MCP.ErrorTest do
       assert inspected == "#MCP.Error<empty_test>"
     end
   end
+
+  describe "resource_not_found/2" do
+    @payload %{uri: "file:///missing.txt"}
+
+    test "the legacy era keeps the MCP-specific code" do
+      error = Error.resource_not_found(@payload, :legacy)
+
+      assert error.code == -32_002
+      assert error.reason == :resource_not_found
+      assert error.data == @payload
+    end
+
+    test "the stateless era reports the JSON-RPC invalid params code" do
+      error = Error.resource_not_found(@payload, :stateless)
+
+      assert error.code == -32_602
+      assert error.reason == :invalid_params
+      assert error.data == @payload
+    end
+
+    test "each era survives a JSON-RPC round trip" do
+      for {era, code} <- [legacy: -32_002, stateless: -32_602] do
+        {:ok, encoded} = Error.to_json_rpc(Error.resource_not_found(@payload, era), 1)
+
+        assert %{"error" => %{"code" => ^code, "data" => %{"uri" => "file:///missing.txt"}}} = JSON.decode!(encoded)
+      end
+    end
+  end
 end

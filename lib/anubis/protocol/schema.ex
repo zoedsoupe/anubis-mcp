@@ -34,6 +34,8 @@ defmodule Anubis.Protocol.Schema do
 
   @subscription_id_key "io.modelcontextprotocol/subscriptionId"
 
+  @protocol_version_key "io.modelcontextprotocol/protocolVersion"
+
   @doc """
   Returns the schema fragment for the `params._meta.progressToken` slot
   shared by all MCP requests.
@@ -61,6 +63,21 @@ defmodule Anubis.Protocol.Schema do
   """
   @spec log_levels() :: [String.t()]
   def log_levels, do: @log_levels
+
+  @doc """
+  Returns the `_meta` key a stateless-era request declares its protocol
+  version under.
+
+  It is the key that tells a dual-era peer which era a message belongs to, so
+  it is resolved from here rather than restated wherever that decision is made.
+
+  ## Examples
+
+      iex> Anubis.Protocol.Schema.protocol_version_key()
+      "io.modelcontextprotocol/protocolVersion"
+  """
+  @spec protocol_version_key() :: String.t()
+  def protocol_version_key, do: @protocol_version_key
 
   @doc """
   Merges the stateless-era per-request `_meta` slot into a params schema map.
@@ -170,9 +187,9 @@ defmodule Anubis.Protocol.Schema do
   end
 
   defp validate_protocol_version(meta) do
-    case Map.get(meta, "io.modelcontextprotocol/protocolVersion") do
+    case Map.get(meta, @protocol_version_key) do
       version when is_binary(version) -> :ok
-      _ -> {:error, "_meta is missing required key %{key}", key: "io.modelcontextprotocol/protocolVersion"}
+      _ -> {:error, "_meta is missing required key %{key}", key: @protocol_version_key}
     end
   end
 

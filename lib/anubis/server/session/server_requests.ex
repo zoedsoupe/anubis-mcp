@@ -281,7 +281,7 @@ defmodule Anubis.Server.Session.ServerRequests do
     if Map.has_key?(state.client_capabilities || %{}, capability) do
       :ok
     else
-      {:error, "Client does not support #{capability} capability"}
+      {:error, Error.missing_required_client_capability(%{capability => %{}})}
     end
   end
 

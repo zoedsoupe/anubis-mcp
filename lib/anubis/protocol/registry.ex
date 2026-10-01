@@ -165,6 +165,18 @@ defmodule Anubis.Protocol.Registry do
   def latest_module, do: @versions[@latest_version]
 
   @doc """
+  Returns the module for the latest supported version of an era, or `nil` when
+  the era has no registered version.
+
+  ## Examples
+
+      iex> Anubis.Protocol.Registry.latest_module(:stateless)
+      Anubis.Protocol.V2026_07_28
+  """
+  @spec latest_module(era()) :: module() | nil
+  def latest_module(era), do: @versions[latest_version(era)]
+
+  @doc """
   Check if a version string is supported.
   """
   @spec supported?(version()) :: boolean()

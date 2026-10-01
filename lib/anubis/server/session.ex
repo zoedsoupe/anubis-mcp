@@ -25,6 +25,7 @@ defmodule Anubis.Server.Session do
   alias Anubis.Server.Session.Scheduler
   alias Anubis.Server.Session.ServerRequests
   alias Anubis.Server.Session.Tasks
+  alias Anubis.Server.Stateless
   alias Anubis.Telemetry
 
   require Message
@@ -211,9 +212,12 @@ defmodule Anubis.Server.Session do
     state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
-    case revalidate_for_version(decoded, state) do
-      {:ok, decoded} ->
+    case admit_request(decoded, transport_context, state) do
+      {:ok, decoded, transport_context} ->
         handle_single_request(decoded, transport_context, from, state)
+
+      {:error, %Error{} = error} ->
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, decoded["id"]))}, state}
 
       {:error, reason} ->
         error = Error.protocol(reason, %{method: decoded["method"]})
@@ -361,6 +365,24 @@ defmodule Anubis.Server.Session do
       })
 
       {:noreply, state}
+    end
+  end
+
+  # A request declaring its own protocol version is admitted per request, and
+  # its context travels with the transport context rather than session state.
+  # Notifications cannot declare a version — the stateless era gives them a
+  # `_meta` without one — so their era travels with the transport binding that
+  # opened the connection, and admitting them waits for it.
+  defp admit_request(decoded, transport_context, state) do
+    if Stateless.request?(decoded) do
+      with {:ok, context} <- Stateless.admit(decoded, state.supported_versions),
+           {:ok, decoded} <- Message.validate_message(decoded, context.protocol_module) do
+        {:ok, decoded, Stateless.put_context(transport_context, context)}
+      end
+    else
+      with {:ok, decoded} <- revalidate_for_version(decoded, state) do
+        {:ok, decoded, transport_context}
+      end
     end
   end
 
@@ -621,7 +643,7 @@ defmodule Anubis.Server.Session do
       Message.is_ping(decoded) ->
         handle_server_ping(decoded, state)
 
-      not is_server_initialized(decoded, state) ->
+      not ready_for?(decoded, transport_context, state) ->
         handle_server_not_initialized(decoded, state)
 
       Message.is_request(decoded) ->
@@ -630,6 +652,10 @@ defmodule Anubis.Server.Session do
       true ->
         handle_invalid_request(state)
     end
+  end
+
+  defp ready_for?(decoded, transport_context, state) do
+    is_server_initialized(decoded, state) or not is_nil(Stateless.context(transport_context))
   end
 
   defp handle_server_ping(%{"id" => request_id}, state) do
@@ -659,16 +685,8 @@ defmodule Anubis.Server.Session do
 
   # Initialize handling
 
-  defp handle_request(%{"params" => params} = request, _transport_context, _from, state)
-       when Message.is_initialize(request) do
-    %{
-      "clientInfo" => client_info,
-      "capabilities" => client_capabilities,
-      "protocolVersion" => requested_version
-    } = params
-
-    {:ok, protocol_version, protocol_module} =
-      Anubis.Protocol.Registry.negotiate(requested_version, state.supported_versions)
+  defp complete_initialize(request, params, {protocol_version, protocol_module}, state) do
+    %{"clientInfo" => client_info, "capabilities" => client_capabilities} = params
 
     state = %{
       state
@@ -706,6 +724,22 @@ defmodule Anubis.Server.Session do
     )
 
     {:reply, {:ok, encode_reply(Message.build_response(result, request["id"]))}, state}
+  end
+
+  defp handle_request(%{"params" => params} = request, _transport_context, _from, state)
+       when Message.is_initialize(request) do
+    %{"protocolVersion" => requested_version} = params
+
+    case Anubis.Protocol.Registry.negotiate(requested_version, state.supported_versions) do
+      {:ok, protocol_version, protocol_module} ->
+        complete_initialize(request, params, {protocol_version, protocol_module}, state)
+
+      :error ->
+        error =
+          Error.unsupported_protocol_version(requested_version, Stateless.supported_versions(state.supported_versions))
+
+        {:reply, {:ok, encode_reply(Error.build_json_rpc(error, request["id"]))}, state}
+    end
   end
 
   defp handle_request(%{"id" => request_id, "method" => "logging/setLevel"} = request, _transport_context, _from, state)
@@ -827,10 +861,27 @@ defmodule Anubis.Server.Session do
       init_meta: state.init_meta,
       headers: headers,
       remote_ip: remote_ip,
-      auth: auth
+      auth: auth,
+      protocol_version: state.protocol_version,
+      protocol_module: state.protocol_module,
+      client_capabilities: state.client_capabilities || %{},
+      log_level: state.log_level
     }
 
-    %{state.frame | context: context}
+    %{state.frame | context: apply_stateless_context(context, Stateless.context(transport_context))}
+  end
+
+  defp apply_stateless_context(context, nil), do: context
+
+  defp apply_stateless_context(context, stateless) do
+    %{
+      context
+      | protocol_version: stateless.protocol_version,
+        protocol_module: stateless.protocol_module,
+        client_capabilities: stateless.client_capabilities,
+        client_info: stateless.client_info,
+        log_level: stateless.log_level
+    }
   end
 
   defp merge_transport_assigns(state, %{assigns: assigns}) when is_map(assigns) do

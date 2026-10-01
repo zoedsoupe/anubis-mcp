@@ -8,6 +8,7 @@ defmodule Anubis.Server.Handlers do
   alias Anubis.Server.Handlers.Resources
   alias Anubis.Server.Handlers.Tools
   alias Anubis.Server.Response
+  alias Anubis.Server.Stateless
 
   @spec handle(map, module, Frame.t()) ::
           {:reply, response :: Response.t(), new_state :: Frame.t()}
@@ -37,6 +38,14 @@ defmodule Anubis.Server.Handlers do
       "subscribe" -> Resources.handle_subscribe(request, frame, module)
       "unsubscribe" -> Resources.handle_unsubscribe(request, frame, module)
       _ -> {:error, Error.protocol(:method_not_found, %{method: request["method"]}), frame}
+    end
+  end
+
+  def handle(%{"method" => "server/discover"} = request, module, %Frame{context: context} = frame) do
+    if Stateless.era(context.protocol_module) == :stateless do
+      {:reply, Stateless.discover_result(module, context.protocol_module), frame}
+    else
+      {:error, Error.protocol(:method_not_found, %{method: request["method"]}), frame}
     end
   end
 

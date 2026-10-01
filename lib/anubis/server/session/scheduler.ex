@@ -9,6 +9,7 @@ defmodule Anubis.Server.Session.Scheduler do
   alias Anubis.MCP.Error
   alias Anubis.MCP.Message
   alias Anubis.Server.Frame
+  alias Anubis.Server.Stateless
   alias Anubis.Telemetry
 
   @type in_flight :: %{
@@ -17,7 +18,8 @@ defmodule Anubis.Server.Session.Scheduler do
           request_id: String.t(),
           from: GenServer.from(),
           started_at: integer(),
-          method: String.t()
+          method: String.t(),
+          stateless: Stateless.t() | nil
         }
 
   @type queued_request :: {map(), map(), GenServer.from()}
@@ -176,7 +178,8 @@ defmodule Anubis.Server.Session.Scheduler do
           request_id: request_id,
           from: from,
           started_at: System.monotonic_time(:millisecond),
-          method: method
+          method: method,
+          stateless: Stateless.context(transport_context)
         }
     }
   end
@@ -201,6 +204,7 @@ defmodule Anubis.Server.Session.Scheduler do
       %{id: inflight.request_id, method: inflight.method, status: :success}
     )
 
+    response = shape_response(response, inflight, state)
     reply = {:ok, encode_reply(Message.build_response(response, inflight.request_id))}
     {reply, %{state | frame: frame}}
   end
@@ -249,6 +253,14 @@ defmodule Anubis.Server.Session.Scheduler do
     reply = {:ok, encode_reply(Error.build_json_rpc(error, inflight.request_id))}
     {reply, state}
   end
+
+  defp shape_response(response, %{stateless: nil}, _state), do: response
+
+  defp shape_response(response, _inflight, state) when is_map(response) and not is_struct(response) do
+    Stateless.shape_result(response, state.server_info)
+  end
+
+  defp shape_response(response, _inflight, _state), do: response
 
   defp drain_deferred_callbacks(%{deferred_callbacks: q} = state, apply_fn) do
     state = %{state | deferred_callbacks: :queue.new()}

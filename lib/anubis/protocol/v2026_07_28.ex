@@ -80,6 +80,15 @@ defmodule Anubis.Protocol.V2026_07_28 do
     "requestState" => :string
   }
 
+  @discover_result_schema %{
+    "resultType" => {:required, {:literal, "complete"}},
+    "supportedVersions" => {:required, {:list, :string}},
+    "capabilities" => {:required, :map},
+    "instructions" => :string,
+    "ttlMs" => {:required, {:integer, {:gte, 0}}},
+    "cacheScope" => {:required, {:enum, ~w(public private)}}
+  }
+
   @impl true
   def era, do: @era
 
@@ -110,6 +119,8 @@ defmodule Anubis.Protocol.V2026_07_28 do
   def progress_params_schema, do: V2025_06_18.progress_params_schema()
 
   @impl true
+  def request_result_schema("server/discover"), do: @discover_result_schema
+
   def request_result_schema(_method), do: nil
 
   @impl true

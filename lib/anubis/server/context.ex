@@ -32,6 +32,20 @@ defmodule Anubis.Server.Context do
   request params (the MCP extension namespace), available to every callback
   including `init/2`. Empty map when the client sent none. Metadata sent under
   `clientInfo._meta` is preserved inside `client_info` itself.
+
+  ## Protocol era fields
+
+  `protocol_version`, `protocol_module`, `client_capabilities` and `log_level`
+  describe the protocol the current request speaks.
+
+  Under the `:legacy` era they are settled once by the `initialize` handshake
+  and hold for the session. Under the `:stateless` era every request carries
+  its own, so they are rebuilt per request and never inherited — the
+  specification forbids a server from inferring capabilities from earlier
+  requests. `client_info` follows the same rule.
+
+  They are `nil` (and `client_capabilities` empty) before a legacy session has
+  been initialized.
   """
 
   @type auth_claims :: %{
@@ -51,7 +65,11 @@ defmodule Anubis.Server.Context do
           init_meta: map(),
           headers: %{String.t() => String.t()},
           remote_ip: :inet.ip_address() | nil,
-          auth: auth_claims() | nil
+          auth: auth_claims() | nil,
+          protocol_version: String.t() | nil,
+          protocol_module: module() | nil,
+          client_capabilities: map(),
+          log_level: String.t() | nil
         }
 
   defstruct session_id: nil,
@@ -59,5 +77,9 @@ defmodule Anubis.Server.Context do
             init_meta: %{},
             headers: %{},
             remote_ip: nil,
-            auth: nil
+            auth: nil,
+            protocol_version: nil,
+            protocol_module: nil,
+            client_capabilities: %{},
+            log_level: nil
 end

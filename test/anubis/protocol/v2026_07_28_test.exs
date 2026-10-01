@@ -3,6 +3,7 @@ defmodule Anubis.Protocol.V2026_07_28Test do
   use ExUnit.Case, async: true
 
   alias Anubis.MCP.Message
+  alias Anubis.Protocol.Registry
   alias Anubis.Protocol.Schema
   alias Anubis.Protocol.V2025_11_25
   alias Anubis.Protocol.V2026_07_28
@@ -330,6 +331,76 @@ defmodule Anubis.Protocol.V2026_07_28Test do
       for method <- ~w(initialize ping resources/subscribe tasks/get) do
         assert {:error, :method_not_found} = Message.validate_message(request(method), V2026_07_28)
       end
+    end
+  end
+
+  describe "request_result_schema/1" do
+    @discover_result %{
+      "resultType" => "complete",
+      "supportedVersions" => ["2026-07-28"],
+      "capabilities" => %{"tools" => %{}},
+      "ttlMs" => 0,
+      "cacheScope" => "private"
+    }
+
+    test "server/discover models the result this revision requires" do
+      schema = V2026_07_28.request_result_schema("server/discover")
+
+      assert {:ok, _} = Peri.validate(schema, @discover_result)
+      assert {:ok, _} = Peri.validate(schema, Map.put(@discover_result, "instructions", "hi"))
+    end
+
+    test "rejects a discover result missing a mandatory field" do
+      schema = V2026_07_28.request_result_schema("server/discover")
+
+      for key <- ~w(resultType supportedVersions capabilities ttlMs cacheScope) do
+        assert {:error, _} = Peri.validate(schema, Map.delete(@discover_result, key))
+      end
+    end
+
+    test "rejects a negative cache lifetime and an unknown cache scope" do
+      schema = V2026_07_28.request_result_schema("server/discover")
+
+      assert {:error, _} = Peri.validate(schema, Map.put(@discover_result, "ttlMs", -1))
+      assert {:error, _} = Peri.validate(schema, Map.put(@discover_result, "cacheScope", "shared"))
+    end
+
+    test "every other method is still unmodeled" do
+      for method <- V2026_07_28.request_methods(), method != "server/discover" do
+        assert is_nil(V2026_07_28.request_result_schema(method))
+      end
+    end
+  end
+
+  describe "era-aware decoding" do
+    @discover ~s({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"VERSION","io.modelcontextprotocol/clientCapabilities":{}}}}\n)
+
+    defp discover_request(version), do: String.replace(@discover, "VERSION", version)
+
+    test "decode/1 validates a message against the version it declares" do
+      [stateless | _] = Registry.stateless_versions()
+
+      assert {:ok, [decoded]} = Message.decode(discover_request(stateless))
+      assert decoded["method"] == "server/discover"
+      assert decoded["params"]["_meta"][Schema.protocol_version_key()] == stateless
+    end
+
+    test "decode/1 still rejects a stateless method that declares no version" do
+      without_meta = ~s({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}\n)
+
+      assert {:error, :method_not_found} = Message.decode(without_meta)
+    end
+
+    test "decode/1 lets an unregistered version through so the peer can answer -32022" do
+      assert {:ok, [%{"method" => "server/discover"}]} = Message.decode(discover_request("1900-01-01"))
+    end
+
+    test "decode/1 keeps validating handshake-era messages against the latest legacy version" do
+      initialize =
+        ~s({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1.0"}}}\n)
+
+      assert {:ok, [%{"method" => "initialize"}]} = Message.decode(initialize)
+      assert {:error, :method_not_found} = Message.decode(discover_request("2025-11-25"), V2025_11_25)
     end
   end
 end

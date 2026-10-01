@@ -260,6 +260,25 @@ defmodule Anubis.MCP.Error do
   end
 
   @doc """
+  Creates a resource-not-found error for a protocol era.
+
+  Revision 2026-07-28 reallocates this condition from the MCP-specific
+  `-32002` to the JSON-RPC `-32602`, and reserves `-32002` so it is never
+  reused. Legacy eras keep the code they shipped with.
+
+  ## Examples
+
+      iex> Anubis.MCP.Error.resource_not_found(%{uri: "file:///missing.txt"}, :legacy).code
+      -32002
+
+      iex> Anubis.MCP.Error.resource_not_found(%{uri: "file:///missing.txt"}, :stateless).code
+      -32602
+  """
+  @spec resource_not_found(map(), Anubis.Protocol.Behaviour.era()) :: t()
+  def resource_not_found(data, :stateless), do: protocol(:invalid_params, data)
+  def resource_not_found(data, _era), do: resource(:not_found, data)
+
+  @doc """
   Creates a resource-specific error.
 
   Used for MCP resource operations.

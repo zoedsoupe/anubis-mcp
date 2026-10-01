@@ -11,9 +11,12 @@ defmodule Anubis.MCP.Message do
   """
 
   alias Anubis.Protocol.Registry
+  alias Anubis.Protocol.Schema
   alias Anubis.Protocol.V2025_03_26
 
   @log_levels ~w(debug info notice warning error critical alert emergency)
+
+  @protocol_version_key Schema.protocol_version_key()
 
   # Progress notification schema exposed for the encode helpers, single-sourced
   # from the floor protocol version module.
@@ -233,12 +236,26 @@ defmodule Anubis.MCP.Message do
   @doc """
   Decodes raw data (possibly containing multiple messages) into JSON-RPC messages.
 
-  Messages are validated against the latest registered protocol version.
+  Each message is validated against the era it declares: a message carrying a
+  protocol version in `params._meta` is validated against that version's
+  module, everything else against the latest registered version, which
+  preserves the previous superset behavior.
+
+  A message declaring a version this build does not register is validated
+  against the newest stateless version instead of being rejected here, so the
+  peer can answer it with the `UnsupportedProtocolVersion` error the
+  specification requires.
+
   Returns either:
   - `{:ok, messages}` where messages is a list of parsed JSON-RPC messages
   - `{:error, reason}` if parsing fails
   """
-  def decode(data), do: decode(data, Registry.latest_module())
+  @spec decode(binary()) :: {:ok, [map()]} | {:error, atom()}
+  def decode(data) when is_binary(data) do
+    data
+    |> split_lines()
+    |> validate_all_messages(&schema_module/1)
+  end
 
   @doc """
   Decodes raw data, validating each message against the given protocol
@@ -246,17 +263,27 @@ defmodule Anubis.MCP.Message do
 
   Returns the same shapes as `decode/1`.
   """
+  @spec decode(binary(), module()) :: {:ok, [map()]} | {:error, atom()}
   def decode(data, protocol_module) when is_binary(data) do
     data
-    |> String.split("\n", trim: true)
-    |> decode_lines(protocol_module)
+    |> split_lines()
+    |> validate_all_messages(fn _message -> protocol_module end)
   end
 
-  defp decode_lines(lines, protocol_module) do
-    lines
+  defp split_lines(data) do
+    data
+    |> String.split("\n", trim: true)
     |> Enum.flat_map(&decode_line/1)
-    |> validate_all_messages(protocol_module)
   end
+
+  defp schema_module(%{"params" => %{"_meta" => %{@protocol_version_key => version}}}) when is_binary(version) do
+    case Registry.get(version) do
+      {:ok, protocol_module} -> protocol_module
+      :error -> Registry.latest_module(:stateless) || Registry.latest_module()
+    end
+  end
+
+  defp schema_module(_message), do: Registry.latest_module()
 
   defp decode_line(line) do
     case JSON.decode(line) do
@@ -266,14 +293,14 @@ defmodule Anubis.MCP.Message do
     end
   end
 
-  defp validate_all_messages(messages, protocol_module) do
+  defp validate_all_messages(messages, module_fun) do
     messages
     |> Enum.reduce_while({:ok, []}, fn
       {:invalid, reason}, _acc ->
         {:halt, {:error, reason}}
 
       message, {:ok, acc} ->
-        case validate_message(message, protocol_module) do
+        case validate_message(message, module_fun.(message)) do
           {:ok, validated} -> {:cont, {:ok, [validated | acc]}}
           error -> {:halt, error}
         end
