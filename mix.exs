@@ -45,7 +45,7 @@ defmodule Anubis.MixProject do
   defp deps do
     [
       {:finch, "~> 0.19"},
-      {:peri, "0.9.0"},
+      {:peri, "0.11.2"},
       {:telemetry, "~> 1.2"},
       {:redix, "~> 1.5", optional: true},
       {:gun, "~> 2.2", optional: true},
