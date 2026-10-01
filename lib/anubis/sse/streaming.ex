@@ -149,6 +149,17 @@ if Code.ensure_loaded?(Plug) do
       Plug.Conn.halt(conn)
     end
 
+    # HTTP connection processes can trap exits. This loop takes over their
+    # mailbox, so propagate shutdown instead of waiting for a forced kill.
+    # Exiting also runs start/4's on_close callback before the process stops.
+    defp handle_message({:EXIT, _pid, :shutdown}, _conn, _transport, _session_id, _event_counter, _last_id) do
+      exit(:shutdown)
+    end
+
+    defp handle_message({:EXIT, _pid, {:shutdown, _} = reason}, _conn, _transport, _session_id, _event_counter, _last_id) do
+      exit(reason)
+    end
+
     defp handle_message({:plug_conn, :sent}, conn, transport, session_id, event_counter, last_id) do
       # Ignore Plug internal messages
       loop(conn, transport, session_id, event_counter, last_id)
