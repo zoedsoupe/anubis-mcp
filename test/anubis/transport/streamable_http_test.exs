@@ -58,7 +58,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       assert state.mcp_url.path == "/mcp"
       assert state.session_id == nil
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -75,7 +75,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       _state = :sys.get_state(transport)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -111,7 +111,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       refute Enum.empty?(messages)
       assert List.first(messages) =~ "result"
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -137,7 +137,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       notification = ~s|{"jsonrpc":"2.0","method":"notifications/initialized"}|
       assert :ok = StreamableHTTP.send_message(transport, notification, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -170,7 +170,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       messages = StubClient.get_messages()
       refute Enum.empty?(messages)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -193,7 +193,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       assert {:error, {:http_error, 500, "Internal Server Error"}} =
                StreamableHTTP.send_message(transport, "test message", timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -217,7 +217,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       assert {:error, {:unsupported_content_type, "text/html"}} =
                StreamableHTTP.send_message(transport, "test message", timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -258,7 +258,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       state = :sys.get_state(transport)
       assert state.session_id == session_id
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -310,7 +310,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert :ok = StreamableHTTP.send_message(transport, second_message, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -371,8 +371,6 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       # deliver on close.
       assert await_pushed_notification(500), "server-pushed notification was never forwarded"
 
-      StreamableHTTP.shutdown(transport)
-
       # Release the held SSE plug and wait for it to finish so Bypass teardown
       # never parks behind it.
       plug_pid =
@@ -386,6 +384,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       send(plug_pid, :release_sse_plug)
       assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 5_000
 
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -445,7 +444,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
       assert_receive {:protocol_version_header, ["2025-06-18"]}
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -482,7 +481,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -533,7 +532,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       assert_receive {:post_auth, "Bearer test-token"}, 1_000
       assert_receive {:sse_auth, "Bearer test-token"}, 1_000
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -573,7 +572,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       {:ok, ping} = Message.encode_request(%{"method" => "ping", "params" => %{}}, "1")
       assert :ok = StreamableHTTP.send_message(transport, ping, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
 
       assert_receive {:delete_auth, "Bearer test-token"}, 1_000
 
@@ -606,7 +605,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -638,7 +637,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       # Custom timeout > server delay → success.
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 200)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -668,7 +667,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 500)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -691,7 +690,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       assert {:error, _reason} =
                StreamableHTTP.send_message(transport, "test message", timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -723,7 +722,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -756,7 +755,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert :ok = StreamableHTTP.send_message(transport, ping_message, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
 
@@ -826,7 +825,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert :ok = StreamableHTTP.send_message(transport, second_message, timeout: 5000)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end
@@ -846,11 +845,24 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       assert Process.alive?(transport)
 
-      StreamableHTTP.shutdown(transport)
+      shutdown_transport(transport)
 
       refute Process.alive?(transport)
 
       StubClient.clear_messages()
+    end
+  end
+
+  defp shutdown_transport(transport) do
+    %{sse_task: sse_task} = :sys.get_state(transport)
+    transport_ref = Process.monitor(transport)
+    sse_ref = if sse_task, do: Process.monitor(sse_task)
+
+    assert :ok = StreamableHTTP.shutdown(transport)
+    assert_receive {:DOWN, ^transport_ref, :process, ^transport, :normal}, 1_000
+
+    if sse_ref do
+      assert_receive {:DOWN, ^sse_ref, :process, ^sse_task, _reason}, 1_000
     end
   end
 
