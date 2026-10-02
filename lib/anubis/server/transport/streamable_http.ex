@@ -131,7 +131,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl Transport
-  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18", "2025-11-25"]
+  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]
 
   @doc """
   Registers the calling process as the SSE handler for a session.

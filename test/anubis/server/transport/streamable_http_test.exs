@@ -234,6 +234,7 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
       versions = StreamableHTTP.supported_protocol_versions()
       assert is_list(versions)
       assert "2025-03-26" in versions
+      assert "2026-07-28" in versions
     end
   end
 

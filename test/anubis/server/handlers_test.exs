@@ -408,6 +408,56 @@ defmodule Anubis.Server.HandlersTest do
     end
   end
 
+  describe "template fallback in the stateless era" do
+    defmodule StatelessMissTemplate do
+      @moduledoc false
+      use Component,
+        type: :resource,
+        uri_template: "notes:///{id}",
+        name: "archived_notes"
+
+      alias Anubis.MCP.Error
+
+      @impl true
+      def read(_params, frame), do: {:error, Error.resource_not_found(%{}, :stateless), frame}
+    end
+
+    defmodule StatelessHitTemplate do
+      @moduledoc false
+      use Component,
+        type: :resource,
+        uri_template: "notes:///{id}",
+        name: "live_notes"
+
+      alias Anubis.Server.Response
+
+      @impl true
+      def read(%{"uri" => "notes:///" <> id}, frame) do
+        {:reply, Response.text(Response.resource(), "Note #{id}"), frame}
+      end
+    end
+
+    defmodule StatelessNotesServer do
+      @moduledoc false
+      use Anubis.Server,
+        name: "Stateless Notes Server",
+        version: "1.0.0",
+        capabilities: [:resources]
+
+      component(StatelessMissTemplate)
+      component(StatelessHitTemplate)
+    end
+
+    test "a stateless not-found from one template falls through to the next" do
+      frame = Frame.new()
+      frame = %{frame | context: %{frame.context | protocol_module: Anubis.Protocol.V2026_07_28}}
+      request = %{"method" => "resources/read", "params" => %{"uri" => "notes:///7"}}
+
+      assert {:reply, %{"contents" => [content]}, _frame} = Handlers.handle(request, StatelessNotesServer, frame)
+      assert content["text"] == "Note 7"
+    end
+  end
+
   describe "multiple templates" do
     defmodule FileTemplate do
       @moduledoc false

@@ -61,6 +61,17 @@ defmodule Anubis.Server.Supervisor do
   end
 
   @doc """
+  Terminates a session addressed by pid, for sessions that were never
+  registered under a session id.
+  """
+  @spec terminate_session(module(), pid()) :: :ok | {:error, :not_found}
+  def terminate_session(server, pid) when is_pid(pid) do
+    sup_name = Registry.session_supervisor_name(server)
+    sup_mod = get_session_supervisor_mod(server)
+    sup_mod.terminate_child(sup_name, pid)
+  end
+
+  @doc """
   Terminates a session.
   """
   @spec stop_session(module(), module(), String.t()) :: :ok | {:error, :not_found}
