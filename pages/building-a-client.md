@@ -189,7 +189,10 @@ Anubis.Client.add_root(MyApp.MCPClient, "file:///home/user/project", "project")
 
 ```elixir
 capabilities =
-  Enum.reduce([:roots, {:sampling, list_changed?: true}], %{}, &Anubis.Client.parse_capability/2)
+  Enum.reduce([:sampling, {:roots, list_changed?: true}], %{}, &Anubis.Client.parse_capability/2)
+```
+
+`list_changed?: true` is only valid for `:roots` — it is the single client capability with a `listChanged` flag in the MCP schema. Passing it with `:sampling` or `:elicitation` raises `ArgumentError`.
 ```
 
 ## Server logs

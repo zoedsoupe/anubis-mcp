@@ -2341,4 +2341,26 @@ defmodule Anubis.ClientTest do
                Task.await(task, 2_000)
     end
   end
+
+  describe "parse_capability/2" do
+    test "builds bare capabilities as empty maps" do
+      assert %{"roots" => %{}, "sampling" => %{}} =
+               Enum.reduce([:roots, :sampling], %{}, &Anubis.Client.parse_capability/2)
+    end
+
+    test "emits listChanged for roots" do
+      assert %{"roots" => %{"listChanged" => true}} =
+               Enum.reduce([{:roots, list_changed?: true}], %{}, &Anubis.Client.parse_capability/2)
+    end
+
+    test "raises when list_changed? is given for a capability without the flag" do
+      assert_raise ArgumentError, ~r/list_changed\? is only valid for :roots/, fn ->
+        Enum.reduce([{:sampling, list_changed?: true}], %{}, &Anubis.Client.parse_capability/2)
+      end
+    end
+
+    test "ignores empty opts for non-roots capabilities" do
+      assert %{"sampling" => %{}} = Enum.reduce([{:sampling, []}], %{}, &Anubis.Client.parse_capability/2)
+    end
+  end
 end

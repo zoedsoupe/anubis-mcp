@@ -194,18 +194,4 @@ defmodule Anubis.Protocol do
       end
     end)
   end
-
-  @doc """
-  Validates client configuration for protocol compatibility.
-
-  This function checks if the client configuration is compatible with
-  the specified protocol version, including transport and capabilities.
-  """
-  @spec validate_client_config(version(), module(), map()) ::
-          :ok | {:error, Error.t()}
-  def validate_client_config(version, transport_module, _capabilities) do
-    with :ok <- validate_version(version) do
-      validate_transport(version, transport_module)
-    end
-  end
 end

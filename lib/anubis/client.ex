@@ -33,7 +33,7 @@ defmodule Anubis.Client do
   For convenience, use `parse_capability/2` to build from atoms:
 
       capabilities =
-        [:roots, {:sampling, list_changed?: true}]
+        [:sampling, {:roots, list_changed?: true}]
         |> Enum.reduce(%{}, &Anubis.Client.parse_capability/2)
 
   ## Transport Configuration
@@ -262,26 +262,37 @@ defmodule Anubis.Client do
   Useful for building capability maps from ergonomic shorthand:
 
       capabilities =
-        [:roots, {:sampling, list_changed?: true}]
+        [:sampling, {:roots, list_changed?: true}]
         |> Enum.reduce(%{}, &Anubis.Client.parse_capability/2)
-      # => %{"roots" => %{}, "sampling" => %{}}
+      # => %{"roots" => %{"listChanged" => true}, "sampling" => %{}}
+
+  `:list_changed?` is only valid for `:roots`: it is the single client
+  capability carrying a `listChanged` flag in the MCP schema. Passing it
+  with any other capability raises.
   """
   @spec parse_capability(capability() | {capability(), capability_opts()}, map()) :: map()
   def parse_capability(capability, %{} = capabilities) when is_client_capability(capability) do
     Map.put(capabilities, to_string(capability), %{})
   end
 
-  def parse_capability({capability, opts}, %{} = capabilities) when is_client_capability(capability) do
-    list_changed? = opts[:list_changed?]
+  def parse_capability({:roots, opts}, %{} = capabilities) do
+    entry =
+      case opts[:list_changed?] do
+        nil -> %{}
+        list_changed? -> %{"listChanged" => list_changed?}
+      end
 
-    capabilities
-    |> Map.put(to_string(capability), %{})
-    |> then(
-      &if(is_nil(list_changed?),
-        do: &1,
-        else: Map.put(&1, "listChanged", list_changed?)
-      )
-    )
+    Map.put(capabilities, "roots", entry)
+  end
+
+  def parse_capability({capability, opts}, %{} = capabilities) when is_client_capability(capability) do
+    if Keyword.has_key?(opts, :list_changed?) do
+      raise ArgumentError,
+            "list_changed? is only valid for :roots, the only client capability with a " <>
+              "listChanged flag in the MCP schema, got: #{inspect(capability)}"
+    end
+
+    Map.put(capabilities, to_string(capability), %{})
   end
 
   # Supervision integration
@@ -373,6 +384,10 @@ defmodule Anubis.Client do
 
   @doc """
   Sends a ping request to the server to check connection health. Returns `:pong` if successful.
+
+  Unlike the other operations, a successful ping returns the bare atom
+  `:pong` rather than `{:ok, %Anubis.MCP.Response{}}`: the MCP `ping`
+  result is empty, so there is no payload to carry.
 
   ## Options
 
