@@ -170,6 +170,11 @@ defmodule Anubis.Server do
   Low-level handler for any MCP request.
 
   When implemented, it bypasses automatic routing to specific handlers.
+  Return `{:reply, response, frame}` to answer, `{:error, error, frame}` to
+  report a failure, or `{:noreply, frame}` to complete without a response body.
+  A no-reply completion is not deferred work: stateless HTTP returns 202 if
+  headers have not been sent, or closes an open SSE response without a final
+  event.
   """
   @callback handle_request(request :: request(), state :: Frame.t()) ::
               {:reply, response :: response(), new_state :: Frame.t()}
@@ -819,7 +824,11 @@ defmodule Anubis.Server do
   Sends a log message to the client, as a `notifications/message`.
 
   The notification carries `level` and `data`. `data` is `message` alone, or
-  `%{"message" => message, "data" => data}` when `data` is given.
+  `%{"message" => message, "data" => data}` when `data` is given. Messages below
+  the client's log threshold are dropped. Stateless HTTP streams logs only
+  when the request declares `io.modelcontextprotocol/logLevel` and accepts SSE.
+
+  Returns `:ok` after enqueueing; this does not acknowledge client delivery.
 
   **Must be called from a callback** — see `send_resources_list_changed/0` for details.
   """
@@ -839,6 +848,12 @@ defmodule Anubis.Server do
 
   @doc """
   Sends a progress notification for an ongoing operation.
+
+  Pass the client's token from `Anubis.Server.Frame.progress_token/1`, the
+  current progress value, and optional `:total` and `:message` fields. Call
+  only when the request supplies a token. The notification is queued for the
+  session serving the callback; `:ok` does not acknowledge client delivery.
+  Stateless HTTP delivers progress on the request's response when it accepts SSE.
   """
   @spec send_progress(progress_token, progress_step, opts) :: :ok
         when opts: list({:total, progress_total} | {:message, String.t()})
