@@ -479,21 +479,10 @@ defmodule Anubis.Server do
     title = determine_tool_title(annotations, title)
     scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
-    validate_output =
-      if output_schema do
-        fn params ->
-          mod.__mcp_output_schema__()
-          |> Component.__clean_schema_for_peri__()
-          |> Peri.validate(params)
-        end
-      end
+    validate_output = if output_schema, do: output_validator(mod)
 
     if Anubis.exported?(mod, :input_schema, 0) do
-      validate_input = fn params ->
-        mod.__mcp_raw_schema__()
-        |> Component.__clean_schema_for_peri__()
-        |> Peri.validate(params)
-      end
+      validate_input = input_validator(mod)
 
       [
         %Tool{
@@ -521,11 +510,7 @@ defmodule Anubis.Server do
     scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
     if Anubis.exported?(mod, :arguments, 0) do
-      validate_input = fn params ->
-        mod.__mcp_raw_schema__()
-        |> Component.__clean_schema_for_peri__()
-        |> Peri.validate(params)
-      end
+      validate_input = input_validator(mod)
 
       [
         %Prompt{
@@ -584,6 +569,14 @@ defmodule Anubis.Server do
   defp determine_tool_title(%{"title" => title}, _) when is_binary(title), do: title
   defp determine_tool_title(%{title: title}, _) when is_binary(title), do: title
   defp determine_tool_title(_, title) when is_binary(title), do: title
+
+  defp input_validator(mod) do
+    if Anubis.exported?(mod, :mcp_schema, 1), do: &mod.mcp_schema/1
+  end
+
+  defp output_validator(mod) do
+    if Anubis.exported?(mod, :mcp_output_schema, 1), do: &mod.mcp_output_schema/1
+  end
 
   defp get_server_opts(module) do
     case Module.get_attribute(module, :anubis_server_opts, []) do
