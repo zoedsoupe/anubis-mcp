@@ -82,6 +82,37 @@ defmodule Anubis.MCP.Setup do
   end
 
   @doc """
+  Starts a client process without completing the initialization handshake.
+
+  Tests that drive the handshake manually (or exercise handshake failures)
+  use this composable setup instead of duplicating the `start_supervised!`
+  boilerplate. Accepts `:id` through `ctx` to register the client under a
+  custom name, and returns the client pid.
+  """
+  def setup_client(ctx, opts \\ []) do
+    transport =
+      case Process.whereis(FakeTransport) do
+        nil -> start_supervised!({FakeTransport, forward_to: self()}, id: FakeTransport)
+        pid -> pid
+      end
+
+    start_supervised!(%{
+      id: ctx[:id] || Anubis.Client,
+      start:
+        {Anubis.Client, :start_link_server,
+         [
+           [
+             name: ctx[:id],
+             transport: [layer: FakeTransport, name: transport],
+             client_info: opts[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"},
+             capabilities: opts[:client_capabilities] || %{}
+           ]
+         ]},
+      restart: :temporary
+    })
+  end
+
+  @doc """
   Forces the client mailbox to drain by issuing a synchronous `:get_server_info`
   call. Replaces fixed `Process.sleep` after async casts.
   """

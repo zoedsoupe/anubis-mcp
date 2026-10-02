@@ -25,6 +25,7 @@ defmodule Anubis.Client.State do
             | nil,
           roots: %{String.t() => Client.root()},
           ready_waiters: [GenServer.from()],
+          initialization_error: Error.t() | nil,
           transport_parse_state: map | nil
         }
 
@@ -43,6 +44,7 @@ defmodule Anubis.Client.State do
     elicitation_callback: nil,
     roots: %{},
     ready_waiters: [],
+    initialization_error: nil,
     transport_parse_state: nil
   ]
 

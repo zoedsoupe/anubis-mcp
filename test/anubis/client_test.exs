@@ -2057,20 +2057,7 @@ defmodule Anubis.ClientTest do
 
   describe "await_ready/2" do
     test "returns :ok immediately when client is already initialized" do
-      client =
-        start_supervised!(%{
-          id: Anubis.Client,
-          start:
-            {Anubis.Client, :start_link_server,
-             [
-               [
-                 transport: [layer: FakeTransport, name: FakeTransport],
-                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
-                 capabilities: %{}
-               ]
-             ]},
-          restart: :temporary
-        })
+      client = setup_client(%{})
 
       initialize_client(client)
 
@@ -2078,20 +2065,7 @@ defmodule Anubis.ClientTest do
     end
 
     test "blocks until initialization completes" do
-      client =
-        start_supervised!(%{
-          id: Anubis.Client,
-          start:
-            {Anubis.Client, :start_link_server,
-             [
-               [
-                 transport: [layer: FakeTransport, name: FakeTransport],
-                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
-                 capabilities: %{}
-               ]
-             ]},
-          restart: :temporary
-        })
+      client = setup_client(%{})
 
       # Start waiting before initialization
       task = Task.async(fn -> Anubis.Client.await_ready(client, timeout: 5_000) end)
@@ -2118,20 +2092,7 @@ defmodule Anubis.ClientTest do
     end
 
     test "multiple waiters all get notified" do
-      client =
-        start_supervised!(%{
-          id: Anubis.Client,
-          start:
-            {Anubis.Client, :start_link_server,
-             [
-               [
-                 transport: [layer: FakeTransport, name: FakeTransport],
-                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
-                 capabilities: %{}
-               ]
-             ]},
-          restart: :temporary
-        })
+      client = setup_client(%{})
 
       tasks =
         for _ <- 1..3 do
@@ -2158,21 +2119,155 @@ defmodule Anubis.ClientTest do
       assert results == [:ok, :ok, :ok]
     end
 
+    test "rejects an incomplete initialization result and stays unavailable" do
+      client = setup_client(%{})
+
+      GenServer.cast(client, :initialize)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      waiter = Task.async(fn -> Anubis.Client.await_ready(client, timeout: 5_000) end)
+      Process.sleep(50)
+
+      result = %{
+        "capabilities" => %{"tools" => %{}},
+        "serverInfo" => %{"name" => "TestServer", "version" => "1.0.0"}
+      }
+
+      send_response(client, build_response(result, request_id))
+
+      assert {:error, %Error{reason: :invalid_request} = error} = Task.await(waiter)
+      assert Anubis.Client.get_server_capabilities(client) == nil
+      assert Anubis.Client.get_server_info(client) == nil
+      assert Anubis.Client.await_ready(client) == {:error, error}
+      assert Anubis.Client.ping(client) == {:error, error}
+      refute_receive {:mcp_send, _}, 50
+    end
+
+    test "rejects malformed initialization field types" do
+      invalid_results = [
+        {Anubis.InvalidProtocolVersionClient,
+         %{
+           "protocolVersion" => 20_251_125,
+           "capabilities" => %{"tools" => %{}},
+           "serverInfo" => %{"name" => "TestServer", "version" => "1.0.0"}
+         }},
+        {Anubis.InvalidCapabilitiesClient,
+         %{
+           "protocolVersion" => "2025-11-25",
+           "capabilities" => [],
+           "serverInfo" => %{"name" => "TestServer", "version" => "1.0.0"}
+         }},
+        {Anubis.InvalidServerInfoClient,
+         %{
+           "protocolVersion" => "2025-11-25",
+           "capabilities" => %{"tools" => %{}},
+           "serverInfo" => %{"name" => "TestServer"}
+         }}
+      ]
+
+      for {name, result} <- invalid_results do
+        client = setup_client(%{id: name})
+
+        GenServer.cast(client, :initialize)
+        request_id = get_request_id(client, "initialize")
+        assert request_id
+
+        send_response(client, build_response(result, request_id))
+        _ = :sys.get_state(client)
+
+        assert {:error, %Error{reason: :invalid_request}} =
+                 Anubis.Client.await_ready(client)
+
+        assert Anubis.Client.get_server_capabilities(client) == nil
+        assert Anubis.Client.get_server_info(client) == nil
+      end
+    end
+
+    test "rejects an unknown protocol version" do
+      client = setup_client(%{})
+
+      GenServer.cast(client, :initialize)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      response =
+        init_response(
+          request_id,
+          "1999-01-01",
+          %{"name" => "TestServer", "version" => "1.0.0"},
+          %{"tools" => %{}}
+        )
+
+      send_response(client, response)
+      _ = :sys.get_state(client)
+
+      assert {:error, %Error{reason: :invalid_params} = error} =
+               Anubis.Client.await_ready(client)
+
+      assert error.data.version == "1999-01-01"
+      assert Anubis.Client.get_server_capabilities(client) == nil
+      refute_receive {:mcp_send, _}, 50
+    end
+
+    test "clears a stale initialization error when a later handshake succeeds" do
+      client = setup_client(%{})
+
+      GenServer.cast(client, :initialize)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      bad_result = %{
+        "capabilities" => %{"tools" => %{}},
+        "serverInfo" => %{"name" => "TestServer", "version" => "1.0.0"}
+      }
+
+      send_response(client, build_response(bad_result, request_id))
+      _ = :sys.get_state(client)
+
+      assert {:error, %Error{reason: :invalid_request} = stale_error} =
+               Anubis.Client.await_ready(client)
+
+      assert Anubis.Client.ping(client) == {:error, stale_error}
+
+      initialize_client(client)
+
+      assert :ok = Anubis.Client.await_ready(client, timeout: 1_000)
+
+      task = Task.async(fn -> Anubis.Client.ping(client) end)
+
+      ping_id = get_request_id(client, "ping")
+      assert ping_id
+
+      send_response(client, ping_response(ping_id))
+
+      assert :pong = Task.await(task)
+    end
+
+    test "notifies ready waiters when the server rejects the initialize request" do
+      client = setup_client(%{})
+
+      waiter = Task.async(fn -> Anubis.Client.await_ready(client, timeout: 5_000) end)
+      Process.sleep(50)
+
+      GenServer.cast(client, :initialize)
+      request_id = get_request_id(client, "initialize")
+      assert request_id
+
+      send_error(client, build_error(-32_602, "Unsupported protocol version", request_id))
+
+      assert {:error, %Error{} = error} = Task.await(waiter)
+      assert error.code == -32_602
+      assert error.message == "Unsupported protocol version"
+
+      assert Anubis.Client.await_ready(client) == {:error, error}
+      assert Anubis.Client.get_server_capabilities(client) == nil
+      assert Anubis.Client.ping(client) == {:error, error}
+      refute_receive {:mcp_send, _}, 50
+    end
+
     test "times out when initialization never completes" do
-      client =
-        start_supervised!(%{
-          id: Anubis.Client,
-          start:
-            {Anubis.Client, :start_link_server,
-             [
-               [
-                 transport: [layer: FakeTransport, name: FakeTransport],
-                 client_info: %{"name" => "TestClient", "version" => "1.0.0"},
-                 capabilities: %{}
-               ]
-             ]},
-          restart: :temporary
-        })
+      client = setup_client(%{})
 
       assert catch_exit(Anubis.Client.await_ready(client, timeout: 100))
     end
