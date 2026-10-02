@@ -23,6 +23,10 @@ defmodule Anubis.Client.State do
           elicitation_callback:
             (String.t(), map() -> {:accept, map()} | :decline | :cancel | {:error, String.t()})
             | nil,
+          url_elicitation_callback:
+            (String.t(), String.t(), String.t() -> :accept | :decline | :cancel | {:error, String.t()})
+            | nil,
+          elicitation_complete_callback: (String.t() -> any()) | nil,
           roots: %{String.t() => Client.root()},
           ready_waiters: [GenServer.from()],
           initialization_error: Error.t() | nil,
@@ -42,6 +46,8 @@ defmodule Anubis.Client.State do
     log_callback: nil,
     sampling_callback: nil,
     elicitation_callback: nil,
+    url_elicitation_callback: nil,
+    elicitation_complete_callback: nil,
     roots: %{},
     ready_waiters: [],
     initialization_error: nil,
@@ -687,6 +693,47 @@ defmodule Anubis.Client.State do
   def clear_elicitation_callback(state) do
     %{state | elicitation_callback: nil}
   end
+
+  @doc """
+  Sets the URL-mode elicitation callback.
+  """
+  @spec set_url_elicitation_callback(
+          t(),
+          (String.t(), String.t(), String.t() -> :accept | :decline | :cancel | {:error, String.t()})
+        ) :: t()
+  def set_url_elicitation_callback(state, callback) when is_function(callback, 3) do
+    %{state | url_elicitation_callback: callback}
+  end
+
+  @doc """
+  Gets the URL-mode elicitation callback function.
+  """
+  @spec get_url_elicitation_callback(t()) ::
+          (String.t(), String.t(), String.t() -> :accept | :decline | :cancel | {:error, String.t()})
+          | nil
+  def get_url_elicitation_callback(state), do: state.url_elicitation_callback
+
+  @doc """
+  Clears the URL-mode elicitation callback function.
+  """
+  @spec clear_url_elicitation_callback(t()) :: t()
+  def clear_url_elicitation_callback(state) do
+    %{state | url_elicitation_callback: nil}
+  end
+
+  @doc """
+  Sets the callback invoked on `notifications/elicitation/complete`.
+  """
+  @spec set_elicitation_complete_callback(t(), (String.t() -> any())) :: t()
+  def set_elicitation_complete_callback(state, callback) when is_function(callback, 1) do
+    %{state | elicitation_complete_callback: callback}
+  end
+
+  @doc """
+  Gets the `notifications/elicitation/complete` callback.
+  """
+  @spec get_elicitation_complete_callback(t()) :: (String.t() -> any()) | nil
+  def get_elicitation_complete_callback(state), do: state.elicitation_complete_callback
 
   # Helper functions
 

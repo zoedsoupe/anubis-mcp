@@ -36,6 +36,7 @@ defmodule Anubis.MCP.Error do
       # Reserved errors whose payload the specification pins down
       Anubis.MCP.Error.unsupported_protocol_version("1900-01-01", ["2026-07-28"])
       Anubis.MCP.Error.missing_required_client_capability(%{"elicitation" => %{}})
+      Anubis.MCP.Error.url_elicitation_required([%{"mode" => "url", "elicitationId" => "1", "url" => "https://example.com", "message" => "Authorize"}])
 
       # Execution errors with custom messages
       Anubis.MCP.Error.execution("Database connection failed", %{retries: 3})
@@ -69,6 +70,7 @@ defmodule Anubis.MCP.Error do
   @header_mismatch -32_020
   @missing_required_client_capability -32_021
   @unsupported_protocol_version -32_022
+  @url_elicitation_required -32_042
 
   # Generic server error code for custom errors
   @server_error -32_000
@@ -84,6 +86,7 @@ defmodule Anubis.MCP.Error do
     header_mismatch: "Header mismatch",
     missing_required_client_capability: "Missing required client capability",
     unsupported_protocol_version: "Unsupported protocol version",
+    url_elicitation_required: "URL elicitation required",
     server_error: "Server error"
   }
 
@@ -191,6 +194,15 @@ defmodule Anubis.MCP.Error do
     }
   end
 
+  def protocol(:url_elicitation_required, data) do
+    %__MODULE__{
+      code: @url_elicitation_required,
+      reason: :url_elicitation_required,
+      message: @error_messages.url_elicitation_required,
+      data: data
+    }
+  end
+
   @doc """
   Creates a transport-level error.
 
@@ -257,6 +269,45 @@ defmodule Anubis.MCP.Error do
   @spec missing_required_client_capability(map()) :: t()
   def missing_required_client_capability(capabilities) when is_map(capabilities) do
     protocol(:missing_required_client_capability, %{requiredCapabilities: capabilities})
+  end
+
+  @doc """
+  Creates a `URLElicitationRequiredError` for a request that cannot proceed
+  until the user completes an out-of-band interaction.
+
+  `elicitations` is a list of URL-mode `elicitation/create` params, each with
+  at least `mode`, `elicitationId`, `url` and `message`. The specification
+  requires every entry to be URL mode, so a form-mode entry raises.
+
+  ## Examples
+
+      iex> Anubis.MCP.Error.url_elicitation_required([
+      ...>   %{
+      ...>     "mode" => "url",
+      ...>     "elicitationId" => "550e8400",
+      ...>     "url" => "https://example.com/authorize",
+      ...>     "message" => "Authorization is required"
+      ...>   }
+      ...> ])
+      %Anubis.MCP.Error{code: -32042, reason: :url_elicitation_required, message: "URL elicitation required", data: %{"elicitations" => [%{"mode" => "url", "elicitationId" => "550e8400", "url" => "https://example.com/authorize", "message" => "Authorization is required"}]}}
+  """
+  @spec url_elicitation_required([map()]) :: t()
+  def url_elicitation_required(elicitations) when is_list(elicitations) do
+    Enum.each(elicitations, &validate_url_elicitation!/1)
+
+    protocol(:url_elicitation_required, %{"elicitations" => elicitations})
+  end
+
+  defp validate_url_elicitation!(%{"mode" => "url"} = elicitation) do
+    for key <- ~w(elicitationId url message) do
+      if not is_binary(Map.get(elicitation, key)) do
+        raise ArgumentError, "a URL elicitation must carry a string #{inspect(key)}, got #{inspect(elicitation)}"
+      end
+    end
+  end
+
+  defp validate_url_elicitation!(elicitation) do
+    raise ArgumentError, "URLElicitationRequiredError only carries URL-mode elicitations, got #{inspect(elicitation)}"
   end
 
   @doc """

@@ -126,6 +126,41 @@ defmodule Anubis.MCP.ErrorTest do
         end
       end
     end
+
+    test "url_elicitation_required/1 carries the elicitations it could not run" do
+      elicitations = [
+        %{"mode" => "url", "url" => "https://a.com", "elicitationId" => "e-1", "message" => "a"},
+        %{"mode" => "url", "url" => "https://b.com", "elicitationId" => "e-2", "message" => "b"}
+      ]
+
+      error = Error.url_elicitation_required(elicitations)
+
+      assert error.code == -32_042
+      assert error.reason == :url_elicitation_required
+      assert error.data == %{"elicitations" => elicitations}
+    end
+
+    test "url_elicitation_required/1 refuses anything that is not url mode" do
+      form = %{
+        "message" => "Name?",
+        "requestedSchema" => %{"type" => "object", "properties" => %{"name" => %{"type" => "string"}}}
+      }
+
+      assert_raise ArgumentError, ~r/only carries URL-mode elicitations/, fn ->
+        Error.url_elicitation_required([form])
+      end
+    end
+
+    test "url_elicitation_required/1 refuses a url entry missing its fields" do
+      for missing <- ~w(elicitationId url message) do
+        entry =
+          Map.delete(%{"mode" => "url", "url" => "https://a.com", "elicitationId" => "e-1", "message" => "a"}, missing)
+
+        assert_raise ArgumentError, ~r/must carry a string/, fn ->
+          Error.url_elicitation_required([entry])
+        end
+      end
+    end
   end
 
   describe "wrap_reason/1" do

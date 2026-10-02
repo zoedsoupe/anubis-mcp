@@ -483,6 +483,15 @@ defmodule Anubis.Server.Session do
     end
   end
 
+  # URL mode gates on the client's declared elicitation modes and expects a
+  # contentless accept back, so both differ from the form-mode defaults.
+  defp url_elicitation_extra do
+    %{
+      mode: :url,
+      required_capability: %{"elicitation" => %{"url" => %{}}}
+    }
+  end
+
   defp scheduler_callbacks do
     %{frame: &prepare_frame/2, apply_deferred: &apply_deferred/2}
   end
@@ -546,6 +555,10 @@ defmodule Anubis.Server.Session do
 
   def handle_info({:send_elicitation_request, params, requested_schema, timeout}, state) do
     ServerRequests.send_request(:elicitation, params, timeout, state, %{requested_schema: requested_schema})
+  end
+
+  def handle_info({:send_url_elicitation_request, params, timeout}, state) do
+    ServerRequests.send_request(:elicitation, params, timeout, state, url_elicitation_extra())
   end
 
   def handle_info({:elicitation_request_timeout, request_id}, state) do
