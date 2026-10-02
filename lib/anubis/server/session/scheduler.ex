@@ -164,7 +164,7 @@ defmodule Anubis.Server.Session.Scheduler do
       %{id: request_id, method: method}
     )
 
-    frame = put_request_meta(frame_fn.(state, transport_context), request)
+    frame = Frame.put_request_meta(frame_fn.(state, transport_context), request)
     module = state.server_module
     session = self()
 
@@ -199,11 +199,6 @@ defmodule Anubis.Server.Session.Scheduler do
   defp retry?(request) do
     params = request["params"] || %{}
     Map.has_key?(params, "inputResponses") or Map.has_key?(params, "requestState")
-  end
-
-  defp put_request_meta(%Frame{context: context} = frame, request) do
-    meta = get_in(request, ["params", "_meta"])
-    %{frame | context: %{context | request_meta: if(is_map(meta), do: meta, else: %{})}}
   end
 
   defp do_handle_request(module, %{"method" => "tools/call"} = request, frame, _method) do

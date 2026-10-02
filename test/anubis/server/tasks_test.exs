@@ -2,6 +2,7 @@ defmodule Anubis.Server.TasksTest do
   use Anubis.MCP.Case, async: false
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Frame
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.TaskStore.Local, as: TaskStoreLocal
@@ -32,6 +33,7 @@ defmodule Anubis.Server.TasksTest do
       send(pid, {:proceed, :alpha})
     end
 
+    @tag capture_log: false
     test "preserves the authenticated request context in the worker frame", %{
       session: session
     } do
@@ -53,11 +55,16 @@ defmodule Anubis.Server.TasksTest do
         auth: auth
       }
 
-      request = build_request_with_task("capture_context", %{}, "req-context")
+      meta = %{"progressToken" => "task-progress"}
+      request = put_in(build_request_with_task("capture_context", %{}, "req-context"), ["params", "_meta"], meta)
       decoded = call_session(session, request, transport_context)
 
       assert is_binary(decoded["result"]["task"]["taskId"])
       assert_receive {:task_context, context}, 500
+      assert context.request_meta == meta
+      frame = %Frame{context: context}
+      assert Frame.request_meta(frame) == meta
+      assert Frame.progress_token(frame) == "task-progress"
       assert context.auth == auth
       assert context.headers == %{"x-request-id" => "task-request"}
       assert context.remote_ip == {203, 0, 113, 42}
@@ -358,8 +365,6 @@ defmodule Anubis.Server.TasksTest do
     end
   end
 
-  # ─── helpers ───────────────────────────────────────────────────────────
-
   defp start_tasks_session(_ctx) do
     session_id = "tasks-session"
     transport_name = Registry.transport_name(TasksStubServer, StubTransport)
@@ -409,12 +414,14 @@ defmodule Anubis.Server.TasksTest do
 
     session =
       start_supervised!(
-        {Session,
-         session_id: session_id,
-         server_module: TasksStubServer,
-         name: session_name,
-         transport: [layer: StubTransport, name: transport_name],
-         task_supervisor: task_sup},
+        {
+          Session,
+          session_id: session_id,
+          server_module: TasksStubServer,
+          name: session_name,
+          transport: [layer: StubTransport, name: transport_name],
+          task_supervisor: task_sup
+        },
         id: {:no_store_session, session_id}
       )
 

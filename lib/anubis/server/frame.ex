@@ -394,6 +394,13 @@ defmodule Anubis.Server.Frame do
     Map.has_key?(capabilities || %{}, capability)
   end
 
+  @doc false
+  @spec put_request_meta(t(), map()) :: t()
+  def put_request_meta(%__MODULE__{context: context} = frame, request) do
+    meta = get_in(request, ["params", "_meta"])
+    %{frame | context: %{context | request_meta: if(is_map(meta), do: meta, else: %{})}}
+  end
+
   @doc """
   Returns the `_meta` of the request being served, or an empty map.
   """

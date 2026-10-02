@@ -1210,6 +1210,8 @@ defmodule Anubis.Server.Session do
 
   # A stateless request declares its own level in `_meta`; a handshake-era
   # session keeps the one `logging/setLevel` set.
+  defp log_threshold(%{in_flight: %{stateless: %{log_level: level}}}), do: level
+
   defp log_threshold(state) do
     case Stateless.context(state.request_context) do
       %{log_level: level} when is_binary(level) -> level

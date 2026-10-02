@@ -398,7 +398,7 @@ defmodule Anubis.Server.Session.Tasks do
 
     state = store_put(state, task)
 
-    frame = state |> frame_fn.(ctx) |> Map.put(:task_id, task.id)
+    frame = state |> frame_fn.(ctx) |> Frame.put_request_meta(request) |> Map.put(:task_id, task.id)
 
     request = %{request | "params" => Map.delete(params, "task")}
 

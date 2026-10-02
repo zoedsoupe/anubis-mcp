@@ -156,7 +156,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   """
   @spec register_sse_handler(GenServer.server(), String.t(), map()) :: :ok | {:error, term()}
   def register_sse_handler(transport, session_id, metadata) when is_map(metadata) do
-    GenServer.call(transport, {:register_sse_handler, session_id, self(), metadata}, 5000)
+    register_sse_handler(transport, session_id, metadata, [])
+  end
+
+  @doc """
+  Registers an SSE handler with transport options. Set `resumable: false` for
+  request-scoped streams whose events cannot be replayed after completion.
+  """
+  @spec register_sse_handler(GenServer.server(), String.t(), map(), keyword()) :: :ok | {:error, term()}
+  def register_sse_handler(transport, session_id, metadata, opts) when is_map(metadata) do
+    GenServer.call(transport, {:register_sse_handler, session_id, self(), metadata, opts}, 5000)
   end
 
   @doc """
@@ -270,6 +279,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       sse_handlers: %{},
       keepalive_interval: opts.keepalive_interval,
       keepalive_enabled: opts.keepalive,
+      keepalive_timer: nil,
       event_store: opts.event_store,
       sse_retry: opts.sse_retry,
       stream_grace: opts.stream_grace,
@@ -279,10 +289,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     }
 
     if state.pg_scope, do: ensure_pg_scope(state.pg_scope)
-
-    if should_keepalive?(state) do
-      schedule_keepalive(state.keepalive_interval)
-    end
 
     Logger.metadata(mcp_transport: :streamable_http, mcp_server: server)
 
@@ -301,7 +307,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
-  def handle_call({:register_sse_handler, session_id, pid, metadata}, _from, state) do
+  def handle_call({:register_sse_handler, session_id, pid, metadata, opts}, _from, state) do
     sse_handlers =
       case Map.get(state.sse_handlers, session_id) do
         {old_pid, old_ref, _meta} ->
@@ -346,18 +352,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     # Open the session's stream so broadcasts keep recording into it across
     # handler disconnects (the reconnect gap), and cancel any pending grace-close
     # timer since the client has reconnected.
-    streams = open_stream(state, session_id)
+    streams = if Keyword.get(opts, :resumable, true), do: open_stream(state, session_id), else: state.streams
     stream_timers = cancel_close_timer(state.stream_timers, session_id)
 
     new_state = %{state | sse_handlers: sse_handlers, streams: streams, stream_timers: stream_timers}
 
-    # Start keepalive when first SSE handler is registered
-    # This fixes the bug where keepalive never starts if server has no handlers at init
-    if map_size(state.sse_handlers) == 0 and should_keepalive?(new_state) do
-      schedule_keepalive(new_state.keepalive_interval)
-    end
-
-    {:reply, :ok, new_state}
+    {:reply, :ok, schedule_keepalive(new_state)}
   end
 
   @impl GenServer
@@ -507,11 +507,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       send(pid, :sse_keepalive)
     end
 
-    if should_keepalive?(state) do
-      schedule_keepalive(state.keepalive_interval)
-    end
-
-    {:noreply, state}
+    {:noreply, schedule_keepalive(%{state | keepalive_timer: nil})}
   end
 
   def handle_info(msg, state) do
@@ -530,28 +526,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     :ok
   end
 
-  # Schedules the next SSE keepalive message.
-  #
-  # Sends a `:send_keepalive` message to self() after the specified interval.
-  # This is used to maintain active SSE connections by preventing idle timeouts.
-  #
-  # ## Parameters
-  #   * `interval` - Time in milliseconds until next keepalive
-  defp schedule_keepalive(interval) do
-    Process.send_after(self(), :send_keepalive, interval)
+  # Registrations can come and go before the pending timer fires.
+  defp schedule_keepalive(%{keepalive_enabled: true, keepalive_timer: nil} = state)
+       when map_size(state.sse_handlers) > 0 do
+    %{state | keepalive_timer: Process.send_after(self(), :send_keepalive, state.keepalive_interval)}
   end
 
-  # Determines whether SSE keepalive messages should be sent.
-  #
-  # Returns `true` if keepalive is enabled and there are active SSE handlers,
-  # `false` otherwise. This prevents unnecessary keepalive scheduling when
-  # no clients are connected or keepalive is disabled.
-  #
-  # ## Parameters
-  #   * `state` - The GenServer state containing keepalive config and handlers
-  defp should_keepalive?(state) do
-    state.keepalive_enabled and not Enum.empty?(state.sse_handlers)
-  end
+  defp schedule_keepalive(state), do: state
 
   # Resumability helpers. With no event store these are no-ops and the transport
   # keeps its legacy connected-handlers-only broadcast behavior.
@@ -584,14 +565,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     if MapSet.member?(state.streams, session_id) do
       {:reply, record_and_deliver(store, state, session_id, message), state}
     else
-      case remote_handler(state, session_id) do
-        {:ok, pid} ->
-          send(pid, {:sse_message, message})
-          {:reply, :ok, state}
-
-        {:error, :not_found} ->
-          {:reply, {:error, :no_sse_handler}, state}
-      end
+      {:reply, result, _} = route(%{state | event_store: nil}, session_id, message)
+      {:reply, result, state}
     end
   end
 
@@ -606,6 +581,11 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   # Records into every open stream; returns the first append error (if any) so a
   # dropped write is surfaced to the caller rather than silently swallowed.
   defp broadcast(%{event_store: {_mod, _name} = store} = state, message) do
+    for {session_id, {pid, _ref, _meta}} <- state.sse_handlers,
+        not MapSet.member?(state.streams, session_id) do
+      send(pid, {:sse_message, message})
+    end
+
     failures =
       Enum.reduce(state.streams, [], fn session_id, acc ->
         case record_and_deliver(store, state, session_id, message) do

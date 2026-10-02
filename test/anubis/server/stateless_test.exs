@@ -6,6 +6,7 @@ defmodule Anubis.Server.StatelessTest do
   alias Anubis.Protocol.Registry, as: ProtocolRegistry
   alias Anubis.Protocol.Schema
   alias Anubis.Protocol.V2026_07_28
+  alias Anubis.Server.Component
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.Stateless
@@ -20,7 +21,7 @@ defmodule Anubis.Server.StatelessTest do
   defmodule EchoContextTool do
     @moduledoc false
 
-    use Anubis.Server.Component, type: :tool
+    use Component, type: :tool
 
     alias Anubis.Server.Response
 
@@ -30,6 +31,23 @@ defmodule Anubis.Server.StatelessTest do
     @impl true
     def execute(_params, frame) do
       {:reply, Response.json(Response.tool(), %{capabilities: frame.context.client_capabilities}), frame}
+    end
+  end
+
+  defmodule LoggingTool do
+    @moduledoc false
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+    end
+
+    @impl true
+    def execute(_params, frame) do
+      Anubis.Server.send_log_message(:debug, "detail")
+      Anubis.Server.send_log_message(:info, "working")
+      {:reply, Response.text(Response.tool(), "done"), frame}
     end
   end
 
@@ -44,6 +62,7 @@ defmodule Anubis.Server.StatelessTest do
       instructions: "Serves both eras."
 
     component(EchoContextTool)
+    component(LoggingTool)
   end
 
   defmodule StatelessOnlyServer do
@@ -147,6 +166,32 @@ defmodule Anubis.Server.StatelessTest do
       assert is_nil(state.client_capabilities)
       assert is_nil(state.client_info)
       assert is_nil(state.protocol_module)
+    end
+  end
+
+  @tag capture_log: false
+  test "a persistent session uses each active request's log level" do
+    session = start_session(DualEraServer)
+    transport = Registry.transport_name(DualEraServer, StubTransport)
+
+    for {level, expected} <- [{"info", ["info"]}, {"debug", ["debug", "info"]}] do
+      StubTransport.clear(transport)
+
+      params = %{
+        "name" => "logging_tool",
+        "arguments" => %{},
+        "_meta" => Map.put(request_meta([]), "io.modelcontextprotocol/logLevel", level)
+      }
+
+      request = build_request("tools/call", params)
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert is_nil(:sys.get_state(session).request_context)
+
+      logs =
+        for %{"method" => "notifications/message", "params" => params} <- StubTransport.get_messages(transport),
+            do: params["level"]
+
+      assert logs == expected
     end
   end
 

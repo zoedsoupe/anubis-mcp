@@ -9,6 +9,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
   alias Anubis.Server.Registry
   alias Anubis.Server.Supervisor, as: ServerSupervisor
   alias Anubis.Server.Transport.StreamableHTTP
+  alias Anubis.Server.Transport.StreamableHTTP.EventStore.InMemory
   alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
   alias Plug.Adapters.Test.Conn
 
@@ -106,7 +107,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     component(LogTool, name: "log")
   end
 
-  setup do
+  setup context do
     server = StreamingServer
     task_sup = Registry.task_supervisor_name(server)
     start_supervised!({Task.Supervisor, name: task_sup})
@@ -121,6 +122,15 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     http_transport = Registry.transport_name(server, :streamable_http)
 
     transport_opts = [server: server, name: http_transport, task_supervisor: task_sup, keepalive: false]
+
+    transport_opts =
+      if context[:event_store] do
+        store = start_supervised!({InMemory, name: :response_stream_store, max_sessions: 2})
+        Keyword.put(transport_opts, :event_store, {InMemory, store})
+      else
+        transport_opts
+      end
+
     start_supervised!({StreamableHTTP, transport_opts})
 
     :persistent_term.put({ServerSupervisor, server, :session_config}, %{
@@ -135,6 +145,29 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     on_exit(fn -> :persistent_term.erase({ServerSupervisor, server, :session_config}) end)
 
     %{opts: StreamableHTTPPlug.init(server: server)}
+  end
+
+  @tag event_store: true
+  test "request streams leave legacy replay history intact", %{opts: opts} do
+    store = :response_stream_store
+    transport = Registry.transport_name(StreamingServer, :streamable_http)
+    :ok = StreamableHTTP.register_sse_handler(transport, "legacy")
+    :ok = StreamableHTTP.send_message(transport, "legacy-event", session_id: "legacy")
+    assert_receive {:sse_message, "legacy-event", id}
+    :ok = StreamableHTTP.unregister_sse_handler(transport, "legacy")
+
+    for _ <- 1..3 do
+      conn = call(opts, %{"progressToken" => "tok"}, "application/json, text/event-stream")
+      assert [_, _, _, %{"result" => _}] = events(conn)
+    end
+
+    assert {:ok, [{^id, "legacy-event"}]} = InMemory.replay(store, "legacy", 0)
+    state = :sys.get_state(transport)
+    assert state.streams == MapSet.new(["legacy"])
+    assert Map.keys(state.stream_timers) == ["legacy"]
+    assert state.sse_handlers == %{}
+    :ok = StreamableHTTP.send_message(transport, "broadcast", [])
+    assert {:ok, [{^id, "legacy-event"}, {_, "broadcast"}]} = InMemory.replay(store, "legacy", 0)
   end
 
   test "progress streams ahead of the result when the client accepts SSE", %{opts: opts} do

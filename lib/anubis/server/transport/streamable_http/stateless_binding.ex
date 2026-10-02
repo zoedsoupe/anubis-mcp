@@ -276,7 +276,7 @@ if Code.ensure_loaded?(Plug) do
       metadata = StreamableHTTPPlug.resolve_subscriber_metadata(opts, conn)
 
       with true <- accepts_stream?(conn),
-           :ok <- StreamableHTTP.register_sse_handler(opts.transport, session_id, metadata) do
+           :ok <- StreamableHTTP.register_sse_handler(opts.transport, session_id, metadata, resumable: false) do
         try do
           ResponseStream.serve(conn, session, message, context, opts, &json_reply(&1, &2, message))
         after
