@@ -3,6 +3,7 @@ defmodule Anubis.Client.Elicitation do
 
   use Anubis.Logging
 
+  alias Anubis.Client.Elicitation.URL
   alias Anubis.Client.State
   alias Anubis.MCP.ElicitationSchema
   alias Anubis.MCP.Error
@@ -15,11 +16,21 @@ defmodule Anubis.Client.Elicitation do
 
     case validate_elicitation_capability(state) do
       :ok ->
-        handle_elicitation_with_callback(id, params, state)
+        dispatch_mode(id, params, state)
 
       {:error, reason} ->
         send_elicitation_error(id, reason, "capability_disabled", %{}, state)
     end
+  end
+
+  # `mode` is optional for form requests upstream, so only an explicit `"url"`
+  # selects URL mode; everything else is form mode.
+  defp dispatch_mode(id, %{"mode" => "url"} = params, state) do
+    URL.handle_request(%{"id" => id, "params" => params}, state)
+  end
+
+  defp dispatch_mode(id, params, state) do
+    handle_elicitation_with_callback(id, params, state)
   end
 
   defp validate_elicitation_capability(state) do
@@ -50,34 +61,34 @@ defmodule Anubis.Client.Elicitation do
     message = Map.get(params, "message", "")
     requested_schema = Map.get(params, "requestedSchema", %{})
 
-    Task.start(fn ->
-      try do
-        case callback.(message, requested_schema) do
-          {:accept, content} when is_map(content) ->
-            handle_accept(id, content, requested_schema, state)
-
-          :decline ->
-            send_elicitation_response(id, %{"action" => "decline"}, state)
-
-          :cancel ->
-            send_elicitation_response(id, %{"action" => "cancel"}, state)
-
-          {:error, reason} ->
-            send_elicitation_error(id, reason, "elicitation_error", %{}, state)
-        end
-      rescue
-        e ->
-          send_elicitation_error(
-            id,
-            "Elicitation callback error: #{Exception.message(e)}",
-            "elicitation_callback_error",
-            %{},
-            state
-          )
-      end
-    end)
+    Task.start(fn -> run_elicitation_callback(id, message, requested_schema, callback, state) end)
 
     state
+  end
+
+  defp run_elicitation_callback(id, message, requested_schema, callback, state) do
+    case callback.(message, requested_schema) do
+      {:accept, content} when is_map(content) ->
+        handle_accept(id, content, requested_schema, state)
+
+      :decline ->
+        send_elicitation_response(id, %{"action" => "decline"}, state)
+
+      :cancel ->
+        send_elicitation_response(id, %{"action" => "cancel"}, state)
+
+      {:error, reason} ->
+        send_elicitation_error(id, reason, "elicitation_error", %{}, state)
+    end
+  rescue
+    e ->
+      send_elicitation_error(
+        id,
+        "Elicitation callback error: #{Exception.message(e)}",
+        "elicitation_callback_error",
+        %{},
+        state
+      )
   end
 
   defp handle_accept(id, content, requested_schema, state) do
