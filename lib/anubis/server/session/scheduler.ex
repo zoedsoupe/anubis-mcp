@@ -19,7 +19,9 @@ defmodule Anubis.Server.Session.Scheduler do
           from: GenServer.from(),
           started_at: integer(),
           method: String.t(),
-          stateless: Stateless.t() | nil
+          stateless: Stateless.t() | nil,
+          cache_hints: %{String.t() => term()} | nil,
+          retry?: boolean()
         }
 
   @type queued_request :: {map(), map(), GenServer.from()}
@@ -179,9 +181,22 @@ defmodule Anubis.Server.Session.Scheduler do
           from: from,
           started_at: System.monotonic_time(:millisecond),
           method: method,
-          stateless: Stateless.context(transport_context)
+          stateless: Stateless.context(transport_context),
+          cache_hints: cache_hints(request, transport_context, state),
+          retry?: retry?(request)
         }
     }
+  end
+
+  defp cache_hints(%{"method" => method} = request, transport_context, state) do
+    if Stateless.context(transport_context) do
+      Stateless.cache_hints(state.server_module, method, retry?(request))
+    end
+  end
+
+  defp retry?(request) do
+    params = request["params"] || %{}
+    Map.has_key?(params, "inputResponses") or Map.has_key?(params, "requestState")
   end
 
   defp do_handle_request(module, %{"method" => "tools/call"} = request, frame, _method) do
@@ -256,8 +271,8 @@ defmodule Anubis.Server.Session.Scheduler do
 
   defp shape_response(response, %{stateless: nil}, _state), do: response
 
-  defp shape_response(response, _inflight, state) when is_map(response) and not is_struct(response) do
-    Stateless.shape_result(response, state.server_info)
+  defp shape_response(response, inflight, state) when is_map(response) and not is_struct(response) do
+    Stateless.shape_result(response, state.server_info, inflight.cache_hints, inflight.retry?)
   end
 
   defp shape_response(response, _inflight, _state), do: response
