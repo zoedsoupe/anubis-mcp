@@ -365,6 +365,8 @@ defmodule Anubis.Server.TasksTest do
     end
   end
 
+  # ─── helpers ───────────────────────────────────────────────────────────
+
   defp start_tasks_session(_ctx) do
     session_id = "tasks-session"
     transport_name = Registry.transport_name(TasksStubServer, StubTransport)
@@ -414,14 +416,12 @@ defmodule Anubis.Server.TasksTest do
 
     session =
       start_supervised!(
-        {
-          Session,
-          session_id: session_id,
-          server_module: TasksStubServer,
-          name: session_name,
-          transport: [layer: StubTransport, name: transport_name],
-          task_supervisor: task_sup
-        },
+        {Session,
+         session_id: session_id,
+         server_module: TasksStubServer,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         task_supervisor: task_sup},
         id: {:no_store_session, session_id}
       )
 
