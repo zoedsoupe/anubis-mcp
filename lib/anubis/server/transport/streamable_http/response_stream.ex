@@ -11,7 +11,9 @@ if Code.ensure_loaded?(Plug) do
     request outlives a keepalive interval of the transport, the response
     becomes an SSE stream carrying the notifications in order and ending with
     the JSON-RPC response; otherwise it stays a single JSON object, with the
-    status codes the binding gives it.
+    status codes the binding gives it. A handler completing without a reply
+    closes an open stream without a final event, or returns HTTP 202 when the
+    response has not started.
 
     Request-scoped means `notifications/progress`, and `notifications/message`
     when the request declared an `io.modelcontextprotocol/logLevel`. Anything
@@ -36,7 +38,13 @@ if Code.ensure_loaded?(Plug) do
 
     @doc """
     Dispatches `message` to `session` and answers `conn`, as JSON through
-    `json_reply` unless a request-scoped notification arrives first.
+    `json_reply` unless a request-scoped notification or keepalive arrives first.
+
+    `opts.timeout` bounds dispatch. A successful reply ends the stream with its
+    JSON-RPC response; a successful no-reply completion closes it without an
+    event. Dispatch failures become error events after streaming starts and
+    retain the JSON callback's behavior beforehand. A dispatch exit before
+    streaming starts exits the caller.
     """
     @spec serve(Plug.Conn.t(), pid(), map(), map(), map(), (Plug.Conn.t(), term() -> Plug.Conn.t())) :: Plug.Conn.t()
     def serve(conn, session, message, context, opts, json_reply) do
@@ -131,6 +139,8 @@ if Code.ensure_loaded?(Plug) do
 
     defp finish(%{streaming?: false}, {:exit, reason}), do: exit(reason)
     defp finish(%{streaming?: false} = state, result), do: state.json_reply.(state.conn, result)
+
+    defp finish(state, {:ok, nil}), do: state.conn
 
     defp finish(state, {:ok, response}) when is_binary(response) do
       case Streaming.send_event(state.conn, String.trim_trailing(response), nil) do

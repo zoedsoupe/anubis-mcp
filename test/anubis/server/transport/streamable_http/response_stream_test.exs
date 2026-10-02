@@ -102,9 +102,30 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
       capabilities: [{:tools, list_changed?: true}],
       protocol_versions: ["2026-07-28"]
 
+    alias Anubis.Server.Frame
+    alias Anubis.Server.Handlers
+
     component(ProgressTool, name: "progress")
     component(SlowTool, name: "slow")
     component(LogTool, name: "log")
+
+    @impl true
+    def handle_request(%{"method" => "tools/call", "params" => %{"name" => name}}, frame)
+        when name in ["no_reply", "slow_no_reply"] do
+      if token = Frame.progress_token(frame), do: Anubis.Server.send_progress(token, 100)
+
+      if name == "slow_no_reply" do
+        send(ResponseStreamTest, {:tool_running, self()})
+
+        receive do
+          :finish -> :ok
+        end
+      end
+
+      {:noreply, frame}
+    end
+
+    def handle_request(request, frame), do: Handlers.handle(request, __MODULE__, frame)
   end
 
   setup context do
@@ -232,6 +253,34 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     assert content_type =~ "text/event-stream"
     assert chunks(conn) =~ ": keepalive"
     assert [%{"id" => 1, "result" => %{"content" => [%{"text" => "finished"}]}}] = events(conn)
+  end
+
+  test "a no-reply completion before streaming returns HTTP 202", %{opts: opts} do
+    conn = call(opts, %{}, "application/json, text/event-stream", "no_reply")
+
+    assert conn.status == 202
+    assert conn.resp_body == ""
+  end
+
+  test "a no-reply completion after progress closes without an error response", %{opts: opts} do
+    conn = call(opts, %{"progressToken" => "tok"}, "application/json, text/event-stream", "no_reply")
+
+    assert conn.status == 200
+    assert [%{"method" => "notifications/progress", "params" => %{"progress" => 100}}] = events(conn)
+  end
+
+  test "a no-reply completion after a keepalive closes without an error response", %{opts: opts} do
+    Process.register(self(), ResponseStreamTest)
+    request = Task.async(fn -> call(opts, %{}, "application/json, text/event-stream", "slow_no_reply") end)
+
+    assert_receive {:tool_running, handler}
+    send(request.pid, :sse_keepalive)
+    send(handler, :finish)
+    conn = Task.await(request)
+
+    assert conn.status == 200
+    assert chunks(conn) == ": keepalive\n\n"
+    assert events(conn) == []
   end
 
   test "a client that disconnects cancels the running tool", %{opts: opts} do

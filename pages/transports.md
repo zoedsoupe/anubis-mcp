@@ -118,6 +118,8 @@ The `MCP-Protocol-Version` header picks the era for each request. Without it, or
 
 A client that accepts `text/event-stream` may get its answer as a stream. The response turns into SSE once the handler emits a `notifications/progress` for the request (or a `notifications/message`, when the request set a log level), or once the request outlives the transport's keepalive interval; the notifications come in order, and the JSON-RPC response ends the stream. A request answered before either happens is a single JSON object.
 
+If the low-level `handle_request/2` callback completes with `{:noreply, frame}`, the server sends HTTP 202 with an empty body before streaming starts, or closes an already-open SSE response without a final event. It does not turn a successful no-reply completion into a JSON-RPC error.
+
 Closing the response is how a client cancels a request in this revision, and a disconnect is only visible when the server writes. A long request therefore writes a keepalive comment every interval, and the first write that fails stops the request's session, which terminates the handler. With `keepalive: false` on the transport, or a client that accepts only JSON, a disconnect goes unnoticed until the handler returns.
 
 #### Caching hints
