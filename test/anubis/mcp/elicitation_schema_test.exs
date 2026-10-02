@@ -143,6 +143,178 @@ defmodule Anubis.MCP.ElicitationSchemaTest do
       assert {:error, reason} = ElicitationSchema.validate(schema)
       assert reason =~ "required"
     end
+
+    test "accepts a titled single select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "color" => %{
+            "type" => "string",
+            "oneOf" => [
+              %{"const" => "#FF0000", "title" => "Red"},
+              %{"const" => "#00FF00", "title" => "Green"}
+            ],
+            "default" => "#00FF00"
+          }
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate(schema)
+    end
+
+    test "rejects a titled option missing its title" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"color" => %{"type" => "string", "oneOf" => [%{"const" => "#FF0000"}]}}
+      }
+
+      assert {:error, _} = ElicitationSchema.validate(schema)
+    end
+
+    test "accepts an untitled multi select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "minItems" => 1,
+            "maxItems" => 3,
+            "items" => %{"type" => "string", "enum" => ["Red", "Green", "Blue"]},
+            "default" => ["Green"]
+          }
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate(schema)
+    end
+
+    test "accepts a titled multi select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "items" => %{
+              "anyOf" => [
+                %{"const" => "#FF0000", "title" => "Red"},
+                %{"const" => "#00FF00", "title" => "Green"}
+              ]
+            }
+          }
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate(schema)
+    end
+
+    test "rejects a multi select items block that is neither untitled nor titled" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"colors" => %{"type" => "array", "items" => %{"type" => "string"}}}
+      }
+
+      assert {:error, _} = ElicitationSchema.validate(schema)
+    end
+
+    test "rejects a multi select default outside the enum" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "items" => %{"type" => "string", "enum" => ["Red", "Green"]},
+            "default" => ["Purple"]
+          }
+        }
+      }
+
+      assert {:error, reason} = ElicitationSchema.validate(schema)
+      assert reason =~ "default"
+    end
+
+    test "accepts defaults on string and number" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "email" => %{"type" => "string", "default" => "a@b.com"},
+          "score" => %{"type" => "number", "default" => 1.5},
+          "count" => %{"type" => "integer", "default" => 3}
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate(schema)
+    end
+
+    test "accepts a default on an enum" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"color" => %{"type" => "string", "enum" => ["r", "g"], "default" => "g"}}
+      }
+
+      assert :ok = ElicitationSchema.validate(schema)
+    end
+
+    test "rejects a default outside a plain enum" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"color" => %{"type" => "string", "enum" => ["r", "g"], "default" => "b"}}
+      }
+
+      assert {:error, reason} = ElicitationSchema.validate(schema)
+      assert reason =~ "default"
+    end
+
+    test "rejects a default of the wrong type" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"name" => %{"type" => "string", "default" => 1}}
+      }
+
+      assert {:error, _} = ElicitationSchema.validate(schema)
+    end
+
+    test "legacy profile rejects a titled single select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "color" => %{"type" => "string", "oneOf" => [%{"const" => "r", "title" => "Red"}]}
+        }
+      }
+
+      assert {:error, _} = ElicitationSchema.validate(schema, :legacy)
+    end
+
+    test "legacy profile rejects a multi select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{"type" => "array", "items" => %{"type" => "string", "enum" => ["r", "g"]}}
+        }
+      }
+
+      assert {:error, _} = ElicitationSchema.validate(schema, :legacy)
+    end
+
+    test "legacy profile rejects a default on a string" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"name" => %{"type" => "string", "default" => "x"}}
+      }
+
+      assert {:error, _} = ElicitationSchema.validate(schema, :legacy)
+    end
+
+    test "legacy profile still accepts boolean defaults and enums" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "agreed" => %{"type" => "boolean", "default" => false},
+          "color" => %{"type" => "string", "enum" => ["r", "g"]}
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate(schema, :legacy)
+    end
   end
 
   describe "validate_content/2" do
@@ -238,6 +410,103 @@ defmodule Anubis.MCP.ElicitationSchemaTest do
     test "rejects non-map content" do
       assert {:error, _} = ElicitationSchema.validate_content("string", @schema)
       assert {:error, _} = ElicitationSchema.validate_content(nil, @schema)
+    end
+
+    test "accepts a value from a titled single select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "color" => %{
+            "type" => "string",
+            "oneOf" => [
+              %{"const" => "#FF0000", "title" => "Red"},
+              %{"const" => "#00FF00", "title" => "Green"}
+            ]
+          }
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate_content(%{"color" => "#00FF00"}, schema)
+      assert {:error, _} = ElicitationSchema.validate_content(%{"color" => "Green"}, schema)
+    end
+
+    test "accepts a list for an untitled multi select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "minItems" => 1,
+            "maxItems" => 2,
+            "items" => %{"type" => "string", "enum" => ["Red", "Green", "Blue"]}
+          }
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate_content(%{"colors" => ["Red", "Blue"]}, schema)
+    end
+
+    test "enforces multi select item bounds" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "minItems" => 1,
+            "maxItems" => 2,
+            "items" => %{"type" => "string", "enum" => ["Red", "Green", "Blue"]}
+          }
+        }
+      }
+
+      assert {:error, _} = ElicitationSchema.validate_content(%{"colors" => []}, schema)
+      assert {:error, _} = ElicitationSchema.validate_content(%{"colors" => ["Red", "Green", "Blue"]}, schema)
+    end
+
+    test "rejects a multi select value outside the enum" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "items" => %{"type" => "string", "enum" => ["Red", "Green"]}
+          }
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate_content(%{"colors" => ["Red"]}, schema)
+      assert {:error, _} = ElicitationSchema.validate_content(%{"colors" => ["Purple"]}, schema)
+    end
+
+    test "accepts a list for a titled multi select" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "items" => %{
+              "anyOf" => [
+                %{"const" => "#FF0000", "title" => "Red"},
+                %{"const" => "#00FF00", "title" => "Green"}
+              ]
+            }
+          }
+        }
+      }
+
+      assert :ok = ElicitationSchema.validate_content(%{"colors" => ["#FF0000"]}, schema)
+      assert {:error, _} = ElicitationSchema.validate_content(%{"colors" => ["Red"]}, schema)
+    end
+
+    test "rejects a scalar where a multi select is declared" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{"type" => "array", "items" => %{"type" => "string", "enum" => ["Red"]}}
+        }
+      }
+
+      assert {:error, _} = ElicitationSchema.validate_content(%{"colors" => "Red"}, schema)
     end
   end
 end

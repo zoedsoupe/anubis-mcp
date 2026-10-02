@@ -41,7 +41,9 @@ defmodule Anubis.Protocol.V2025_06_18 do
 
   @elicitation_create_params %{
     "message" => {:required, :string},
-    "requestedSchema" => {:required, {:custom, &Anubis.MCP.ElicitationSchema.validate/1}}
+    # This version predates the elicitation rework, so it holds the schema to
+    # the narrower subset it actually defines.
+    "requestedSchema" => {:required, {:custom, {Anubis.MCP.ElicitationSchema, :validate_peri, [:legacy]}}}
   }
 
   @elicitation_result_schema %{

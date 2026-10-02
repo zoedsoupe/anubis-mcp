@@ -156,6 +156,84 @@ defmodule Anubis.Protocol.DialectTest do
       assert {:ok, _} = Peri.validate(V2025_06_18.request_message_schema(), message)
     end
 
+    test "url mode elicitation only validates from 2025-11-25 on" do
+      message = %{
+        "jsonrpc" => "2.0",
+        "method" => "elicitation/create",
+        "id" => 1,
+        "params" => %{
+          "mode" => "url",
+          "message" => "Authorize access",
+          "elicitationId" => "e-1",
+          "url" => "https://example.com/authorize"
+        }
+      }
+
+      assert {:error, _} = Peri.validate(V2025_06_18.request_message_schema(), message)
+      assert {:ok, _} = Peri.validate(V2025_11_25.request_message_schema(), message)
+    end
+
+    test "url mode elicitation requires its id and url" do
+      schema = V2025_11_25.request_message_schema()
+
+      for missing <- ~w(elicitationId url message mode) do
+        params =
+          Map.delete(%{"mode" => "url", "message" => "go", "elicitationId" => "e-1", "url" => "https://e.com"}, missing)
+
+        assert {:error, _} =
+                 Peri.validate(schema, %{
+                   "jsonrpc" => "2.0",
+                   "method" => "elicitation/create",
+                   "id" => 1,
+                   "params" => params
+                 }),
+               "expected #{missing} to be required"
+      end
+    end
+
+    test "elicitation completion is a 2025-11-25 notification" do
+      message = %{
+        "jsonrpc" => "2.0",
+        "method" => "notifications/elicitation/complete",
+        "params" => %{"elicitationId" => "e-1"}
+      }
+
+      assert "notifications/elicitation/complete" in V2025_11_25.notification_methods()
+      assert {:ok, _} = Peri.validate(V2025_11_25.notification_message_schema(), message)
+
+      assert {:error, _} = Peri.validate(V2025_06_18.notification_message_schema(), message)
+
+      assert {:error, _} =
+               Peri.validate(V2025_11_25.notification_message_schema(), put_in(message["params"]["elicitationId"], 1))
+    end
+
+    test "a form elicitation omits mode, a url one pins it" do
+      schema = V2025_11_25.request_params_schema("elicitation/create")
+
+      form = %{
+        "message" => "name?",
+        "requestedSchema" => %{"type" => "object", "properties" => %{"name" => %{"type" => "string"}}}
+      }
+
+      assert {:ok, _} = Peri.validate(schema, form)
+      assert {:ok, _} = Peri.validate(schema, Map.put(form, "mode", "form"))
+      assert {:error, _} = Peri.validate(schema, Map.put(form, "mode", "bogus"))
+    end
+
+    test "the 2025-06-18 profile rejects a 2025-11-25 only schema shape" do
+      schema = V2025_06_18.request_params_schema("elicitation/create")
+
+      titled = %{
+        "message" => "color?",
+        "requestedSchema" => %{
+          "type" => "object",
+          "properties" => %{"color" => %{"type" => "string", "oneOf" => [%{"const" => "r", "title" => "Red"}]}}
+        }
+      }
+
+      assert {:error, _} = Peri.validate(schema, titled)
+    end
+
     test "progress notification carries the message field" do
       params = %{"progressToken" => "t", "progress" => 1, "message" => "working"}
 

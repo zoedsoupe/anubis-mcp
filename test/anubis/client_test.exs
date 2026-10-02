@@ -1793,6 +1793,187 @@ defmodule Anubis.ClientTest do
     end
   end
 
+  describe "url elicitation" do
+    @moduletag protocol_version: "2025-11-25"
+
+    setup :initialized_client
+
+    @url_params %{
+      "mode" => "url",
+      "url" => "https://example.com/authorize",
+      "elicitationId" => "550e8400",
+      "message" => "Authorize access"
+    }
+
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "handles url elicitation accept without content", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_url_elicitation_callback(client, fn url, elicitation_id, message ->
+          send(test_pid, {:url_elicit_called, url, elicitation_id, message})
+          :accept
+        end)
+
+      request_id = "url_elicit_req_accept"
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:mcp_send, message})
+
+        decoded = JSON.decode!(message)
+        assert decoded["id"] == request_id
+        assert decoded["result"] == %{"action" => "accept"}
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      assert_receive {:url_elicit_called, "https://example.com/authorize", "550e8400", "Authorize access"}
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "handles url elicitation decline", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_url_elicitation_callback(client, fn _url, _id, _message ->
+          :decline
+        end)
+
+      request_id = "url_elicit_req_decline"
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:mcp_send, message})
+
+        decoded = JSON.decode!(message)
+        assert decoded["result"] == %{"action" => "decline"}
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "errors when no url callback is registered", %{client: client} do
+      test_pid = self()
+      request_id = "url_elicit_req_unconfigured"
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:mcp_send, message})
+
+        decoded = JSON.decode!(message)
+        assert decoded["error"]["message"] =~ "No URL elicitation callback"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "errors when url elicitation callback raises", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_url_elicitation_callback(client, fn _url, _id, _message ->
+          raise "boom"
+        end)
+
+      request_id = "url_elicit_req_raise"
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:mcp_send, message})
+
+        decoded = JSON.decode!(message)
+        assert decoded["error"]["message"] =~ "URL elicitation callback error"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "does not route url mode to the form callback", %{client: client} do
+      :ok =
+        Anubis.Client.register_elicitation_callback(client, fn _message, _schema ->
+          flunk("form callback must not run for url mode")
+        end)
+
+      :ok = Anubis.Client.register_url_elicitation_callback(client, fn _u, _i, _m -> :cancel end)
+
+      request_id = "url_elicit_req_isolated"
+
+      FakeTransport.expect_send(FakeTransport, fn _message -> :ok end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "handles notifications/elicitation/complete", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_elicitation_complete_callback(client, fn elicitation_id ->
+          send(test_pid, {:elicitation_complete, elicitation_id})
+        end)
+
+      assert {:ok, encoded} =
+               Message.encode_notification(
+                 Message.build_notification(
+                   "notifications/elicitation/complete",
+                   %{"elicitationId" => "550e8400"}
+                 )
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      assert_receive {:elicitation_complete, "550e8400"}
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "unregistering the url callback is a no-op on the form callback", %{client: client} do
+      :ok = Anubis.Client.register_elicitation_callback(client, fn _m, _s -> :cancel end)
+      :ok = Anubis.Client.register_url_elicitation_callback(client, fn _u, _i, _m -> :accept end)
+      :ok = Anubis.Client.unregister_url_elicitation_callback(client)
+
+      state = :sys.get_state(client)
+
+      assert is_function(state.elicitation_callback, 2)
+      assert is_nil(state.url_elicitation_callback)
+    end
+  end
+
   describe "automatic roots notification" do
     setup :initialized_client
 

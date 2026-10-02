@@ -676,6 +676,85 @@ defmodule Anubis.Server.SessionTest do
     end
   end
 
+  describe "url elicitation requests" do
+    setup do
+      initialized_server(%{
+        client_capabilities: %{"elicitation" => %{"url" => %{}}},
+        protocol_version: "2025-11-25"
+      })
+    end
+
+    @url_params %{
+      "mode" => "url",
+      "message" => "Authorize access",
+      "elicitationId" => "e-1",
+      "url" => "https://example.com/authorize"
+    }
+
+    test "server emits a url mode elicitation/create on the wire", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      send(session, {:send_url_elicitation_request, @url_params, 30_000})
+      Process.sleep(10)
+
+      assert_receive {:send_message, request_data}
+      assert {:ok, [decoded]} = Message.decode(request_data)
+      assert decoded["method"] == "elicitation/create"
+      assert decoded["params"] == @url_params
+    end
+
+    test "a url mode accept carries no content", %{server: session, transport: transport} do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      send(session, {:send_url_elicitation_request, @url_params, 30_000})
+      Process.sleep(10)
+      assert_receive {:send_message, request_data}
+      assert {:ok, [decoded]} = Message.decode(request_data)
+
+      response = %{
+        "id" => decoded["id"],
+        "result" => %{"action" => "accept"}
+      }
+
+      :ok = GenServer.cast(session, {:mcp_response, response, %{}})
+      Process.sleep(10)
+
+      state = :sys.get_state(session)
+      assert state.frame.assigns.last_elicitation_response == %{"action" => "accept"}
+      assert map_size(state.server_requests) == 0
+    end
+  end
+
+  describe "url elicitation against a form-only client" do
+    setup do
+      initialized_server(%{
+        client_capabilities: %{"elicitation" => %{}},
+        protocol_version: "2025-11-25"
+      })
+    end
+
+    test "the request is dropped rather than sent", %{server: session, transport: transport} do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      params = %{
+        "mode" => "url",
+        "message" => "Authorize access",
+        "elicitationId" => "e-1",
+        "url" => "https://example.com/authorize"
+      }
+
+      send(session, {:send_url_elicitation_request, params, 30_000})
+      Process.sleep(10)
+
+      state = :sys.get_state(session)
+      assert map_size(state.server_requests) == 0
+      refute_received {:send_message, _}
+    end
+  end
+
   describe "tool_call telemetry :is_error metadata" do
     setup do
       test_pid = self()

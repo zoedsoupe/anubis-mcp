@@ -20,6 +20,10 @@ defmodule Anubis.Client.Handlers do
     handle_cancelled_notification(notification, state)
   end
 
+  def handle_notification(%{"method" => "notifications/elicitation/complete"} = notification, state) do
+    handle_elicitation_complete_notification(notification, state)
+  end
+
   def handle_notification(%{"method" => "notifications/resources/list_changed"} = notification, state) do
     handle_resources_list_changed_notification(notification, state)
   end
@@ -37,6 +41,14 @@ defmodule Anubis.Client.Handlers do
   end
 
   def handle_notification(_, state), do: state
+
+  defp handle_elicitation_complete_notification(%{"params" => %{"elicitationId" => elicitation_id}}, state) do
+    if callback = State.get_elicitation_complete_callback(state) do
+      Task.start(fn -> callback.(elicitation_id) end)
+    end
+
+    state
+  end
 
   defp handle_cancelled_notification(%{"params" => params}, state) do
     request_id = params["requestId"]
