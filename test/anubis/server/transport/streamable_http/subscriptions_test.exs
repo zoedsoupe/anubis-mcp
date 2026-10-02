@@ -297,6 +297,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
   end
 
   defp decode_chunks(%Plug.Conn{adapter: {Plug.Adapters.Test.Conn, %{chunks: chunks}}}) do
-    for "data: " <> data <- String.split(chunks, "\n"), do: JSON.decode!(data)
+    for event <- String.split(chunks, "\n\n", trim: true),
+        data = for("data: " <> line <- String.split(event, "\n"), do: line),
+        data != [],
+        do: JSON.decode!(Enum.join(data, "\n"))
   end
 end
