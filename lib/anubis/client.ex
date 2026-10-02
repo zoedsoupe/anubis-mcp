@@ -987,6 +987,10 @@ defmodule Anubis.Client do
   end
 
   @impl true
+  def handle_call({:operation, %Operation{}}, _from, %{initialization_error: %Error{} = error} = state) do
+    {:reply, {:error, error}, state}
+  end
+
   def handle_call({:operation, %Operation{} = operation}, from, state) do
     method = operation.method
 
@@ -1021,6 +1025,10 @@ defmodule Anubis.Client do
 
   def handle_call(:get_server_info, _from, state) do
     {:reply, State.get_server_info(state), state}
+  end
+
+  def handle_call(:await_ready, _from, %{initialization_error: %Error{} = error} = state) do
+    {:reply, {:error, error}, state}
   end
 
   def handle_call(:await_ready, _from, %{server_capabilities: caps} = state) when not is_nil(caps) do
@@ -1388,6 +1396,9 @@ defmodule Anubis.Client do
         log_unknown_error_response(id, json_error)
         state
 
+      {%{method: "initialize"} = request, updated_state} ->
+        process_initialization_error(request, json_error, updated_state)
+
       {request, updated_state} ->
         process_error_response(request, json_error, id, updated_state)
     end
@@ -1411,6 +1422,17 @@ defmodule Anubis.Client do
     state
   end
 
+  defp process_initialization_error(request, json_error, state) do
+    error = Error.from_json_rpc(json_error)
+
+    log_error_response(request, request.id, Request.elapsed_time(request), json_error)
+    Logging.client_event("initialization_failed", %{error: error}, level: :warning)
+
+    Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
+
+    %{state | initialization_error: error, ready_waiters: []}
+  end
+
   defp log_error_response(request, id, elapsed_ms, error) do
     Logging.client_event("error_response", %{
       id: id,
@@ -1429,39 +1451,67 @@ defmodule Anubis.Client do
     )
   end
 
-  defp handle_success_response(%{"id" => id, "result" => %{"serverInfo" => _} = result}, id, state) do
-    case State.remove_request(state, id) do
-      {nil, state} ->
-        state
-
-      {_request, state} ->
-        state =
-          state
-          |> State.update_server_info(result["capabilities"], result["serverInfo"])
-          |> State.update_protocol_version(result["protocolVersion"])
-
-        Logging.client_event("initialized", %{
-          server_info: result["serverInfo"],
-          capabilities: result["capabilities"],
-          protocol_version: state.protocol_version
-        })
-
-        :ok = send_notification(state, "notifications/initialized")
-
-        Enum.each(state.ready_waiters, &GenServer.reply(&1, :ok))
-        %{state | ready_waiters: []}
-    end
-  end
-
   defp handle_success_response(%{"id" => id, "result" => result}, id, state) do
     case State.remove_request(state, id) do
       {nil, state} ->
         Logging.client_event("unknown_response", %{id: id})
         state
 
-      {request, updated_state} ->
-        process_successful_response(request, result, id, updated_state)
+      {%{method: "initialize"}, state} ->
+        process_initialization_response(result, state)
+
+      {request, state} ->
+        process_successful_response(request, result, id, state)
     end
+  end
+
+  defp process_initialization_response(result, state) do
+    case validate_initialization_result(result, state) do
+      {:ok, protocol_version, server_info, capabilities} ->
+        state =
+          state
+          |> State.update_server_info(capabilities, server_info)
+          |> State.update_protocol_version(protocol_version)
+
+        Logging.client_event("initialized", %{
+          server_info: server_info,
+          capabilities: capabilities,
+          protocol_version: state.protocol_version
+        })
+
+        :ok = send_notification(state, "notifications/initialized")
+
+        Enum.each(state.ready_waiters, &GenServer.reply(&1, :ok))
+        %{state | initialization_error: nil, ready_waiters: []}
+
+      {:error, %Error{} = error} ->
+        Logging.client_event("initialization_failed", %{error: error}, level: :warning)
+
+        Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
+        %{state | initialization_error: error, ready_waiters: []}
+    end
+  end
+
+  defp validate_initialization_result(
+         %{
+           "protocolVersion" => protocol_version,
+           "capabilities" => capabilities,
+           "serverInfo" => %{"name" => name, "version" => server_version} = server_info
+         },
+         state
+       )
+       when is_binary(protocol_version) and is_map(capabilities) and is_binary(name) and is_binary(server_version) do
+    with :ok <- Protocol.validate_version(protocol_version),
+         :ok <- Protocol.validate_transport(protocol_version, state.transport.layer) do
+      {:ok, protocol_version, server_info, capabilities}
+    end
+  end
+
+  defp validate_initialization_result(_result, _state) do
+    {:error,
+     Error.protocol(:invalid_request, %{
+       message: "Initialization result must include a protocol version, capabilities, and server information"
+     })}
   end
 
   defp process_successful_response(%{method: "tools/call"} = request, result, id, state) do
