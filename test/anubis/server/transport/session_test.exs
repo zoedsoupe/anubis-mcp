@@ -1,10 +1,10 @@
 defmodule Anubis.Server.Transport.SessionTest do
   use Anubis.MCP.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Anubis.Server.Transport.Session, as: SessionDispatcher
   alias Anubis.Server.Transport.Session.Local
-
-  @moduletag capture_log: true
 
   defmodule RecordingDispatcher do
     @moduledoc false
@@ -53,7 +53,14 @@ defmodule Anubis.Server.Transport.SessionTest do
     test "dispatch_response/3 delivers the response asynchronously", %{server: session} do
       response = build_response(%{}, "unknown-request-id")
 
-      assert :ok = Local.dispatch_response(session, response, %{})
+      log =
+        capture_log(fn ->
+          assert :ok = Local.dispatch_response(session, response, %{})
+          :sys.get_state(session)
+        end)
+
+      assert log =~ "unexpected_response"
+      assert log =~ "unknown-request-id"
     end
   end
 
@@ -77,8 +84,16 @@ defmodule Anubis.Server.Transport.SessionTest do
       assert_received {:dispatched, {:notification, ^notification}}
 
       response = build_response(%{}, "unknown-request-id")
-      assert :ok = SessionDispatcher.dispatch_response(session, response, context)
-      assert_received {:dispatched, {:response, ^response}}
+
+      log =
+        capture_log(fn ->
+          assert :ok = SessionDispatcher.dispatch_response(session, response, context)
+          assert_received {:dispatched, {:response, ^response}}
+          :sys.get_state(session)
+        end)
+
+      assert log =~ "unexpected_response"
+      assert log =~ "unknown-request-id"
     end
   end
 

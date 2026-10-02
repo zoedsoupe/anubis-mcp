@@ -65,21 +65,21 @@ defmodule Anubis.ProtocolTest do
 
     test "negotiate_version/2 matches client and server" do
       assert {:ok, "2025-03-26", V2025_03_26} =
-               Protocol.negotiate_version("2025-03-26", "2025-03-26")
+               negotiate_legacy_version("2025-03-26", "2025-03-26")
     end
 
     test "negotiate_version/2 prefers server version" do
       assert {:ok, "2025-06-18", V2025_06_18} =
-               Protocol.negotiate_version("2025-03-26", "2025-06-18")
+               negotiate_legacy_version("2025-03-26", "2025-06-18")
     end
 
     test "negotiate_version/2 accepts a list of server versions" do
       assert {:ok, "2025-03-26", V2025_03_26} =
-               Protocol.negotiate_version("2025-03-26", ["2025-11-25", "2025-03-26"])
+               negotiate_legacy_version("2025-03-26", ["2025-11-25", "2025-03-26"])
     end
 
     test "negotiate_version/2 returns error for incompatible" do
-      assert :error = Protocol.negotiate_version("9999-01-01", "8888-01-01")
+      assert :error = negotiate_legacy_version("9999-01-01", "8888-01-01")
     end
   end
 
@@ -129,9 +129,24 @@ defmodule Anubis.ProtocolTest do
       for client_version <- ["2026-07-28", "9999-01-01"] do
         refute match?(
                  {:ok, "2026-07-28", _},
-                 Protocol.negotiate_version(client_version, Protocol.supported_versions())
+                 negotiate_legacy_version(client_version, Protocol.supported_versions())
                )
       end
     end
+  end
+
+  defp negotiate_legacy_version(client_version, server_versions) do
+    {{result, _bindings}, warning} =
+      ExUnit.CaptureIO.with_io(:stderr, fn ->
+        Code.eval_quoted(
+          quote do
+            Anubis.Protocol.negotiate_version(unquote(client_version), unquote(server_versions))
+          end
+        )
+      end)
+
+    assert warning =~ "Anubis.Protocol.negotiate_version/2 is deprecated"
+    assert warning =~ "Anubis.Protocol.Registry.negotiate/2"
+    result
   end
 end
