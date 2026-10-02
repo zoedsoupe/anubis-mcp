@@ -44,21 +44,21 @@ defmodule Anubis.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:finch, "~> 0.19"},
-      {:peri, "0.9.0"},
-      {:telemetry, "~> 1.2"},
-      {:redix, "~> 1.5", optional: true},
-      {:gun, "~> 2.2", optional: true},
-      {:plug, "~> 1.18", optional: true},
-      {:jose, "~> 1.11.7", optional: true},
-      {:mox, "~> 1.2", only: :test},
-      {:mimic, "~> 2.0", only: :test},
+      {:finch, "~> 0.24"},
+      {:peri, "~> 0.11.2"},
+      {:telemetry, "~> 1.4"},
+      {:mox, "~> 1.3", only: :test},
+      {:mimic, "~> 2.4", only: :test},
       {:bypass, "~> 2.1", only: :test},
-      {:cowboy, "~> 2.10", only: :test},
-      {:styler, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:cowboy, "~> 2.19", only: :test},
+      {:redix, "~> 1.9", optional: true},
+      {:gun, "~> 2.6", optional: true},
+      {:plug, "~> 1.20", optional: true},
+      {:jose, "~> 1.11", optional: true},
+      {:styler, "~> 1.12", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.3", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 

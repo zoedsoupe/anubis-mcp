@@ -741,7 +741,7 @@ defmodule Anubis.Server.Session do
           "serverInfo" => state.server_info,
           "capabilities" => protocol_module.server_capabilities(state.capabilities)
         },
-        state.instructions
+        connection_instructions(state)
       )
 
     Logging.server_event("initializing", %{
@@ -789,7 +789,7 @@ defmodule Anubis.Server.Session do
 
   defp handle_request(%{"method" => "tools/call"} = request, ctx, from, state) do
     if Tasks.augmented_tools_call?(request) do
-      Tasks.create_for_tools_call(request, ctx, from, state, &prepare_frame/1)
+      Tasks.create_for_tools_call(request, ctx, from, state, &prepare_frame/2)
     else
       Scheduler.enqueue_or_dispatch(request, ctx, from, state, scheduler_callbacks())
     end
@@ -1169,6 +1169,15 @@ defmodule Anubis.Server.Session do
     Enum.map(requests, fn {id, req} ->
       %{id: id, method: req[:method]}
     end)
+  end
+
+  # Resolved here, not at session start, so the frame carries this request's assigns.
+  defp connection_instructions(%{server_module: module} = state) do
+    if Anubis.exported?(module, :server_instructions, 1) do
+      module.server_instructions(prepare_frame(state))
+    else
+      state.instructions
+    end
   end
 
   defp maybe_put_instructions(result, nil), do: result
