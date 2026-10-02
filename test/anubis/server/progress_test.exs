@@ -4,7 +4,7 @@ defmodule Anubis.Server.ProgressTest do
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
 
-  @moduletag capture_log: true
+  @moduletag capture_log: false
 
   defmodule ReportingTool do
     @moduledoc false

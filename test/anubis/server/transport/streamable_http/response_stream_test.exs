@@ -1,6 +1,7 @@
 defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
   use Anubis.MCP.Case, async: false
 
+  import ExUnit.CaptureLog
   import Plug.Conn
   import Plug.Test
 
@@ -11,7 +12,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
   alias Anubis.Server.Transport.StreamableHTTP.Plug, as: StreamableHTTPPlug
   alias Plug.Adapters.Test.Conn
 
-  @moduletag capture_log: true
+  @moduletag capture_log: false
 
   @version "2026-07-28"
 
@@ -158,13 +159,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
   end
 
   test "a client that accepts only JSON gets JSON, progress or not", %{opts: opts} do
-    conn = call(opts, %{"progressToken" => "tok"}, "application/json")
+    conn = call_without_stream(opts, "application/json")
 
     assert %{"result" => %{"content" => [%{"text" => "done"}]}} = JSON.decode!(conn.resp_body)
   end
 
   test "a client that marks the stream unacceptable gets JSON, progress or not", %{opts: opts} do
-    conn = call(opts, %{"progressToken" => "tok"}, "application/json, text/event-stream;q=0")
+    conn = call_without_stream(opts, "application/json, text/event-stream;q=0")
 
     assert [content_type | _] = get_resp_header(conn, "content-type")
     assert content_type =~ "application/json"
@@ -217,6 +218,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
 
     assert_receive {:DOWN, ^tool_ref, :process, ^tool, _reason}
     Task.await(request)
+  end
+
+  defp call_without_stream(opts, accept) do
+    {conn, log} = with_log(fn -> call(opts, %{"progressToken" => "tok"}, accept) end)
+
+    assert log =~ "failed_send_notification"
+    assert log =~ ":no_sse_handler"
+    assert length(Regex.scan(~r/method: "notifications\/progress"/, log)) == 3
+    assert length(Regex.scan(~r/method: "notifications\/tools\/list_changed"/, log)) == 1
+    conn
   end
 
   defp call(opts, extra_meta, accept, tool \\ "progress") do
