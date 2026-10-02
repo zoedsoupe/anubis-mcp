@@ -825,8 +825,9 @@ defmodule Anubis.Server do
 
   The notification carries `level` and `data`. `data` is `message` alone, or
   `%{"message" => message, "data" => data}` when `data` is given. Messages below
-  the client's log threshold are dropped. Stateless HTTP streams logs only
-  when the request declares `io.modelcontextprotocol/logLevel` and accepts SSE.
+  the client's log threshold are dropped. Stateless requests receive logs only
+  when they declare `io.modelcontextprotocol/logLevel`; HTTP also requires SSE.
+  Legacy sessions without a configured threshold receive all levels.
 
   Returns `:ok` after enqueueing; this does not acknowledge client delivery.
 

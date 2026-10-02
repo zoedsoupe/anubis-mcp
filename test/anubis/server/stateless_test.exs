@@ -174,13 +174,16 @@ defmodule Anubis.Server.StatelessTest do
     session = start_session(DualEraServer)
     transport = Registry.transport_name(DualEraServer, StubTransport)
 
-    for {level, expected} <- [{"info", ["info"]}, {"debug", ["debug", "info"]}] do
+    for {level, expected} <- [{"info", ["info"]}, {nil, []}, {"debug", ["debug", "info"]}] do
       StubTransport.clear(transport)
+
+      meta = request_meta([])
+      meta = if level, do: Map.put(meta, "io.modelcontextprotocol/logLevel", level), else: meta
 
       params = %{
         "name" => "logging_tool",
         "arguments" => %{},
-        "_meta" => Map.put(request_meta([]), "io.modelcontextprotocol/logLevel", level)
+        "_meta" => meta
       }
 
       request = build_request("tools/call", params)
@@ -193,6 +196,20 @@ defmodule Anubis.Server.StatelessTest do
 
       assert logs == expected
     end
+  end
+
+  @tag capture_log: false
+  test "an owned stateless session without logLevel suppresses logs outside a handler" do
+    session = start_session(DualEraServer, owner: self())
+    transport = Registry.transport_name(DualEraServer, StubTransport)
+    assert %{"resultType" => "complete"} = request!(session, "server/discover")
+    StubTransport.clear(transport)
+
+    send(session, {:send_notification, "notifications/message", %{"level" => "info", "data" => "working"}})
+    state = :sys.get_state(session)
+    assert is_nil(state.in_flight)
+    assert %{log_level: nil} = Stateless.context(state.request_context)
+    assert StubTransport.get_messages(transport) == []
   end
 
   describe "result shaping" do
@@ -264,7 +281,7 @@ defmodule Anubis.Server.StatelessTest do
     end
   end
 
-  defp start_session(server_module) do
+  defp start_session(server_module, opts \\ []) do
     session_id = "stateless-#{System.unique_integer([:positive])}"
     transport_name = Registry.transport_name(server_module, StubTransport)
     start_supervised!({StubTransport, name: transport_name}, id: transport_name)
@@ -276,11 +293,13 @@ defmodule Anubis.Server.StatelessTest do
 
     start_supervised!(
       {Session,
-       session_id: session_id,
-       server_module: server_module,
-       name: session_name,
-       transport: [layer: StubTransport, name: transport_name],
-       task_supervisor: task_sup},
+       [
+         session_id: session_id,
+         server_module: server_module,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         task_supervisor: task_sup
+       ] ++ opts},
       id: session_name
     )
   end

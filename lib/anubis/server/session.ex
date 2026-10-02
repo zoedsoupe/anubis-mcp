@@ -1204,21 +1204,22 @@ defmodule Anubis.Server.Session do
     end
   end
 
-  # RFC 5424 severities, as `logging/setLevel` names them. Without a threshold
-  # from the client, every message is sent.
+  # RFC 5424 severities, as `logging/setLevel` names them. Only legacy sessions
+  # allow every level when the client has not set a threshold.
   @log_levels ~w(debug info notice warning error critical alert emergency)
 
   # A stateless request declares its own level in `_meta`; a handshake-era
   # session keeps the one `logging/setLevel` set.
-  defp log_threshold(%{in_flight: %{stateless: %{log_level: level}}}), do: level
+  defp log_threshold(%{in_flight: %{stateless: %{log_level: level}}}), do: level || :disabled
 
   defp log_threshold(state) do
     case Stateless.context(state.request_context) do
-      %{log_level: level} when is_binary(level) -> level
+      %{log_level: level} -> level || :disabled
       _other -> state.log_level
     end
   end
 
+  defp logged?(_level, :disabled), do: false
   defp logged?(_level, nil), do: true
 
   defp logged?(level, threshold) do
