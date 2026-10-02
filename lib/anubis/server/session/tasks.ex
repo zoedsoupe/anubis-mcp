@@ -405,9 +405,12 @@ defmodule Anubis.Server.Session.Tasks do
     server_module = state.server_module
     tool_name = params["name"]
     arguments = params["arguments"]
+    session = self()
 
     worker =
       Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+        Anubis.Server.put_session(session)
+
         Telemetry.span_tool_call(tool_name, arguments, fn ->
           Handlers.handle(request, server_module, frame)
         end)

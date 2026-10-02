@@ -34,8 +34,9 @@ defmodule Anubis.Server.TasksTest do
     end
 
     @tag capture_log: false
-    test "preserves the authenticated request context in the worker frame", %{
-      session: session
+    test "preserves the authenticated request context and delivers worker progress", %{
+      session: session,
+      transport: transport
     } do
       auth = %{
         sub: "actor-123",
@@ -68,6 +69,12 @@ defmodule Anubis.Server.TasksTest do
       assert context.auth == auth
       assert context.headers == %{"x-request-id" => "task-request"}
       assert context.remote_ip == {203, 0, 113, 42}
+
+      task_id = decoded["result"]["task"]["taskId"]
+      SyncHelpers.await_state(session, fn state -> not Map.has_key?(state.tasks, task_id) end)
+
+      assert %{"params" => %{"progressToken" => "task-progress", "progress" => 100, "total" => 100}} =
+               Enum.find(StubTransport.get_messages(transport), &(&1["method"] == "notifications/progress"))
     end
 
     test "rejects forbidden tool with -32601", %{session: session} do

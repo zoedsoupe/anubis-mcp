@@ -120,7 +120,8 @@ defmodule TasksStubServer do
     end
 
     @doc """
-    Sends the worker frame context to the configured test process.
+    Sends the worker frame context to the configured test process and reports
+    progress when the request supplies a token.
 
     Returns an `"ok"` tool response with the frame unchanged.
     """
@@ -128,6 +129,7 @@ defmodule TasksStubServer do
     @impl true
     def execute(_params, frame) do
       if pid = frame.assigns[:test_pid], do: send(pid, {:task_context, frame.context})
+      if token = Frame.progress_token(frame), do: Anubis.Server.send_progress(token, 100, total: 100)
       {:reply, Response.text(Response.tool(), "ok"), frame}
     end
   end
