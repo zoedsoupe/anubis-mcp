@@ -3,7 +3,6 @@ defmodule BufferedMockTransport do
   A mock transport that delegates parse/encode to STDIO (for buffering)
   but stubs the GenServer behaviour. Used to test chunked STDIO responses.
   """
-  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   alias Anubis.Transport.STDIO
