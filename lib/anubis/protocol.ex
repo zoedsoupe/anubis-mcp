@@ -157,9 +157,10 @@ defmodule Anubis.Protocol do
   @doc """
   Negotiates protocol version between client and server versions.
 
-  Delegates to `Anubis.Protocol.Registry.negotiate/2`: the client's version
-  is used when the server supports it, otherwise the server's version wins.
+  The client's version is used when the server supports it, otherwise the
+  server's version wins.
   """
+  @deprecated "use Anubis.Protocol.Registry.negotiate/2 instead"
   @spec negotiate_version(version(), version() | [version()]) ::
           {:ok, version(), module()} | :error
   def negotiate_version(client_version, server_version) when is_binary(server_version) do

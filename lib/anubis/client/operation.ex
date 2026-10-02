@@ -1,13 +1,5 @@
 defmodule Anubis.Client.Operation do
-  @moduledoc """
-  Represents an operation to be performed by the MCP client.
-
-  This struct encapsulates all information about a client API call:
-  - `method` - The MCP method to call
-  - `params` - The parameters to send to the server
-  - `progress_opts` - Progress tracking options (optional)
-  - `timeout` - The timeout for this specific operation (default: 30 seconds)
-  """
+  @moduledoc false
 
   @type progress_options :: [
           token: String.t() | integer(),
@@ -28,17 +20,7 @@ defmodule Anubis.Client.Operation do
     progress_opts: []
   ]
 
-  @doc """
-  Creates a new operation struct.
-
-  ## Parameters
-
-    * `attrs` - Map containing the operation attributes
-      * `:method` - The MCP method name (required)
-      * `:params` - The parameters to send to the server (required)
-      * `:progress_opts` - Progress tracking options (optional)
-      * `:timeout` - The timeout for this operation in milliseconds (optional, defaults to 30s)
-  """
+  @doc false
   @spec new(%{
           required(:method) => String.t(),
           optional(:params) => map(),

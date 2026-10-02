@@ -52,7 +52,7 @@ defmodule Anubis.MCP.ResponseTest do
     end
   end
 
-  describe "unwrap/1" do
+  describe "unwrap/1 (deprecated)" do
     test "returns the raw result for any response" do
       success_response = %Response{
         result: %{"data" => "value"},
@@ -66,9 +66,9 @@ defmodule Anubis.MCP.ResponseTest do
         is_error: true
       }
 
-      assert Response.unwrap(success_response) == %{"data" => "value"}
+      assert Response.get_result(success_response) == %{"data" => "value"}
 
-      assert Response.unwrap(error_response) == %{
+      assert Response.get_result(error_response) == %{
                "isError" => true,
                "reason" => "not_found"
              }

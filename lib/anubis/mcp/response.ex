@@ -35,11 +35,8 @@ defmodule Anubis.MCP.Response do
     # Handle domain error
   end
 
-  # Unwrap the response to get the result or error
-  case Anubis.MCP.Response.unwrap(response) do
-    {:ok, result} -> # Handle success
-    {:error, error} -> # Handle domain error
-  end
+  # Get the raw result, whether success or domain error
+  result = Anubis.MCP.Response.get_result(response)
   ```
   """
 
@@ -80,24 +77,9 @@ defmodule Anubis.MCP.Response do
     }
   end
 
-  @doc """
-  Unwraps the response, returning the raw result.
-
-  Returns the raw result data regardless of whether it represents
-  a success or domain error.
-
-  ## Examples
-
-      iex> response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"data" => "value"}, "id" => "req_123"})
-      iex> Anubis.MCP.Response.unwrap(response)
-      %{"data" => "value"}
-      
-      iex> error_response = Anubis.MCP.Response.from_json_rpc(%{"result" => %{"isError" => true, "reason" => "not_found"}, "id" => "req_123"})
-      iex> Anubis.MCP.Response.unwrap(error_response)
-      %{"isError" => true, "reason" => "not_found"}
-  """
+  @deprecated "use get_result/1 instead"
   @spec unwrap(t()) :: map()
-  def unwrap(%__MODULE__{result: result}), do: result
+  def unwrap(response), do: get_result(response)
 
   @doc """
   Checks if the response is successful (no domain error).

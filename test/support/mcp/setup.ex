@@ -137,6 +137,7 @@ defmodule Anubis.MCP.Setup do
     assert_server_initialized(session)
 
     :ok = StubTransport.clear(transport)
+
     Map.merge(ctx, %{
       transport: transport,
       server: session,
