@@ -69,7 +69,8 @@ defmodule Anubis.Server.Session do
           in_flight: Scheduler.in_flight() | nil,
           request_queue: :queue.queue(Scheduler.queued_request()),
           deferred_callbacks: :queue.queue(Scheduler.deferred_callback()),
-          owner_ref: reference() | nil
+          owner_ref: reference() | nil,
+          request_context: map() | nil
         }
 
   defschema(:parse_options, [
@@ -103,9 +104,10 @@ defmodule Anubis.Server.Session do
     * `:timeout` — request timeout in ms (default: 30s)
     * `:owner` — a process whose exit stops the session. A transport that
       starts a session for a single stateless request passes itself, so the
-      session never outlives the request. Such a session calls the server's
-      `init/2` for each stateless request it serves, with that request's client
-      info, because no handshake ever runs it.
+      session never outlives the request, and it does not expire when idle.
+      Such a session calls the server's `init/2` for each stateless request it
+      serves, with that request's client info, because no handshake ever runs
+      it.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -186,7 +188,8 @@ defmodule Anubis.Server.Session do
       in_flight: nil,
       request_queue: :queue.new(),
       deferred_callbacks: :queue.new(),
-      owner_ref: monitor_owner(opts[:owner])
+      owner_ref: monitor_owner(opts[:owner]),
+      request_context: nil
     }
 
     state = schedule_session_expiry(state)
@@ -408,7 +411,7 @@ defmodule Anubis.Server.Session do
 
         # `clientInfo` is optional in this era, and `init/2` is typed to take a map.
         case maybe_call_init(state.server_module, client_info || %{}, frame) do
-          {:ok, frame} -> {:ok, %{state | frame: frame, initialized: true}}
+          {:ok, frame} -> {:ok, %{state | frame: frame, initialized: true, request_context: transport_context}}
           {:error, reason} -> {:error, Error.wrap_reason(reason)}
         end
     end
@@ -870,7 +873,11 @@ defmodule Anubis.Server.Session do
 
   # Frame management
 
+  # A session with an owner serves one request, so a callback that runs outside
+  # it, such as handle_info/2 on a subscription stream, still sees that request.
   defp prepare_frame(state, transport_context \\ nil) do
+    transport_context = transport_context || state.request_context
+
     headers =
       case transport_context do
         %{req_headers: req_headers} -> normalize_headers(req_headers)
@@ -940,6 +947,10 @@ defmodule Anubis.Server.Session do
   defp normalize_headers(_), do: %{}
 
   # Session expiry management
+
+  # A session with an owner lives exactly as long as the request that owns it,
+  # which for a subscription stream may be idle for hours.
+  defp schedule_session_expiry(%{owner_ref: ref} = state) when is_reference(ref), do: state
 
   defp schedule_session_expiry(%{session_idle_timeout: timeout} = state) do
     timer = Process.send_after(self(), :session_expired, timeout)

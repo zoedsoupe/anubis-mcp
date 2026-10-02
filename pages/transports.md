@@ -114,6 +114,26 @@ The `MCP-Protocol-Version` header picks the era for each request. Without it, or
 - No `mcp-session-id` is read or sent, GET and DELETE are 405, and a notification is a 202 with no body.
 - A version the server does not declare is a 400 with `-32022` listing the stateless versions it serves. A server that declares none answers as before, so clients that speak both eras fall back to `initialize`.
 
+#### Subscriptions
+
+`subscriptions/listen` answers with an SSE stream that stays open. It opens with `notifications/subscriptions/acknowledged`, naming the part of the client's filter the server honors: a list-changed flag for a capability declared with `list_changed?: true`, and a resource URI when `resources` is declared with `subscribe?: true` and the URI passes the same scope check as `resources/subscribe`. Only those notifications follow, each carrying the subscription id in `_meta`.
+
+The stream is served by a session that lives as long as the stream does and does not expire when idle. `init/2` runs for it once, and the server emits into it the way it does in the handshake era, from its own callbacks: `Anubis.Server.send_resource_updated/2`, `send_tools_list_changed/0` and the other list-changed helpers, typically from `handle_info/2` after subscribing the session to the application's events in `init/2`. Other notifications, such as log messages, never reach the stream. When the session stops or the transport shuts down, the stream ends with a completion result for the `subscriptions/listen` request.
+
+```elixir
+@impl true
+def init(_client_info, frame) do
+  Phoenix.PubSub.subscribe(MyApp.PubSub, "reports:#{frame.assigns.current_user.id}")
+  {:ok, frame}
+end
+
+@impl true
+def handle_info({:report_ready, id}, frame) do
+  Anubis.Server.send_resource_updated("reports://#{id}")
+  {:noreply, frame}
+end
+```
+
 ### Conditional startup
 
 When running inside a Phoenix release, the HTTP-transport server follows the endpoint's lead: it starts only when Phoenix is serving requests, so nodes started for a migration or a remote console do not spin up MCP sessions. Outside Phoenix it starts unconditionally. To override the detection, pass `start:` explicitly:

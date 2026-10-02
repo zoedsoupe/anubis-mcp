@@ -6,6 +6,7 @@ defmodule Anubis.Server.Handlers do
   alias Anubis.Server.Handlers.Completion
   alias Anubis.Server.Handlers.Prompts
   alias Anubis.Server.Handlers.Resources
+  alias Anubis.Server.Handlers.Subscriptions
   alias Anubis.Server.Handlers.Tools
   alias Anubis.Server.Response
   alias Anubis.Server.Stateless
@@ -44,6 +45,14 @@ defmodule Anubis.Server.Handlers do
   def handle(%{"method" => "server/discover"} = request, module, %Frame{context: context} = frame) do
     if Stateless.era(context.protocol_module) == :stateless do
       {:reply, Stateless.discover_result(module, context.protocol_module), frame}
+    else
+      {:error, Error.protocol(:method_not_found, %{method: request["method"]}), frame}
+    end
+  end
+
+  def handle(%{"method" => "subscriptions/listen"} = request, module, %Frame{context: context} = frame) do
+    if Stateless.era(context.protocol_module) == :stateless do
+      Subscriptions.handle_listen(request, frame, module)
     else
       {:error, Error.protocol(:method_not_found, %{method: request["method"]}), frame}
     end
