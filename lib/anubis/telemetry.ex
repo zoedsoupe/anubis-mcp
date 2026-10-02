@@ -1,5 +1,75 @@
 defmodule Anubis.Telemetry do
-  @moduledoc false
+  @moduledoc """
+  Telemetry events emitted by Anubis.
+
+  Every event is namespaced under `[:anubis_mcp | event]`. The client emits
+  them, the server emits them, and the transports emit their own.
+
+  ## Attaching handlers
+
+      :telemetry.attach_many(
+        "anubis-metrics",
+        [
+          [:anubis_mcp, :server, :request],
+          [:anubis_mcp, :server, :tool_call, :stop]
+        ],
+        &MyApp.Metrics.handle_event/4,
+        %{}
+      )
+
+  ## Events
+
+  Most events carry `%{system_time: System.system_time()}` as their only
+  measurement; the interesting payload is in the metadata. The
+  `:response` and `:error` events also carry `%{duration: elapsed_ms}`.
+
+  ### Client
+
+  | Event | Metadata |
+  | --- | --- |
+  | `[:anubis_mcp, :client, :init]` | `client_name`, `transport`, `protocol_version`, `capabilities` |
+  | `[:anubis_mcp, :client, :request]` | `method`, `request_id` |
+  | `[:anubis_mcp, :client, :response]` | `id`, `method`, `status`, `transport` |
+  | `[:anubis_mcp, :client, :notification]` | `method`, `uri` |
+  | `[:anubis_mcp, :client, :error]` | `id`, `method`, `error` |
+  | `[:anubis_mcp, :client, :terminate]` | `client_name`, `reason`, `pending_requests` |
+  | `[:anubis_mcp, :client, :roots]` | `action`, `request_id` |
+
+  ### Server
+
+  | Event | Metadata |
+  | --- | --- |
+  | `[:anubis_mcp, :server, :init]` | `session_id`, `capabilities`, `server_info`, `module` |
+  | `[:anubis_mcp, :server, :request]` | `id` |
+  | `[:anubis_mcp, :server, :response]` | `id`, `method`, `level` |
+  | `[:anubis_mcp, :server, :notification]` | `method`, `server_module`, `started_at` |
+  | `[:anubis_mcp, :server, :error]` | `id`, `error`, `message`, `session_id`, `stateless` |
+  | `[:anubis_mcp, :server, :terminate]` | `reason` |
+
+  ### Tool calls
+
+  `[:anubis_mcp, :server, :tool_call]` is a `:telemetry.span/3`, so it emits
+  `:start`, `:stop` and `:exception` events. See `span_tool_call/3`.
+
+  ### Transport
+
+  Transport events always carry `transport` (the layer, e.g. `:stdio` or
+  `:streamable_http`). The rest varies by transport:
+
+  | Event | Metadata |
+  | --- | --- |
+  | `[:anubis_mcp, :transport, :init]` | `transport`, `client`, `io_device` |
+  | `[:anubis_mcp, :transport, :connect]` | `transport`, `client` |
+  | `[:anubis_mcp, :transport, :send]` | `transport`, `client` |
+  | `[:anubis_mcp, :transport, :receive]` | `transport`, `client`, `message_size` |
+  | `[:anubis_mcp, :transport, :disconnect]` | `transport`, `client`, `reason` |
+  | `[:anubis_mcp, :transport, :terminate]` | `transport`, `client`, `reason` |
+  | `[:anubis_mcp, :transport, :error]` | `transport`, `client`, `error` |
+  | `[:anubis_mcp, :transport, :sse_handler, :registered]` | `session_id`, `handler_pid`, `handler_count` (measurement) |
+
+  Treat metadata as open: new keys may be added, so match on the ones you
+  need and ignore the rest.
+  """
 
   @default_capture_tool_payload false
 
@@ -89,8 +159,6 @@ defmodule Anubis.Telemetry do
   def event_server_error, do: [:server, :error]
   def event_server_terminate, do: [:server, :terminate]
   def event_server_tool_call, do: [:server, :tool_call]
-  def event_server_resource_read, do: [:server, :resource_read]
-  def event_server_prompt_get, do: [:server, :prompt_get]
 
   # Transport events
   def event_transport_init, do: [:transport, :init]
@@ -102,18 +170,6 @@ defmodule Anubis.Telemetry do
   def event_transport_terminate, do: [:transport, :terminate]
   def event_transport_sse_handler_registered, do: [:transport, :sse_handler, :registered]
 
-  # Message events
-  def event_message_encode, do: [:message, :encode]
-  def event_message_decode, do: [:message, :decode]
-
-  # Progress events
-  def event_progress_update, do: [:progress, :update]
-
   # Roots events
   def event_client_roots, do: [:client, :roots]
-
-  # Session events (for StreamableHTTP transport)
-  def event_server_session_created, do: [:server, :session, :created]
-  def event_server_session_terminated, do: [:server, :session, :terminated]
-  def event_server_session_cleanup, do: [:server, :session, :cleanup]
 end

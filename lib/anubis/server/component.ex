@@ -1,5 +1,56 @@
 defmodule Anubis.Server.Component do
-  @moduledoc false
+  @moduledoc """
+  The DSL behind `use Anubis.Server.Component`.
+
+  A component is one addressable piece of an MCP server: a tool, a prompt
+  or a resource. `use Anubis.Server.Component` injects the callbacks for
+  whichever type you pass, so you only write the part that is yours (the
+  `run/3` or `render/3` implementation) plus the schema.
+
+      defmodule MyApp.Tools.Search do
+        use Anubis.Server.Component, type: :tool, name: "search", title: "Search"
+
+        @impl true
+        def run(args, frame, _context) do
+          {:ok, %{results: MyApp.search(args["query"])}}
+        end
+      end
+
+  ## Options
+
+  `:type` is required and must be `:tool`, `:prompt` or `:resource`. The
+  options below are accepted by all three types, plus the ones each
+  behaviour documents.
+
+    * `:name` - the wire name. Defaults to the module basename for
+      resources, `nil` otherwise.
+    * `:title` - a human-readable label.
+    * `:description` - defaults to the module `@moduledoc`.
+    * `:annotations` - behaviour-specific hints (`readOnlyHint`,
+      `destructiveHint`, ...).
+    * `:meta` - arbitrary `_meta` merged into the component descriptor.
+    * `:icons` - icons rendered by supporting clients.
+    * `:scopes` - authorization scopes required to see this component.
+
+  Resources additionally take `:uri` or `:uri_template` (mutually
+  exclusive) and `:mime_type`. Tools additionally take `:task_support`
+  (`:forbidden`, `:optional` or `:required`).
+
+  ## Schemas
+
+  `schema/1` and `output_schema/1` wrap a Peri schema and compile it at
+  build time, so the JSON Schema handed to clients is derived from the
+  same source that validates arguments:
+
+      schema do
+        field(:query, :string, description: "What to look for")
+        field(:limit, :integer, default: 10)
+      end
+
+  See `Anubis.Server.Component.Tool`, `.Prompt` and `.Resource` for the
+  callbacks each type must implement, and the *Building a Server* guide
+  for end-to-end examples.
+  """
 
   alias Anubis.Server.Component.Prompt
   alias Anubis.Server.Component.Resource
