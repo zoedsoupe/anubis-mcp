@@ -112,6 +112,7 @@ defmodule Anubis.Server.Component.Resource do
           mime_type: String.t(),
           handler: module | nil,
           title: String.t() | nil,
+          icons: [map()] | nil,
           scopes: [String.t()]
         }
 
@@ -123,6 +124,7 @@ defmodule Anubis.Server.Component.Resource do
     mime_type: "text/plain",
     handler: nil,
     title: nil,
+    icons: nil,
     scopes: []
   ]
 
@@ -200,6 +202,16 @@ defmodule Anubis.Server.Component.Resource do
   @callback description() :: String.t()
 
   @doc """
+  Returns optional icons for the resource.
+
+  Icons identify the resource in host user interfaces. Each icon is a map with a
+  required `:src` (URI string, `https:` or `data:`), an optional `:mimeType`,
+  and optional `:sizes` (a list of `"<width>x<height>"` strings or `"any"`).
+  This is an optional callback.
+  """
+  @callback icons() :: [map()] | nil
+
+  @doc """
   Reads the resource content.
 
   ## Parameters
@@ -226,7 +238,7 @@ defmodule Anubis.Server.Component.Resource do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks title: 0, uri: 0, uri_template: 0, description: 0
+  @optional_callbacks title: 0, uri: 0, uri_template: 0, description: 0, icons: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Resource
@@ -239,6 +251,7 @@ defmodule Anubis.Server.Component.Resource do
       |> then(&if resource.title, do: Map.put(&1, :title, resource.title), else: &1)
       |> then(&if resource.description, do: Map.put(&1, :description, resource.description), else: &1)
       |> then(&if resource.mime_type, do: Map.put(&1, :mimeType, resource.mime_type), else: &1)
+      |> then(&if resource.icons, do: Map.put(&1, :icons, resource.icons), else: &1)
       |> JSON.encode!()
     end
 
@@ -246,6 +259,7 @@ defmodule Anubis.Server.Component.Resource do
       resource
       |> Map.take([:name, :uri, :description, :title])
       |> Map.put(:mimeType, resource.mime_type)
+      |> then(&if resource.icons, do: Map.put(&1, :icons, resource.icons), else: &1)
       |> JSON.encode!()
     end
   end

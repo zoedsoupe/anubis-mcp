@@ -97,6 +97,7 @@ defmodule Anubis.Server.Component.Prompt do
           arguments: map | nil,
           handler: module | nil,
           validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
+          icons: [map()] | nil,
           scopes: [String.t()]
         }
 
@@ -107,6 +108,7 @@ defmodule Anubis.Server.Component.Prompt do
     arguments: nil,
     handler: nil,
     validate_input: nil,
+    icons: nil,
     scopes: []
   ]
 
@@ -139,6 +141,16 @@ defmodule Anubis.Server.Component.Prompt do
       end
   """
   @callback description() :: String.t()
+
+  @doc """
+  Returns optional icons for the prompt.
+
+  Icons identify the prompt in host user interfaces. Each icon is a map with a
+  required `:src` (URI string, `https:` or `data:`), an optional `:mimeType`,
+  and optional `:sizes` (a list of `"<width>x<height>"` strings or `"any"`).
+  This is an optional callback.
+  """
+  @callback icons() :: [map()] | nil
 
   @doc """
   Returns the list of arguments this prompt accepts.
@@ -196,7 +208,7 @@ defmodule Anubis.Server.Component.Prompt do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks title: 0, description: 0
+  @optional_callbacks title: 0, description: 0, icons: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Prompt
@@ -204,6 +216,7 @@ defmodule Anubis.Server.Component.Prompt do
     def encode(%Prompt{} = prompt, _) do
       prompt
       |> Map.take([:name, :description, :arguments])
+      |> then(&if prompt.icons, do: Map.put(&1, :icons, prompt.icons), else: &1)
       |> JSON.encode!()
     end
   end

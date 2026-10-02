@@ -61,6 +61,7 @@ defmodule Anubis.Server.Component.Tool do
   @type result :: term()
   @type schema :: map()
   @type annotations :: map() | nil
+  @type icons :: [map()] | nil
 
   @type task_support :: :forbidden | :optional | :required
 
@@ -71,6 +72,7 @@ defmodule Anubis.Server.Component.Tool do
           input_schema: map | nil,
           output_schema: map | nil,
           annotations: map | nil,
+          icons: icons(),
           meta: map | nil,
           task_support: task_support(),
           handler: module | nil,
@@ -86,6 +88,7 @@ defmodule Anubis.Server.Component.Tool do
     input_schema: nil,
     output_schema: nil,
     annotations: nil,
+    icons: nil,
     meta: nil,
     task_support: :forbidden,
     handler: nil,
@@ -161,6 +164,25 @@ defmodule Anubis.Server.Component.Tool do
   @callback annotations() :: annotations()
 
   @doc """
+  Returns optional icons for the tool.
+
+  Icons identify the tool in host user interfaces. Each icon is a map with a
+  required `:src` (URI string, `https:` or `data:`), an optional `:mimeType`,
+  and optional `:sizes` (a list of `"<width>x<height>"` strings or `"any"`).
+  This is an optional callback.
+
+  ## Examples
+
+      def icons do
+        [
+          %{src: "https://example.com/icon.png", mimeType: "image/png", sizes: ["48x48"]},
+          %{src: "data:image/svg+xml;base64,...", sizes: ["any"]}
+        ]
+      end
+  """
+  @callback icons() :: icons()
+
+  @doc """
   Returns optional metadata for the tool.
 
   The _meta field allows tools to carry arbitrary metadata that is not
@@ -219,7 +241,13 @@ defmodule Anubis.Server.Component.Tool do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks annotations: 0, output_schema: 0, title: 0, description: 0, meta: 0, task_support: 0
+  @optional_callbacks annotations: 0,
+                      icons: 0,
+                      output_schema: 0,
+                      title: 0,
+                      description: 0,
+                      meta: 0,
+                      task_support: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Tool
@@ -233,6 +261,7 @@ defmodule Anubis.Server.Component.Tool do
       |> then(&if t = tool.title, do: Map.put(&1, "title", t), else: &1)
       |> then(&if os = tool.output_schema, do: Map.put(&1, "outputSchema", os), else: &1)
       |> then(&if a = tool.annotations, do: Map.put(&1, "annotations", a), else: &1)
+      |> then(&if i = tool.icons, do: Map.put(&1, "icons", i), else: &1)
       |> then(&if m = tool.meta, do: Map.put(&1, "_meta", m), else: &1)
       |> maybe_put_execution(tool)
       |> JSON.encode!()

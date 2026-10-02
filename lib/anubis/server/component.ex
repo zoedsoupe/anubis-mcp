@@ -43,6 +43,7 @@ defmodule Anubis.Server.Component do
     mime_type = Keyword.get(opts, :mime_type, "text/plain")
     annotations = Keyword.get(opts, :annotations)
     meta = Keyword.get(opts, :meta)
+    icons = Keyword.get(opts, :icons)
     scopes = Keyword.get(opts, :scopes, [])
 
     if not (is_list(scopes) and Enum.all?(scopes, &is_binary/1)) do
@@ -151,6 +152,11 @@ defmodule Anubis.Server.Component do
         def mime_type, do: unquote(mime_type)
 
         defoverridable mime_type: 0
+      end
+
+      if unquote(icons) != nil do
+        @impl true
+        def icons, do: unquote(icons)
       end
     end
   end

@@ -98,6 +98,7 @@ defmodule Anubis.Server do
 
   alias Anubis.MCP.ElicitationSchema
   alias Anubis.Server.Component
+  alias Anubis.Server.Component.Icons
   alias Anubis.Server.Component.Prompt
   alias Anubis.Server.Component.Resource
   alias Anubis.Server.Component.Tool
@@ -446,7 +447,7 @@ defmodule Anubis.Server do
         Handlers.handle(request, __MODULE__, frame)
       end
 
-      unquote(maybe_define_server_info(env.module, opts[:name], opts[:version]))
+      unquote(maybe_define_server_info(env.module, opts[:name], opts[:version], opts[:icons], opts[:website_url]))
       unquote(maybe_define_server_capabilities(env.module, opts[:capabilities]))
       unquote(maybe_define_protocol_versions(env.module, opts[:protocol_versions]))
       unquote(maybe_define_server_instructions(env.module, opts[:instructions]))
@@ -478,6 +479,7 @@ defmodule Anubis.Server do
 
   def parse_components({:tool, name, mod}) do
     annotations = if Anubis.exported?(mod, :annotations, 0), do: mod.annotations()
+    icons = component_icons(mod)
     meta = if Anubis.exported?(mod, :meta, 0), do: mod.meta()
     output_schema = if Anubis.exported?(mod, :output_schema, 0), do: mod.output_schema()
     task_support = if Anubis.exported?(mod, :task_support, 0), do: mod.task_support(), else: :forbidden
@@ -498,6 +500,7 @@ defmodule Anubis.Server do
           input_schema: mod.input_schema(),
           output_schema: output_schema,
           annotations: annotations,
+          icons: icons,
           meta: meta,
           task_support: task_support,
           handler: mod,
@@ -513,6 +516,7 @@ defmodule Anubis.Server do
 
   def parse_components({:prompt, name, mod}) do
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+    icons = component_icons(mod)
     scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
     if Anubis.exported?(mod, :arguments, 0) do
@@ -526,6 +530,7 @@ defmodule Anubis.Server do
           arguments: mod.arguments(),
           handler: mod,
           validate_input: validate_input,
+          icons: icons,
           scopes: scopes
         }
       ]
@@ -538,6 +543,7 @@ defmodule Anubis.Server do
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
     has_uri = Anubis.exported?(mod, :uri, 0)
     has_uri_template = Anubis.exported?(mod, :uri_template, 0)
+    icons = component_icons(mod)
     scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
     cond do
@@ -550,6 +556,7 @@ defmodule Anubis.Server do
             description: Component.get_description(mod),
             mime_type: mod.mime_type(),
             handler: mod,
+            icons: icons,
             scopes: scopes
           }
         ]
@@ -563,6 +570,7 @@ defmodule Anubis.Server do
             description: Component.get_description(mod),
             mime_type: mod.mime_type(),
             handler: mod,
+            icons: icons,
             scopes: scopes
           }
         ]
@@ -575,6 +583,19 @@ defmodule Anubis.Server do
   defp determine_tool_title(%{"title" => title}, _) when is_binary(title), do: title
   defp determine_tool_title(%{title: title}, _) when is_binary(title), do: title
   defp determine_tool_title(_, title) when is_binary(title), do: title
+
+  defp component_icons(mod) do
+    if Anubis.exported?(mod, :icons, 0) do
+      validate_component_icons(mod.icons())
+    end
+  end
+
+  defp validate_component_icons(nil), do: nil
+
+  defp validate_component_icons(icons) do
+    {:ok, icons} = Icons.icons(icons)
+    icons
+  end
 
   defp input_validator(mod) do
     if Anubis.exported?(mod, :mcp_schema, 1), do: &mod.mcp_schema/1
@@ -592,13 +613,17 @@ defmodule Anubis.Server do
     end
   end
 
-  defp maybe_define_server_info(module, name, version) do
+  defp maybe_define_server_info(module, name, version, icons, website_url) do
     if not Module.defines?(module, {:server_info, 0}) or is_nil(name) or
          is_nil(version) do
+      info =
+        %{"name" => name, "version" => version}
+        |> then(&if icons, do: Map.put(&1, "icons", icons), else: &1)
+        |> then(&if website_url, do: Map.put(&1, "websiteUrl", website_url), else: &1)
+
       quote generated: true do
         @impl Anubis.Server
-        def server_info,
-          do: %{"name" => unquote(name), "version" => unquote(version)}
+        def server_info, do: unquote(Macro.escape(info))
       end
     end
   end
