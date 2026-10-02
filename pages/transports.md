@@ -109,7 +109,7 @@ use Anubis.Server,
   protocol_versions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]
 ```
 
-The `MCP-Protocol-Version` header picks the era for each request. Without it, or with a handshake version, nothing changes. With `2026-07-28`:
+The `MCP-Protocol-Version` header picks the era for each request. Without it, or with a handshake version, requests use the legacy session path. A body declaring a stateless protocol version on that path is rejected with HTTP 400 and `-32020` before the session is accessed. With `2026-07-28`:
 
 - `Mcp-Method` must name the body's method, and `Mcp-Name` the tool, prompt or resource for `tools/call`, `prompts/get` and `resources/read`; a mismatch, or a `_meta` version different from the header, is a 400 with `-32020`.
 - The request is served by a session started for it alone and stopped once it answers. `init/2` runs for it with that request's client info, and the frame does not carry over to the next request. The `[:server, :init]` and `[:server, :terminate]` telemetry events fire once per such request.

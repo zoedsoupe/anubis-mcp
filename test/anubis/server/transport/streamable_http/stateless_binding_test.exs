@@ -324,6 +324,65 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
   end
 
   describe "the legacy era on the same endpoint" do
+    test "rejects stateless bodies on a legacy session before merging request assigns", %{opts: opts} do
+      body =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{"protocolVersion" => "2025-11-25", "clientInfo" => @client_info, "capabilities" => %{}}
+        })
+
+      initialized =
+        :post
+        |> conn("/", body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> StreamableHTTPPlug.call(opts)
+
+      assert initialized.status == 200
+      [session_id] = get_resp_header(initialized, "mcp-session-id")
+
+      for version <- [nil, "2025-11-25"], parsed? <- [false, true] do
+        body = tool_call_body(%{"name" => "Second", "version" => "1.0.0"})
+        body = if parsed?, do: JSON.decode!(body), else: body
+
+        request =
+          :post
+          |> conn("/", body)
+          |> put_req_header("content-type", "application/json")
+          |> put_req_header("accept", "application/json")
+          |> put_req_header("mcp-session-id", session_id)
+          |> assign(:user, "rejected-request")
+
+        request = if version, do: put_req_header(request, "mcp-protocol-version", version), else: request
+        response = StreamableHTTPPlug.call(request, opts)
+
+        assert_header_mismatch(response, "MCP-Protocol-Version")
+        assert JSON.decode!(response.resp_body)["id"] == 1
+        assert get_resp_header(response, "mcp-session-id") == []
+      end
+
+      legacy_body =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 2,
+          "method" => "tools/call",
+          "params" => %{"name" => "who_am_i_tool", "arguments" => %{}}
+        })
+
+      response =
+        :post
+        |> conn("/", legacy_body)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> put_req_header("mcp-session-id", session_id)
+        |> StreamableHTTPPlug.call(opts)
+
+      assert response.status == 200
+      assert response.resp_body |> JSON.decode!() |> tool_payload() |> Map.fetch!("user") == nil
+    end
+
     test "initialize still opens a session", %{opts: opts} do
       body =
         JSON.encode!(%{

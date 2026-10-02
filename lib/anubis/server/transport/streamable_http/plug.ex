@@ -47,6 +47,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Message
     alias Anubis.Server.Authorization
     alias Anubis.Server.Registry
+    alias Anubis.Server.Stateless
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.Session
     alias Anubis.Server.Transport.StreamableHTTP
@@ -307,6 +308,14 @@ if Code.ensure_loaded?(Plug) do
 
     defp process_message(conn, message, session_id, context, opts) do
       cond do
+        Stateless.request?(message) ->
+          error =
+            Error.protocol(:header_mismatch, %{
+              message: "MCP-Protocol-Version must select the stateless version declared in the request body"
+            })
+
+          send_jsonrpc_error(conn, error, extract_request_id(message))
+
         Message.is_notification(message) ->
           handle_notification_message(conn, message, session_id, context, opts)
 
