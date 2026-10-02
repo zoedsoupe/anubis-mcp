@@ -193,7 +193,6 @@ capabilities =
 ```
 
 `list_changed?: true` is only valid for `:roots` — it is the single client capability with a `listChanged` flag in the MCP schema. Passing it with `:sampling` or `:elicitation` raises `ArgumentError`.
-```
 
 ## Server logs
 

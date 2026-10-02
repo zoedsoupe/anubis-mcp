@@ -91,6 +91,7 @@ defmodule Anubis.MixProject do
         "pages/transports.md",
         "pages/authorization.md",
         "pages/testing.md",
+        "pages/extending.md",
         "pages/recipes.md",
         "pages/cheatsheet.cheatmd",
         "CHANGELOG.md",
@@ -107,7 +108,8 @@ defmodule Anubis.MixProject do
           "pages/building-a-client.md",
           "pages/transports.md",
           "pages/authorization.md",
-          "pages/testing.md"
+          "pages/testing.md",
+          "pages/extending.md"
         ],
         "Patterns & Reference": [
           "pages/recipes.md",

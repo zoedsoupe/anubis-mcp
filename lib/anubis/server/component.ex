@@ -5,14 +5,18 @@ defmodule Anubis.Server.Component do
   A component is one addressable piece of an MCP server: a tool, a prompt
   or a resource. `use Anubis.Server.Component` injects the callbacks for
   whichever type you pass, so you only write the part that is yours (the
-  `run/3` or `render/3` implementation) plus the schema.
+  `execute/2`, `get_messages/2` or `read/2` implementation) plus the schema.
 
       defmodule MyApp.Tools.Search do
         use Anubis.Server.Component, type: :tool, name: "search", title: "Search"
 
+        schema do
+          field(:query, :string, description: "What to look for")
+        end
+
         @impl true
-        def run(args, frame, _context) do
-          {:ok, %{results: MyApp.search(args["query"])}}
+        def execute(%{"query" => query}, frame) do
+          {:reply, Response.text(Response.tool(), MyApp.search(query)), frame}
         end
       end
 

@@ -112,4 +112,5 @@ The [Building a Client](building-a-client.md) guide covers discovery, error hand
 - [Transports](transports.md) explains STDIO and Streamable HTTP, including Phoenix integration.
 - [Authorization](authorization.md) documents OAuth 2.1 bearer token support for HTTP servers.
 - [Testing](testing.md) shows how to test your components with plain ExUnit.
+- [Extending](extending.md) maps every behaviour and adapter you can swap.
 - [Recipes](recipes.md) collects patterns for common production concerns.
