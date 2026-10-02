@@ -1,6 +1,6 @@
 defmodule Anubis.Transport.BehaviourTest do
   @moduledoc """
-  Tests for the functional `Anubis.Transport` behaviour implementations.
+  Tests for the functional `Anubis.Transport.Behaviour` callbacks implementations.
 
   Verifies transport_init/1, parse/2, encode/2, and extract_metadata/2
   callbacks across all client transport modules.

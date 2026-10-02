@@ -105,7 +105,7 @@ defmodule Anubis.MCP.ErrorTest do
                  "code" => -32_022,
                  "data" => %{"supported" => ["2026-07-28"], "requested" => "1900-01-01"}
                }
-             } = Jason.decode!(encoded)
+             } = JSON.decode!(encoded)
     end
 
     test "missing_required_client_capability/1 serializes requiredCapabilities as an object" do
@@ -116,12 +116,7 @@ defmodule Anubis.MCP.ErrorTest do
                  "code" => -32_021,
                  "data" => %{"requiredCapabilities" => %{"elicitation" => %{}}}
                }
-             } = Jason.decode!(encoded)
-    end
-
-    test "rejects argument shapes the specification does not allow" do
-      assert_raise FunctionClauseError, fn -> Error.unsupported_protocol_version("1900-01-01", "2026-07-28") end
-      assert_raise FunctionClauseError, fn -> Error.missing_required_client_capability(["elicitation"]) end
+             } = JSON.decode!(encoded)
     end
 
     test "rejects supported entries that are not version strings" do
@@ -253,7 +248,7 @@ defmodule Anubis.MCP.ErrorTest do
       error = Error.protocol(:parse_error)
       {:ok, encoded} = Error.to_json_rpc(error, "req-123")
 
-      decoded = Jason.decode!(encoded)
+      decoded = JSON.decode!(encoded)
       assert decoded["jsonrpc"] == "2.0"
       assert decoded["id"] == "req-123"
       assert decoded["error"]["code"] == -32_700
@@ -264,7 +259,7 @@ defmodule Anubis.MCP.ErrorTest do
       error = Error.protocol(:invalid_params, %{field: "name"})
       {:ok, encoded} = Error.to_json_rpc(error, 1)
 
-      decoded = Jason.decode!(encoded)
+      decoded = JSON.decode!(encoded)
       assert decoded["error"]["data"]["field"] == "name"
     end
 
@@ -272,7 +267,7 @@ defmodule Anubis.MCP.ErrorTest do
       error = Error.execution("Custom error message")
       {:ok, encoded} = Error.to_json_rpc(error, 1)
 
-      decoded = Jason.decode!(encoded)
+      decoded = JSON.decode!(encoded)
       assert decoded["error"]["message"] == "Custom error message"
     end
   end

@@ -41,7 +41,6 @@ defmodule Anubis.Client do
   When starting the client, provide transport configuration:
 
     * `{:stdio, command: "cmd", args: ["arg1", "arg2"]}`
-    * `{:websocket, url: "ws://localhost:8000/ws"}`
     * `{:streamable_http, url: "http://localhost:8000/mcp"}`
 
   ## Process Naming
@@ -160,14 +159,13 @@ defmodule Anubis.Client do
   @typedoc """
   MCP client transport options
 
-  - `:layer` - The transport layer to use, either `Anubis.Transport.STDIO`, `Anubis.Transport.WebSocket`, or `Anubis.Transport.StreamableHTTP` (required)
+  - `:layer` - The transport layer to use, either `Anubis.Transport.STDIO` or `Anubis.Transport.StreamableHTTP` (required)
   - `:name` - The transport optional custom name
   """
   @type transport ::
           list(
             {:layer,
              Anubis.Transport.STDIO
-             | Anubis.Transport.WebSocket
              | Anubis.Transport.StreamableHTTP}
             | {:name, GenServer.server()}
           )
@@ -228,6 +226,24 @@ defmodule Anubis.Client do
     {:protocol_version, {:string, {:default, @default_protocol_version}}},
     {:timeout, {:integer, {:default, @default_operation_timeout}}}
   ])
+
+  defschema(:request_opts, %{
+    cursor: :string,
+    timeout: {:integer, {:gt, 0}},
+    progress: %{
+      token: {:either, {:string, :integer}},
+      callback: {:custom, &__MODULE__.validate_progress_callback/1}
+    }
+  })
+
+  @request_opts [:cursor, :timeout, :progress]
+
+  @doc false
+  def validate_progress_callback(cb) when is_function(cb, 3), do: :ok
+
+  def validate_progress_callback(cb) do
+    {:error, "expected a 3-arity progress callback, got: #{inspect(cb)}", []}
+  end
 
   @doc """
   Guard to check if an atom is a valid client capability.
@@ -314,6 +330,47 @@ defmodule Anubis.Client do
 
   # Public API
 
+  @spec request(t(), String.t(), map(), keyword()) :: {:ok, Response.t()} | :pong | {:error, Error.t()}
+  defp request(client, method, params, opts) do
+    with :ok <- validate_request_opts(opts) do
+      operation =
+        Operation.new(%{
+          method: method,
+          params: params,
+          progress_opts: Keyword.get(opts, :progress),
+          timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
+        })
+
+      buffer_timeout = operation.timeout + to_timeout(second: 1)
+      GenServer.call(client, {:operation, operation}, buffer_timeout)
+    end
+  end
+
+  @spec validate_request_opts(keyword()) :: :ok | {:error, Error.t()}
+  defp validate_request_opts(opts) do
+    case Keyword.keys(opts) -- @request_opts do
+      [] ->
+        case request_opts(Map.new(opts)) do
+          {:ok, _} ->
+            :ok
+
+          {:error, errors} ->
+            {:error, Error.protocol(:invalid_params, %{errors: Enum.map(errors, &Peri.Error.error_to_map/1)})}
+        end
+
+      unknown ->
+        {:error, Error.protocol(:invalid_params, %{unknown_options: unknown, allowed: @request_opts})}
+    end
+  end
+
+  @spec pagination_params(keyword()) :: map()
+  defp pagination_params(opts) do
+    case Keyword.get(opts, :cursor) do
+      nil -> %{}
+      cursor -> %{"cursor" => cursor}
+    end
+  end
+
   @doc """
   Sends a ping request to the server to check connection health. Returns `:pong` if successful.
 
@@ -326,16 +383,7 @@ defmodule Anubis.Client do
   """
   @spec ping(t, keyword) :: :pong | {:error, Error.t()}
   def ping(client, opts \\ []) when is_list(opts) do
-    operation =
-      Operation.new(%{
-        method: "ping",
-        params: %{},
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "ping", %{}, opts)
   end
 
   @doc """
@@ -351,19 +399,7 @@ defmodule Anubis.Client do
   """
   @spec list_resources(t, keyword) :: {:ok, Response.t()} | {:error, Error.t()}
   def list_resources(client, opts \\ []) do
-    cursor = Keyword.get(opts, :cursor)
-    params = if cursor, do: %{"cursor" => cursor}, else: %{}
-
-    operation =
-      Operation.new(%{
-        method: "resources/list",
-        params: params,
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "resources/list", pagination_params(opts), opts)
   end
 
   @doc """
@@ -379,19 +415,7 @@ defmodule Anubis.Client do
   """
   @spec list_resource_templates(t, keyword) :: {:ok, Response.t()} | {:error, Error.t()}
   def list_resource_templates(client, opts \\ []) do
-    cursor = Keyword.get(opts, :cursor)
-    params = if cursor, do: %{"cursor" => cursor}, else: %{}
-
-    operation =
-      Operation.new(%{
-        method: "resources/templates/list",
-        params: params,
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "resources/templates/list", pagination_params(opts), opts)
   end
 
   @doc """
@@ -407,16 +431,7 @@ defmodule Anubis.Client do
   @spec read_resource(t, String.t(), keyword) ::
           {:ok, Response.t()} | {:error, Error.t()}
   def read_resource(client, uri, opts \\ []) do
-    operation =
-      Operation.new(%{
-        method: "resources/read",
-        params: %{"uri" => uri},
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "resources/read", %{"uri" => uri}, opts)
   end
 
   @doc """
@@ -433,15 +448,7 @@ defmodule Anubis.Client do
   @spec subscribe_resource(t, String.t(), keyword) ::
           {:ok, Response.t()} | {:error, Error.t()}
   def subscribe_resource(client, uri, opts \\ []) do
-    operation =
-      Operation.new(%{
-        method: "resources/subscribe",
-        params: %{"uri" => uri},
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "resources/subscribe", %{"uri" => uri}, opts)
   end
 
   @doc """
@@ -454,15 +461,7 @@ defmodule Anubis.Client do
   @spec unsubscribe_resource(t, String.t(), keyword) ::
           {:ok, Response.t()} | {:error, Error.t()}
   def unsubscribe_resource(client, uri, opts \\ []) do
-    operation =
-      Operation.new(%{
-        method: "resources/unsubscribe",
-        params: %{"uri" => uri},
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "resources/unsubscribe", %{"uri" => uri}, opts)
   end
 
   @doc """
@@ -478,19 +477,7 @@ defmodule Anubis.Client do
   """
   @spec list_prompts(t, keyword) :: {:ok, Response.t()} | {:error, Error.t()}
   def list_prompts(client, opts \\ []) do
-    cursor = Keyword.get(opts, :cursor)
-    params = if cursor, do: %{"cursor" => cursor}, else: %{}
-
-    operation =
-      Operation.new(%{
-        method: "prompts/list",
-        params: params,
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "prompts/list", pagination_params(opts), opts)
   end
 
   @doc """
@@ -509,16 +496,7 @@ defmodule Anubis.Client do
     params = %{"name" => name}
     params = if arguments, do: Map.put(params, "arguments", arguments), else: params
 
-    operation =
-      Operation.new(%{
-        method: "prompts/get",
-        params: params,
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "prompts/get", params, opts)
   end
 
   @doc """
@@ -534,19 +512,7 @@ defmodule Anubis.Client do
   """
   @spec list_tools(t, keyword) :: {:ok, Response.t()} | {:error, Error.t()}
   def list_tools(client, opts \\ []) do
-    cursor = Keyword.get(opts, :cursor)
-    params = if cursor, do: %{"cursor" => cursor}, else: %{}
-
-    operation =
-      Operation.new(%{
-        method: "tools/list",
-        params: params,
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "tools/list", pagination_params(opts), opts)
   end
 
   @doc """
@@ -565,16 +531,7 @@ defmodule Anubis.Client do
     params = %{"name" => name}
     params = if arguments, do: Map.put(params, "arguments", arguments), else: params
 
-    operation =
-      Operation.new(%{
-        method: "tools/call",
-        params: params,
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "tools/call", params, opts)
   end
 
   @doc """
@@ -644,15 +601,7 @@ defmodule Anubis.Client do
   """
   @spec set_log_level(t, String.t()) :: {:ok, Response.t()} | {:error, Error.t()}
   def set_log_level(client, level) when level in ~w(debug info notice warning error critical alert emergency) do
-    operation =
-      Operation.new(%{
-        method: "logging/setLevel",
-        params: %{"level" => level},
-        timeout: @default_operation_timeout
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "logging/setLevel", %{"level" => level}, [])
   end
 
   @doc """
@@ -689,16 +638,7 @@ defmodule Anubis.Client do
       "argument" => argument
     }
 
-    operation =
-      Operation.new(%{
-        method: "completion/complete",
-        params: params,
-        progress_opts: Keyword.get(opts, :progress),
-        timeout: Keyword.get(opts, :timeout, @default_operation_timeout)
-      })
-
-    buffer_timeout = operation.timeout + to_timeout(second: 1)
-    GenServer.call(client, {:operation, operation}, buffer_timeout)
+    request(client, "completion/complete", params, opts)
   end
 
   @doc """

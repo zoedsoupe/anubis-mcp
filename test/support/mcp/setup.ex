@@ -1,9 +1,8 @@
 defmodule Anubis.MCP.Setup do
   @moduledoc false
 
-  import Anubis.MCP.Assertions
-  import ExUnit.Assertions, only: [assert: 1]
-  import ExUnit.Callbacks, only: [start_supervised!: 1]
+  import ExUnit.Assertions, only: [assert: 1, assert: 2]
+  import ExUnit.Callbacks, only: [start_supervised!: 1, start_supervised!: 2]
 
   alias Anubis.MCP.Builders
   alias Anubis.MCP.Message
@@ -15,9 +14,8 @@ defmodule Anubis.MCP.Setup do
   @doc """
   Awaits the next outbound MCP request matching `method` and returns its id.
 
-  Drains forwarded `{:mcp_send, raw_json}` messages emitted by `MockTransport`
-  (see `register_mock_transport_forwarding/0`) until one matches `method`.
-  Returns `nil` on timeout.
+  Drains forwarded `{:mcp_send, raw_json}` messages emitted by `FakeTransport`
+  until one matches `method`. Returns `nil` on timeout.
   """
   def get_request_id(_client, method, timeout \\ 500) do
     deadline = System.monotonic_time(:millisecond) + timeout
@@ -35,20 +33,6 @@ defmodule Anubis.MCP.Setup do
         end
     after
       remaining -> nil
-    end
-  end
-
-  @doc """
-  Returns a `Mox.expect/3`-compatible lambda that forwards every outbound MCP
-  send to `pid` as `{:mcp_send, raw_json}` and replies `:ok`. Use when a test
-  needs the forward but no per-call assertion.
-
-      expect(Anubis.MockTransport, :send_message, forwarder(self()))
-  """
-  def forwarder(pid) do
-    fn _, message, _ ->
-      send(pid, {:mcp_send, message})
-      :ok
     end
   end
 
@@ -192,8 +176,6 @@ defmodule Anubis.MCP.Setup do
   end
 
   def initialized_client(context) do
-    import Mox
-
     server_capabilities =
       context[:server_capabilities] ||
         %{
@@ -207,6 +189,12 @@ defmodule Anubis.MCP.Setup do
 
     client_capabilities = context[:client_capabilities] || %{}
 
+    transport =
+      case Process.whereis(FakeTransport) do
+        nil -> start_supervised!({FakeTransport, forward_to: self()}, id: FakeTransport)
+        pid -> pid
+      end
+
     client =
       start_supervised!(%{
         id: Anubis.Client,
@@ -214,7 +202,7 @@ defmodule Anubis.MCP.Setup do
           {Anubis.Client, :start_link_server,
            [
              [
-               transport: [layer: Anubis.MockTransport, name: MockTransport],
+               transport: [layer: FakeTransport, name: transport],
                client_info: client_info,
                capabilities: client_capabilities
              ]
@@ -222,13 +210,16 @@ defmodule Anubis.MCP.Setup do
         restart: :temporary
       })
 
-    allow(Anubis.MockTransport, self(), fn -> client end)
-
     initialize_client(client,
       server_capabilities: server_capabilities,
       protocol_version: context[:protocol_version]
     )
 
     Map.put(context, :client, client)
+  end
+
+  defp assert_server_initialized(server) when is_pid(server) do
+    state = :sys.get_state(server)
+    assert state.initialized, "Expected server session to be initialized"
   end
 end

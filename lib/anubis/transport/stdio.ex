@@ -8,7 +8,6 @@ defmodule Anubis.Transport.STDIO do
   > the [Transport options](./transport_options.html) guides for reference.
   """
 
-  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   use GenServer
@@ -24,13 +23,13 @@ defmodule Anubis.Transport.STDIO do
   # Functional transport state
   @type stdio_state :: %{buffer: binary()}
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec transport_init(keyword()) :: {:ok, stdio_state()} | {:error, term()}
   def transport_init(_opts \\ []) do
     {:ok, %{buffer: ""}}
   end
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec parse(binary() | map(), stdio_state()) ::
           {:ok, [map()], stdio_state()} | {:error, term()}
   def parse(raw, state) when is_binary(raw) do
@@ -46,7 +45,7 @@ defmodule Anubis.Transport.STDIO do
     end
   end
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec encode(map(), stdio_state()) :: {:ok, binary(), stdio_state()} | {:error, term()}
   def encode(message, state) when is_map(message) do
     {:ok, JSON.encode!(message) <> "\n", state}
@@ -55,7 +54,7 @@ defmodule Anubis.Transport.STDIO do
       {:error, {:encode_error, Exception.message(e)}}
   end
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec extract_metadata(term(), stdio_state()) :: map()
   def extract_metadata(_raw_input, _state) do
     %{transport: :stdio}

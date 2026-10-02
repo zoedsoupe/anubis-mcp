@@ -39,7 +39,6 @@ defmodule Anubis.Transport.StreamableHTTP do
   This allows the server to send requests and notifications without a client request.
   """
 
-  @behaviour Anubis.Transport
   @behaviour Anubis.Transport.Behaviour
 
   use GenServer
@@ -61,7 +60,7 @@ defmodule Anubis.Transport.StreamableHTTP do
           last_event_id: String.t() | nil
         }
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec transport_init(keyword()) :: {:ok, http_state()} | {:error, term()}
   def transport_init(opts \\ []) do
     {:ok,
@@ -71,7 +70,7 @@ defmodule Anubis.Transport.StreamableHTTP do
      }}
   end
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec parse(binary() | map(), http_state()) ::
           {:ok, [map()], http_state()} | {:error, term()}
   def parse(raw, state) when is_binary(raw) do
@@ -95,7 +94,7 @@ defmodule Anubis.Transport.StreamableHTTP do
     {:ok, [raw], state}
   end
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec encode(map(), http_state()) :: {:ok, binary(), http_state()} | {:error, term()}
   def encode(message, state) when is_map(message) do
     {:ok, JSON.encode!(message), state}
@@ -104,7 +103,7 @@ defmodule Anubis.Transport.StreamableHTTP do
       {:error, {:encode_error, Exception.message(e)}}
   end
 
-  @impl Anubis.Transport
+  @impl Transport
   @spec extract_metadata(term(), http_state()) :: map()
   def extract_metadata(headers, state) when is_list(headers) do
     session_id = find_header(headers, "mcp-session-id") || state.session_id

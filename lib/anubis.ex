@@ -13,7 +13,7 @@ defmodule Anubis do
                          ClientSTDIO,
                          ClientStreamableHTTP,
                          StubTransport,
-                         Anubis.MockTransport,
+                         FakeTransport,
                          BufferedMockTransport
                        ],
                        else: [ClientSTDIO, ClientStreamableHTTP]
@@ -36,9 +36,7 @@ defmodule Anubis do
 
   defschema :process_name, {:either, {:pid, {:custom, &genserver_name/1}}}
 
-  @doc """
-  Validates a possible GenServer name using `peri` `:custom` type definition.
-  """
+  @doc false
   def genserver_name({:via, registry, _}) when is_atom(registry), do: :ok
   def genserver_name({:global, _}), do: :ok
   def genserver_name(name) when is_atom(name), do: :ok

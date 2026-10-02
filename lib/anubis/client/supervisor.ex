@@ -6,11 +6,9 @@ defmodule Anubis.Client.Supervisor do
   alias Anubis.Client
   alias Anubis.Transport.STDIO
   alias Anubis.Transport.StreamableHTTP
-  alias Anubis.Transport.Websocket
 
   @type transport_config ::
           {:stdio, keyword()}
-          | {:websocket, keyword()}
           | {:streamable_http, keyword()}
 
   @doc """
@@ -121,5 +119,4 @@ defmodule Anubis.Client.Supervisor do
 
   defp parse_transport_config({:stdio, opts}), do: {STDIO, opts}
   defp parse_transport_config({:streamable_http, opts}), do: {StreamableHTTP, opts}
-  defp parse_transport_config({:websocket, opts}), do: {Websocket, opts}
 end

@@ -1,14 +1,12 @@
 # Transports
 
-MCP separates what a server offers from how the bytes move. Anubis ships two transports you will actually deploy, STDIO and Streamable HTTP, plus a client-side WebSocket transport kept for compatibility. This guide covers each from both the server and the client side.
+MCP separates what a server offers from how the bytes move. Anubis ships two transports, STDIO and Streamable HTTP. This guide covers each from both the server and the client side.
 
 ## Choosing a transport
 
 **STDIO** runs the server as a subprocess of the client and speaks newline-delimited JSON over standard input and output. It is the default for local tooling: editor integrations, CLI assistants, one machine, one user. There is no network listener and no authentication surface.
 
 **Streamable HTTP** exposes the server as an HTTP endpoint. Requests arrive as POSTs and the server can push notifications over an SSE stream on the same path. Pick it whenever clients connect over the network, when multiple clients share one server, or when the server lives inside an existing web application. This is the transport the current MCP specification recommends for remote servers.
-
-**WebSocket** (client only) remains for talking to servers that offer it. Do not build anything new on it.
 
 ## STDIO
 
@@ -145,9 +143,9 @@ transport: {:streamable_http,
   headers: %{"authorization" => "Bearer #{token}"}}
 ```
 
-## WebSocket
+## Removed transports
 
-The WebSocket client transport, `transport: {:websocket, base_url: ...}`, connects to servers that offer it. It exists so you can talk to deployments that have not migrated; prefer Streamable HTTP everywhere you control.
+The WebSocket client transport was removed in Anubis 2.1. It was never part of the MCP spec; use Streamable HTTP instead.
 
 The HTTP+SSE transport from protocol version 2024-11-05 was removed in Anubis 2.0, together with support for that spec version. Use Streamable HTTP instead.
 
