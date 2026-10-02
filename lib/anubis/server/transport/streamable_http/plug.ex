@@ -47,9 +47,11 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Message
     alias Anubis.Server.Authorization
     alias Anubis.Server.Registry
+    alias Anubis.Server.Stateless
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.Session
     alias Anubis.Server.Transport.StreamableHTTP
+    alias Anubis.Server.Transport.StreamableHTTP.StatelessBinding
     alias Anubis.SSE.Streaming
     alias Anubis.Telemetry
     alias Plug.Conn.Unfetched
@@ -117,42 +119,42 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    # Per MCP 2025-06-18, clients send the negotiated protocol version on the
+    # MCP-Protocol-Version header of every request after initialize; an absent
+    # header means 2025-03-26. A stateless version is served by its own binding.
     defp handle_request(conn, opts) do
-      case validate_protocol_version_header(conn, opts) do
-        :ok ->
-          case conn.method do
-            "GET" -> handle_get(conn, opts)
-            "POST" -> handle_post(conn, opts)
-            "DELETE" -> handle_delete(conn, opts)
-            _ -> send_error(conn, 405, "Method not allowed")
-          end
+      declared_versions = supported_protocol_versions(opts.server)
 
-        {:error, version} ->
+      case StatelessBinding.classify(conn, declared_versions) do
+        :legacy ->
+          handle_legacy_request(conn, opts)
+
+        {:stateless, version} ->
+          context = build_request_context(conn, Map.get(opts, :auth_claims))
+          StatelessBinding.call(conn, version, context, opts)
+
+        {:unsupported, version} ->
           Logging.transport_event("unsupported_protocol_version", %{version: version}, level: :warning)
 
-          send_error(conn, 400, "Unsupported MCP-Protocol-Version: #{version}")
-      end
-    end
-
-    # Per MCP 2025-06-18, clients send the negotiated protocol version on the
-    # MCP-Protocol-Version header of every request after initialize. When the
-    # header is absent the server SHOULD assume 2025-03-26 for backwards
-    # compatibility; when present but unsupported the request is rejected.
-    defp validate_protocol_version_header(conn, opts) do
-      case get_req_header(conn, "mcp-protocol-version") do
-        [] ->
-          :ok
-
-        [version | _] ->
-          if version in supported_protocol_versions(opts.server) do
-            :ok
+          if StatelessBinding.serves_stateless?(declared_versions) do
+            StatelessBinding.send_unsupported(conn, version, declared_versions, opts)
           else
-            {:error, version}
+            send_error(conn, 400, "Unsupported MCP-Protocol-Version: #{version}")
           end
       end
     end
 
-    # This endpoint is the session-oriented binding, so it defaults to legacy.
+    defp handle_legacy_request(conn, opts) do
+      case conn.method do
+        "GET" -> handle_get(conn, opts)
+        "POST" -> handle_post(conn, opts)
+        "DELETE" -> handle_delete(conn, opts)
+        _ -> send_error(conn, 405, "Method not allowed")
+      end
+    end
+
+    # A server module without `supported_protocol_versions/0` serves only the
+    # session-oriented era.
     defp supported_protocol_versions(server) do
       if Anubis.exported?(server, :supported_protocol_versions, 0) do
         server.supported_protocol_versions()
@@ -306,6 +308,14 @@ if Code.ensure_loaded?(Plug) do
 
     defp process_message(conn, message, session_id, context, opts) do
       cond do
+        Stateless.request?(message) ->
+          error =
+            Error.protocol(:header_mismatch, %{
+              message: "MCP-Protocol-Version must select the stateless version declared in the request body"
+            })
+
+          send_jsonrpc_error(conn, error, extract_request_id(message))
+
         Message.is_notification(message) ->
           handle_notification_message(conn, message, session_id, context, opts)
 

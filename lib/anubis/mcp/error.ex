@@ -264,7 +264,9 @@ defmodule Anubis.MCP.Error do
 
   Revision 2026-07-28 reallocates this condition from the MCP-specific
   `-32002` to the JSON-RPC `-32602`, and reserves `-32002` so it is never
-  reused. Legacy eras keep the code they shipped with.
+  reused. Legacy eras keep the code they shipped with. Only the code differs:
+  the reason stays `:resource_not_found` in every era, so code that matches on
+  it, such as the resource-template fallback, treats both eras alike.
 
   ## Examples
 
@@ -275,7 +277,7 @@ defmodule Anubis.MCP.Error do
       -32602
   """
   @spec resource_not_found(map(), Anubis.Protocol.Behaviour.era()) :: t()
-  def resource_not_found(data, :stateless), do: protocol(:invalid_params, data)
+  def resource_not_found(data, :stateless), do: %{resource(:not_found, data) | code: -32_602}
   def resource_not_found(data, _era), do: resource(:not_found, data)
 
   @doc """

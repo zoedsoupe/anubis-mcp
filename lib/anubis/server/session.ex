@@ -68,13 +68,14 @@ defmodule Anubis.Server.Session do
           task_refs: %{reference() => String.t()},
           in_flight: Scheduler.in_flight() | nil,
           request_queue: :queue.queue(Scheduler.queued_request()),
-          deferred_callbacks: :queue.queue(Scheduler.deferred_callback())
+          deferred_callbacks: :queue.queue(Scheduler.deferred_callback()),
+          owner_ref: reference() | nil
         }
 
   defschema(:parse_options, [
     {:session_id, {:required, :string}},
     {:server_module, {:required, :atom}},
-    {:name, {:required, {:custom, &Anubis.genserver_name/1}}},
+    {:name, {:custom, &Anubis.genserver_name/1}},
     {:transport, {:required, {:custom, &Anubis.server_transport/1}}},
     {:registry, {:atom, {:default, Anubis.Server.Registry}}},
     {:session_idle_timeout, {{:integer, {:gte, 1}}, {:default, @default_session_idle_timeout}}},
@@ -82,7 +83,8 @@ defmodule Anubis.Server.Session do
     {:task_supervisor, {:required, {:custom, &Anubis.genserver_name/1}}},
     {:task_store,
      {[adapter: {:required, :atom}, name: {:required, {:custom, &Anubis.genserver_name/1}}], {:default, nil}}},
-    {:pre_initialized, {:boolean, {:default, false}}}
+    {:pre_initialized, {:boolean, {:default, false}}},
+    {:owner, :pid}
   ])
 
   @doc """
@@ -92,19 +94,23 @@ defmodule Anubis.Server.Session do
 
     * `:session_id` — unique session identifier (required)
     * `:server_module` — the MCP server module implementing `Anubis.Server` (required)
-    * `:name` — GenServer registration name (required)
+    * `:name` — GenServer registration name. Omit it for a session that is only
+      ever addressed by pid, such as one started for a single request.
     * `:transport` — transport configuration `[layer: module, name: name]` (required)
     * `:task_supervisor` — name of the `Task.Supervisor` for async work (required)
     * `:registry` — session registry module (default: `Anubis.Server.Registry`)
     * `:session_idle_timeout` — idle timeout in ms before session expires (default: 30 min)
     * `:timeout` — request timeout in ms (default: 30s)
+    * `:owner` — a process whose exit stops the session. A transport that
+      starts a session for a single stateless request passes itself, so the
+      session never outlives the request. Such a session calls the server's
+      `init/2` for each stateless request it serves, with that request's client
+      info, because no handshake ever runs it.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     opts = parse_options!(opts)
-    name = Keyword.fetch!(opts, :name)
-
-    GenServer.start_link(__MODULE__, Map.new(opts), name: name)
+    GenServer.start_link(__MODULE__, Map.new(opts), Keyword.take(opts, [:name]))
   end
 
   @doc false
@@ -179,7 +185,8 @@ defmodule Anubis.Server.Session do
       task_refs: %{},
       in_flight: nil,
       request_queue: :queue.new(),
-      deferred_callbacks: :queue.new()
+      deferred_callbacks: :queue.new(),
+      owner_ref: monitor_owner(opts[:owner])
     }
 
     state = schedule_session_expiry(state)
@@ -212,10 +219,10 @@ defmodule Anubis.Server.Session do
     state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
 
-    case admit_request(decoded, transport_context, state) do
-      {:ok, decoded, transport_context} ->
-        handle_single_request(decoded, transport_context, from, state)
-
+    with {:ok, decoded, transport_context} <- admit_request(decoded, transport_context, state),
+         {:ok, state} <- maybe_init_for_request(transport_context, state) do
+      handle_single_request(decoded, transport_context, from, state)
+    else
       {:error, %Error{} = error} ->
         {:reply, {:ok, encode_reply(Error.build_json_rpc(error, decoded["id"]))}, state}
 
@@ -386,6 +393,29 @@ defmodule Anubis.Server.Session do
     end
   end
 
+  defp monitor_owner(nil), do: nil
+  defp monitor_owner(owner) when is_pid(owner), do: Process.monitor(owner)
+
+  # A session that exists for one stateless request never sees a handshake, so
+  # `init/2` would otherwise never run for it.
+  defp maybe_init_for_request(transport_context, %{owner_ref: ref, initialized: false} = state) when is_reference(ref) do
+    case Stateless.context(transport_context) do
+      nil ->
+        {:ok, state}
+
+      %{client_info: client_info} ->
+        frame = prepare_frame(%{state | client_info: client_info}, transport_context)
+
+        # `clientInfo` is optional in this era, and `init/2` is typed to take a map.
+        case maybe_call_init(state.server_module, client_info || %{}, frame) do
+          {:ok, frame} -> {:ok, %{state | frame: frame, initialized: true}}
+          {:error, reason} -> {:error, Error.wrap_reason(reason)}
+        end
+    end
+  end
+
+  defp maybe_init_for_request(_transport_context, state), do: {:ok, state}
+
   # Once a version is negotiated, inbound requests and notifications are
   # re-validated against it: methods the version does not model are rejected
   # instead of dispatched. Responses and errors are version-independent.
@@ -532,6 +562,10 @@ defmodule Anubis.Server.Session do
         Process.demonitor(ref, [:flush])
         Tasks.handle_worker_completion(task_id, callback_result, state)
     end
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{owner_ref: ref} = state) when is_reference(ref) do
+    {:stop, :shutdown, state}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, state) when is_reference(ref) do

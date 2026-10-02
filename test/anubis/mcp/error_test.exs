@@ -308,11 +308,12 @@ defmodule Anubis.MCP.ErrorTest do
       assert error.data == @payload
     end
 
-    test "the stateless era reports the JSON-RPC invalid params code" do
+    test "the stateless era reports the JSON-RPC invalid params code under the same reason" do
       error = Error.resource_not_found(@payload, :stateless)
 
       assert error.code == -32_602
-      assert error.reason == :invalid_params
+      assert error.reason == :resource_not_found
+      assert error.message == "Resource not found"
       assert error.data == @payload
     end
 

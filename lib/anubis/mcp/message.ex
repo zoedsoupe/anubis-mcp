@@ -312,9 +312,11 @@ defmodule Anubis.MCP.Message do
   end
 
   @doc """
-  Validates a decoded JSON message against the latest registered protocol version.
+  Validates a decoded JSON message against the version it declares in
+  `params._meta`, or the latest registered version when it declares none: the
+  same choice `decode/1` makes for each message it parses.
   """
-  def validate_message(message), do: validate_message(message, Registry.latest_module())
+  def validate_message(message), do: validate_message(message, schema_module(message))
 
   @doc """
   Validates a decoded JSON message against the given protocol version module.
