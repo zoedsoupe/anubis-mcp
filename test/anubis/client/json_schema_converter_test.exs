@@ -220,6 +220,53 @@ defmodule Anubis.Client.JSONSchemaConverterTest do
       schema = %{"type" => ["string", "null"]}
       assert {:ok, {:either, {:string, {:literal, nil}}}} = JSONSchemaConverter.to_peri(schema)
     end
+
+    test "converts 2020-12 prefixItems like the draft-07 items form" do
+      draft_07 = %{
+        "type" => "array",
+        "items" => [%{"type" => "string"}, %{"type" => "integer"}],
+        "minItems" => 2,
+        "maxItems" => 2
+      }
+
+      draft_2020_12 = %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "type" => "array",
+        "prefixItems" => [%{"type" => "string"}, %{"type" => "integer"}],
+        "items" => false,
+        "minItems" => 2,
+        "maxItems" => 2
+      }
+
+      assert {:ok, peri_schema} = JSONSchemaConverter.to_peri(draft_2020_12)
+      assert JSONSchemaConverter.to_peri(draft_07) == {:ok, peri_schema}
+    end
+
+    test "converts nested 2020-12 prefixItems in object properties" do
+      draft_07 = %{
+        "type" => "object",
+        "properties" => %{
+          "coords" => %{
+            "type" => "array",
+            "items" => [%{"type" => "number"}, %{"type" => "number"}]
+          }
+        }
+      }
+
+      draft_2020_12 = %{
+        "type" => "object",
+        "properties" => %{
+          "coords" => %{
+            "type" => "array",
+            "prefixItems" => [%{"type" => "number"}, %{"type" => "number"}],
+            "items" => false
+          }
+        }
+      }
+
+      assert {:ok, peri_schema} = JSONSchemaConverter.to_peri(draft_2020_12)
+      assert JSONSchemaConverter.to_peri(draft_07) == {:ok, peri_schema}
+    end
   end
 
   describe "validator/1" do

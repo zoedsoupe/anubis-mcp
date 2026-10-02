@@ -3,9 +3,14 @@ defmodule Anubis.Server.Component.SchemaTest do
 
   alias Anubis.Server.Component.Schema
 
+  @json_schema_dialect "https://json-schema.org/draft/2020-12/schema"
+
   describe "to_json_schema/1" do
     test "converts nil to empty object schema" do
-      assert Schema.to_json_schema(nil) == %{"type" => "object"}
+      assert Schema.to_json_schema(nil) == %{
+               "$schema" => @json_schema_dialect,
+               "type" => "object"
+             }
     end
 
     test "converts basic types" do
@@ -20,6 +25,7 @@ defmodule Anubis.Server.Component.SchemaTest do
       result = Schema.to_json_schema(schema)
 
       assert result == %{
+               "$schema" => @json_schema_dialect,
                "type" => "object",
                "properties" => %{
                  "name" => %{"type" => "string"},
@@ -295,6 +301,59 @@ defmodule Anubis.Server.Component.SchemaTest do
     end
   end
 
+  describe "to_json_schema/1 2020-12 dialect" do
+    test "emits $schema with the 2020-12 dialect URL on all shapes" do
+      assert Schema.to_json_schema(nil)["$schema"] == @json_schema_dialect
+      assert Schema.to_json_schema(%{name: :string})["$schema"] == @json_schema_dialect
+      assert Schema.to_json_schema(name: :string)["$schema"] == @json_schema_dialect
+    end
+
+    test "emits $schema on a tool input_schema" do
+      assert TestTools.LegacyTool.input_schema()["$schema"] == @json_schema_dialect
+    end
+
+    test "converts tuple types to prefixItems with items: false" do
+      schema = %{coords: {:tuple, [:string, :integer]}}
+
+      result = Schema.to_json_schema(schema)
+
+      assert result["$schema"] == @json_schema_dialect
+
+      assert result["properties"]["coords"] == %{
+               "type" => "array",
+               "prefixItems" => [%{"type" => "string"}, %{"type" => "integer"}],
+               "items" => false,
+               "minItems" => 2,
+               "maxItems" => 2
+             }
+    end
+
+    test "converts nested tuple types under properties and items" do
+      schema = %{
+        pairs: {:list, {:tuple, [:string, :integer]}},
+        wrapped: %{point: {:tuple, [:float, :float]}}
+      }
+
+      result = Schema.to_json_schema(schema)
+
+      assert result["properties"]["pairs"]["items"] == %{
+               "type" => "array",
+               "prefixItems" => [%{"type" => "string"}, %{"type" => "integer"}],
+               "items" => false,
+               "minItems" => 2,
+               "maxItems" => 2
+             }
+
+      assert result["properties"]["wrapped"]["properties"]["point"] == %{
+               "type" => "array",
+               "prefixItems" => [%{"type" => "number"}, %{"type" => "number"}],
+               "items" => false,
+               "minItems" => 2,
+               "maxItems" => 2
+             }
+    end
+  end
+
   describe "to_prompt_arguments/1" do
     test "returns empty list for nil schema" do
       assert Schema.to_prompt_arguments(nil) == []
@@ -400,6 +459,7 @@ defmodule Anubis.Server.Component.SchemaTest do
       result = Schema.to_json_schema(schema)
 
       assert result == %{
+               "$schema" => @json_schema_dialect,
                "type" => "object",
                "properties" => %{
                  "email" => %{
@@ -425,6 +485,7 @@ defmodule Anubis.Server.Component.SchemaTest do
       result = Schema.to_json_schema(schema)
 
       assert result == %{
+               "$schema" => @json_schema_dialect,
                "type" => "object",
                "properties" => %{
                  "website" => %{
@@ -449,6 +510,7 @@ defmodule Anubis.Server.Component.SchemaTest do
       result = Schema.to_json_schema(schema)
 
       assert result == %{
+               "$schema" => @json_schema_dialect,
                "type" => "object",
                "properties" => %{
                  "name" => %{
@@ -522,6 +584,7 @@ defmodule Anubis.Server.Component.SchemaTest do
       result = Schema.to_json_schema(schema)
 
       assert result == %{
+               "$schema" => @json_schema_dialect,
                "type" => "object",
                "properties" => %{
                  "user" => %{
@@ -577,6 +640,7 @@ defmodule Anubis.Server.Component.SchemaTest do
       json_schema = Schema.to_json_schema(runtime_schema)
 
       assert json_schema == %{
+               "$schema" => @json_schema_dialect,
                "type" => "object",
                "properties" => %{
                  "query" => %{

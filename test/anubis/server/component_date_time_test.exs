@@ -14,6 +14,7 @@ defmodule Anubis.Server.ComponentDateTimeTest do
       json_schema = DateTool.input_schema()
 
       assert json_schema == %{
+               "$schema" => "https://json-schema.org/draft/2020-12/schema",
                "type" => "object",
                "properties" => %{
                  "event_date" => %{

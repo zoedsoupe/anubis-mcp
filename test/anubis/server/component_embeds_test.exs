@@ -55,6 +55,7 @@ defmodule Anubis.Server.ComponentEmbedsTest do
       schema = TestToolWithEmbedsMany.input_schema()
 
       expected = %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
         "type" => "object",
         "properties" => %{
           "users" => %{
@@ -92,6 +93,7 @@ defmodule Anubis.Server.ComponentEmbedsTest do
       schema = TestToolWithEmbedsOne.input_schema()
 
       expected = %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
         "type" => "object",
         "properties" => %{
           "user" => %{

@@ -8,8 +8,10 @@ defmodule Anubis.Server.Component.Schema do
   @type json_schema :: map()
   @type prompt_argument :: map()
 
+  @json_schema_dialect "https://json-schema.org/draft/2020-12/schema"
+
   @spec to_json_schema(schema() | nil) :: json_schema()
-  def to_json_schema(nil), do: %{"type" => "object"}
+  def to_json_schema(nil), do: %{"$schema" => @json_schema_dialect, "type" => "object"}
 
   def to_json_schema(schema) when is_list(schema) do
     schema |> Map.new() |> to_json_schema()
@@ -22,7 +24,33 @@ defmodule Anubis.Server.Component.Schema do
     schema
     |> Component.__expand_user_input__()
     |> Peri.to_json_schema(exclude_meta_keys: [:default])
+    |> to_json_schema_2020_12()
+    |> Map.put("$schema", @json_schema_dialect)
   end
+
+  # Peri encodes tuples as draft-07 `"items" => [schemas]`, which JSON Schema
+  # 2020-12 splits into `prefixItems` (per-position schemas) plus
+  # `"items" => false` to reject extra elements. Walk the whole schema so
+  # nested tuples (under `properties`, `items`, `$defs`, ...) are converted.
+  defp to_json_schema_2020_12(schema) when is_map(schema) do
+    schema
+    |> Map.new(fn {key, value} -> {key, to_json_schema_2020_12(value)} end)
+    |> convert_tuple_items()
+  end
+
+  defp to_json_schema_2020_12(list) when is_list(list) do
+    Enum.map(list, &to_json_schema_2020_12/1)
+  end
+
+  defp to_json_schema_2020_12(other), do: other
+
+  defp convert_tuple_items(%{"items" => items} = schema) when is_list(items) do
+    schema
+    |> Map.put("prefixItems", items)
+    |> Map.put("items", false)
+  end
+
+  defp convert_tuple_items(schema), do: schema
 
   @spec to_prompt_arguments(schema() | nil) :: [prompt_argument()]
   def to_prompt_arguments(nil), do: []

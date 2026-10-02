@@ -15,6 +15,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
       json_schema = NestedFieldTool.input_schema()
 
       assert json_schema == %{
+               "$schema" => "https://json-schema.org/draft/2020-12/schema",
                "type" => "object",
                "properties" => %{
                  "name" => %{
@@ -81,6 +82,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
       json_schema = SingleNestedFieldTool.input_schema()
 
       assert json_schema == %{
+               "$schema" => "https://json-schema.org/draft/2020-12/schema",
                "type" => "object",
                "properties" => %{
                  "user" => %{
@@ -104,6 +106,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
       json_schema = EnumWithTypeTool.input_schema()
 
       assert json_schema == %{
+               "$schema" => "https://json-schema.org/draft/2020-12/schema",
                "type" => "object",
                "properties" => %{
                  "weight" => %{"type" => "integer"},
@@ -431,6 +434,7 @@ defmodule Anubis.Server.ComponentFieldMacroTest do
       json_schema = LegacyTool.input_schema()
 
       assert json_schema == %{
+               "$schema" => "https://json-schema.org/draft/2020-12/schema",
                "type" => "object",
                "properties" => %{
                  "name" => %{"type" => "string"},
