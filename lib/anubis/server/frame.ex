@@ -359,6 +359,42 @@ defmodule Anubis.Server.Frame do
   end
 
   @doc """
+  Returns the answers the client sent to an `Anubis.Server.InputRequired`,
+  keyed as its input requests were. Empty when the request carries none.
+  """
+  @spec input_responses(t()) :: %{String.t() => map()}
+  def input_responses(%__MODULE__{context: %Context{input_responses: responses}}), do: responses
+
+  @doc """
+  Returns the client's answer to the input request under `key`, or `nil`.
+
+  ## Examples
+
+      case Frame.input_response(frame, "confirm") do
+        %{"action" => "accept", "content" => content} -> content
+        _not_answered -> nil
+      end
+  """
+  @spec input_response(t(), String.t()) :: map() | nil
+  def input_response(%__MODULE__{} = frame, key), do: Map.get(input_responses(frame), key)
+
+  @doc """
+  Returns the verified state a handler attached with
+  `Anubis.Server.InputRequired.state/2`, or `nil` when the request carries none.
+  """
+  @spec request_state(t()) :: term()
+  def request_state(%__MODULE__{context: %Context{request_state: state}}), do: state
+
+  @doc """
+  Whether the client declared `capability` (`"elicitation"`, `"sampling"`,
+  `"roots"`, ...) for the current request.
+  """
+  @spec client_supports?(t(), String.t()) :: boolean()
+  def client_supports?(%__MODULE__{context: %Context{client_capabilities: capabilities}}, capability) do
+    Map.has_key?(capabilities || %{}, capability)
+  end
+
+  @doc """
   Returns the list of granted scopes from the bearer token.
 
   Returns an empty list when no authorization is present.
