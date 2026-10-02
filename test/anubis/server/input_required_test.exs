@@ -3,6 +3,7 @@ defmodule Anubis.Server.InputRequiredTest do
 
   alias Anubis.Server.Component
   alias Anubis.Server.Frame
+  alias Anubis.Server.Handlers.InputRequests
   alias Anubis.Server.InputRequired
   alias Anubis.Server.Registry
   alias Anubis.Server.RequestState
@@ -223,12 +224,94 @@ defmodule Anubis.Server.InputRequiredTest do
       assert %{"inputRequests" => %{"answer" => %{"method" => "sampling/createMessage"}}} =
                call(session, "ask", nil, capabilities: %{"sampling" => %{}})
 
-      assert %{"code" => -32_021, "data" => %{"requiredCapabilities" => %{"elicitation" => %{}}}} =
+      assert %{"code" => -32_021, "data" => %{"requiredCapabilities" => %{"elicitation" => %{"form" => %{}}}}} =
                error(session, "ask", nil, capabilities: %{})
     end
 
     test "fails a result that asks for nothing", %{session: session} do
       assert %{"code" => -32_603} = error(session, "empty")
+    end
+
+    test "refuses form elicitation for a URL-only client", %{session: session} do
+      assert %{
+               "code" => -32_021,
+               "data" => %{"requiredCapabilities" => %{"elicitation" => %{"form" => %{}}}}
+             } = error(session, "greet", nil, capabilities: %{"elicitation" => %{"url" => %{}}})
+    end
+
+    test "accepts implicit and explicit form support", %{session: session} do
+      for elicitation <- [%{}, %{"form" => %{}}, %{"form" => %{}, "url" => %{}}] do
+        assert %{"inputRequests" => %{"user_name" => %{"params" => %{"mode" => "form"}}}} =
+                 call(session, "greet", nil, capabilities: %{"elicitation" => elicitation})
+      end
+    end
+  end
+
+  describe "input request capabilities" do
+    test "requires sampling.tools for tools or toolChoice and accepts declared support" do
+      for extra <- [%{"tools" => []}, %{"toolChoice" => %{"mode" => "auto"}}] do
+        params = Map.merge(%{"messages" => [], "maxTokens" => 10}, extra)
+        input = InputRequired.sample(InputRequired.new(), "answer", params)
+
+        assert {:error, %{code: -32_021, data: %{requiredCapabilities: required}}, _} =
+                 respond(input, %{"sampling" => %{}})
+
+        assert required == %{"sampling" => %{"tools" => %{}}}
+
+        assert {:reply, %{"inputRequests" => %{"answer" => %{"params" => ^params}}}, _} =
+                 respond(input, %{"sampling" => %{"tools" => %{}}})
+      end
+    end
+
+    test "a basic sampling request cannot erase another request's tool requirement" do
+      for {tool_key, basic_key} <- [{"a", "z"}, {"z", "a"}] do
+        input =
+          InputRequired.new()
+          |> InputRequired.sample(tool_key, %{"messages" => [], "maxTokens" => 10, "tools" => []})
+          |> InputRequired.sample(basic_key, %{"messages" => [], "maxTokens" => 10})
+
+        assert {:error, %{code: -32_021, data: %{requiredCapabilities: required}}, _} =
+                 respond(input, %{"sampling" => %{}})
+
+        assert required == %{"sampling" => %{"tools" => %{}}}
+      end
+    end
+
+    test "URL elicitation requires explicit URL support" do
+      input = %InputRequired{
+        input_requests: %{
+          "login" => %{
+            "method" => "elicitation/create",
+            "params" => %{"mode" => "url", "message" => "Sign in", "url" => "https://example.com/login"}
+          }
+        }
+      }
+
+      for elicitation <- [%{}, %{"form" => %{}}] do
+        assert {:error, %{code: -32_021, data: %{requiredCapabilities: required}}, _} =
+                 respond(input, %{"elicitation" => elicitation})
+
+        assert required == %{"elicitation" => %{"url" => %{}}}
+      end
+
+      assert {:reply, %{"resultType" => "input_required"}, _} =
+               respond(input, %{"elicitation" => %{"url" => %{}}})
+
+      both = InputRequired.elicit(input, "confirm", "Confirm?", %{"type" => "object"})
+
+      assert {:error, %{code: -32_021}, _} = respond(both, %{"elicitation" => %{"url" => %{}}})
+      assert {:error, %{code: -32_021}, _} = respond(both, %{"elicitation" => %{"form" => %{}}})
+
+      assert {:reply, %{"resultType" => "input_required"}, _} =
+               respond(both, %{"elicitation" => %{"form" => %{}, "url" => %{}}})
+    end
+
+    test "an omitted elicitation mode requires form support" do
+      input = InputRequired.elicit(InputRequired.new(), "confirm", "Confirm?", %{"type" => "object"})
+      input = update_in(input.input_requests["confirm"]["params"], &Map.delete(&1, "mode"))
+
+      assert {:error, %{code: -32_021}, _} = respond(input, %{"elicitation" => %{"url" => %{}}})
+      assert {:reply, %{"resultType" => "input_required"}, _} = respond(input, %{"elicitation" => %{}})
     end
   end
 
@@ -352,11 +435,30 @@ defmodule Anubis.Server.InputRequiredTest do
       |> InputRequired.sample("b", %{})
       |> InputRequired.list_roots("c")
 
-    assert InputRequired.required_capabilities(input) == %{"elicitation" => %{}, "sampling" => %{}, "roots" => %{}}
+    assert InputRequired.required_capabilities(input) == %{
+             "elicitation" => %{"form" => %{}},
+             "sampling" => %{},
+             "roots" => %{}
+           }
   end
 
   defp call(session, tool, responses \\ nil, opts \\ []) do
     request(session, "tools/call", tool_params(tool, responses, opts), opts)
+  end
+
+  defp respond(input, capabilities) do
+    frame = Frame.new()
+
+    frame = %{
+      frame
+      | context: %{
+          frame.context
+          | protocol_module: Anubis.Protocol.V2026_07_28,
+            client_capabilities: capabilities
+        }
+    }
+
+    InputRequests.respond(input, frame, {InputServer, "tools/call", "ask"})
   end
 
   defp error(session, tool, responses \\ nil, opts \\ []) do

@@ -34,9 +34,11 @@ defmodule Anubis.Server.InputRequired do
   handler asks again for what is missing rather than failing.
 
   An input request needs the matching client capability (`elicitation`,
-  `sampling` or `roots`). One the client did not declare is refused with
-  `-32021` instead of being sent; check `Anubis.Server.Frame.client_supports?/2`
-  first to offer something else. The result exists only in the stateless era;
+  `sampling` or `roots`), including its elicitation mode or sampling tool
+  support. An unsupported request is refused with `-32021` instead of being
+  sent. `Anubis.Server.Frame.client_supports?/2` checks top-level presence;
+  handlers offering alternatives also check the required subfeatures in
+  `frame.context.client_capabilities`. The result exists only in the stateless era;
   a handshake-era request that gets one fails with an internal error.
 
   State is signed by `Anubis.Server.RequestState`, which needs
@@ -81,6 +83,7 @@ defmodule Anubis.Server.InputRequired do
   @doc """
   Asks the client's model for a completion. `params` are the
   `sampling/createMessage` parameters (`"messages"`, `"maxTokens"`, ...).
+  Including `"tools"` or `"toolChoice"` requires `sampling.tools` support.
   """
   @spec sample(t(), String.t(), map()) :: t()
   def sample(%__MODULE__{} = input, key, params) when is_map(params) do
@@ -102,12 +105,25 @@ defmodule Anubis.Server.InputRequired do
 
   @doc """
   The client capabilities the input requests need, as a
-  `requiredCapabilities` map (`%{"elicitation" => %{}}`).
+  `requiredCapabilities` map, including elicitation modes and sampling tool
+  support (for example, `%{"elicitation" => %{"form" => %{}}}`).
+  Requirements from all requests are combined.
   """
   @spec required_capabilities(t()) :: %{String.t() => map()}
   def required_capabilities(%__MODULE__{input_requests: requests}) do
-    for {_key, %{"method" => method}} <- requests, into: %{}, do: {@capabilities[method], %{}}
+    Enum.reduce(requests, %{}, fn {_key, %{"method" => method} = request}, capabilities ->
+      features = required_features(method, Map.get(request, "params", %{}))
+      Map.update(capabilities, @capabilities[method], features, &Map.merge(&1, features))
+    end)
   end
+
+  defp required_features("elicitation/create", params), do: %{Map.get(params, "mode", "form") => %{}}
+
+  defp required_features("sampling/createMessage", params) do
+    if Map.has_key?(params, "tools") or Map.has_key?(params, "toolChoice"), do: %{"tools" => %{}}, else: %{}
+  end
+
+  defp required_features(_method, _params), do: %{}
 
   defp put_request(input, key, method, params) when is_binary(key) do
     %{input | input_requests: Map.put(input.input_requests, key, %{"method" => method, "params" => params})}

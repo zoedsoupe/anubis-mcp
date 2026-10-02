@@ -38,8 +38,12 @@ defmodule Anubis.Server.Handlers.InputRequests do
   """
   @spec respond(InputRequired.t(), Frame.t(), binding()) :: {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def respond(%InputRequired{} = input, %Frame{} = frame, binding) do
+    capabilities = frame.context.client_capabilities || %{}
+
     missing =
-      Map.reject(InputRequired.required_capabilities(input), fn {cap, _} -> Frame.client_supports?(frame, cap) end)
+      Map.reject(InputRequired.required_capabilities(input), fn {capability, features} ->
+        supports?(capability, Map.get(capabilities, capability), features)
+      end)
 
     cond do
       Stateless.era(frame.context.protocol_module) != :stateless ->
@@ -55,6 +59,15 @@ defmodule Anubis.Server.Handlers.InputRequests do
         {:reply, result(input, frame, binding), frame}
     end
   end
+
+  defp supports?("elicitation", declared, required) when declared == %{},
+    do: supports?("elicitation", %{"form" => %{}}, required)
+
+  defp supports?(_capability, declared, required) when is_map(declared) do
+    Enum.all?(required, fn {feature, _settings} -> is_map(Map.get(declared, feature)) end)
+  end
+
+  defp supports?(_capability, _declared, _required), do: false
 
   defp result(input, frame, binding) do
     %{"resultType" => "input_required"}

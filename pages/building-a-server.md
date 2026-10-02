@@ -273,7 +273,7 @@ def execute(%{"to" => to, "text" => text}, frame) do
 end
 ```
 
-- `InputRequired.elicit/4`, `sample/3` and `list_roots/2` add the three kinds of input request. Each needs the matching client capability; one the client did not declare is refused with `-32021`, so check `Frame.client_supports?/2` to offer an alternative.
+- `InputRequired.elicit/4`, `sample/3` and `list_roots/2` add the three kinds of input request. Each needs the matching client capability, including its mode or subfeature; an unsupported request is refused with `-32021` and the required capabilities. Form elicitation requires `elicitation.form` (the legacy `elicitation: {}` also permits form); URL-only clients cannot receive a form request. Sampling with `tools` or `toolChoice` requires `sampling.tools`. `Frame.client_supports?/2` checks only top-level presence, so handlers offering alternatives also inspect the subfeatures in `frame.context.client_capabilities`.
 - A client may answer only part of what was asked, or nothing, and may never retry. Ask again for what is missing rather than failing; answers the handler did not ask for are simply there to ignore.
 - `InputRequired.state/2` attaches a term that comes back on the retry as `Frame.request_state/1`, for handlers that work in several rounds. It travels signed with HMAC-SHA256 and bound to the authenticated subject, to the tool, prompt or resource, and to a ten-minute expiry (`:request_state_ttl`); a state that fails any of these is refused with `-32602` before the handler runs. Signing needs a secret of at least 32 bytes:
 
