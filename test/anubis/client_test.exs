@@ -509,6 +509,24 @@ defmodule Anubis.ClientTest do
     end
   end
 
+  describe "request opts validation" do
+    test "rejects unknown options before sending" do
+      assert {:error, %Error{reason: :invalid_params, data: %{unknown_options: [:timeot]}}} =
+               Anubis.Client.list_tools(self(), timeot: 5)
+    end
+
+    test "rejects invalid option types before sending" do
+      assert {:error, %Error{reason: :invalid_params}} =
+               Anubis.Client.list_tools(self(), timeout: "soon")
+
+      assert {:error, %Error{reason: :invalid_params}} =
+               Anubis.Client.list_tools(self(), timeout: 0)
+
+      assert {:error, %Error{reason: :invalid_params}} =
+               Anubis.Client.ping(self(), progress: [callback: fn -> :ok end])
+    end
+  end
+
   describe "error handling" do
     setup :initialized_client
 
@@ -780,7 +798,7 @@ defmodule Anubis.ClientTest do
       assert {:ok, response} = Task.await(task)
       assert %Response{} = response
 
-      completion = Response.unwrap(response)["completion"]
+      completion = Response.get_result(response)["completion"]
       assert is_map(completion)
       assert completion["values"] == values
       assert completion["total"] == 3
@@ -823,7 +841,7 @@ defmodule Anubis.ClientTest do
 
       assert {:ok, response} = Task.await(task)
 
-      completion = Response.unwrap(response)["completion"]
+      completion = Response.get_result(response)["completion"]
       assert completion["values"] == values
       assert completion["total"] == 2
       assert completion["hasMore"] == false
