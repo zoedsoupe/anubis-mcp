@@ -79,7 +79,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
 
   defmodule ClosedSocket do
     @moduledoc false
-    # The test adapter, except that the client has gone away by the first chunk.
+    # The test adapter can close before any chunk or only on the final response.
     alias Conn, as: TestConn
 
     defdelegate send_resp(payload, status, headers, body), to: TestConn
@@ -93,6 +93,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     defdelegate get_http_protocol(payload), to: TestConn
     defdelegate get_sock_data(payload), to: TestConn
     defdelegate get_ssl_data(payload), to: TestConn
+
+    def chunk(%{close_on_response: true} = payload, body) do
+      if body |> IO.iodata_to_binary() |> String.contains?("\"id\":"),
+        do: {:error, :closed},
+        else: TestConn.chunk(payload, body)
+    end
 
     def chunk(_payload, _body), do: {:error, :closed}
   end
@@ -352,6 +358,30 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     Task.await(request)
   end
 
+  test "a disconnect during the final response logs its reason", %{opts: opts} do
+    {conn, log} =
+      with_log(fn ->
+        logging = Application.get_env(:anubis_mcp, :logging, [])
+        Application.put_env(:anubis_mcp, :logging, Keyword.put(logging, :transport_events, :warning))
+
+        try do
+          opts
+          |> request(%{"progressToken" => "tok"}, "application/json, text/event-stream", "progress")
+          |> Map.update!(:adapter, fn {_test_conn, state} ->
+            {ClosedSocket, Map.put(state, :close_on_response, true)}
+          end)
+          |> StreamableHTTPPlug.call(opts)
+        after
+          Application.put_env(:anubis_mcp, :logging, logging)
+        end
+      end)
+
+    assert conn.status == 200
+    assert Enum.map(events(conn), & &1["params"]["progress"]) == [0, 50, 100]
+    assert log =~ "MCP transport event: response_stream_closed"
+    assert log =~ "reason: :closed"
+  end
+
   defp call_without_stream(opts, accept) do
     {conn, log} = with_log(fn -> call(opts, %{"progressToken" => "tok"}, accept) end)
 
@@ -400,5 +430,5 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     for "data: " <> data <- String.split(chunks(conn), "\n"), do: JSON.decode!(data)
   end
 
-  defp chunks(%Plug.Conn{adapter: {Conn, %{chunks: chunks}}}), do: chunks || ""
+  defp chunks(%Plug.Conn{adapter: {adapter, %{chunks: chunks}}}) when adapter in [Conn, ClosedSocket], do: chunks || ""
 end

@@ -144,8 +144,12 @@ if Code.ensure_loaded?(Plug) do
 
     defp finish(state, {:ok, response}) when is_binary(response) do
       case Streaming.send_event(state.conn, String.trim_trailing(response), nil) do
-        {:ok, conn} -> conn
-        {:error, _reason} -> state.conn
+        {:ok, conn} ->
+          conn
+
+        {:error, reason} ->
+          Logging.transport_event("response_stream_closed", %{reason: reason})
+          state.conn
       end
     end
 
