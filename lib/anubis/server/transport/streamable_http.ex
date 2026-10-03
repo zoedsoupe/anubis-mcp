@@ -162,6 +162,10 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   @doc """
   Registers an SSE handler with transport options. Set `resumable: false` for
   request-scoped streams whose events cannot be replayed after completion.
+
+  Non-resumable registration requires a session ID with no existing resumable
+  stream: it does not clear an earlier registration's replay state. The stateless
+  binding satisfies this requirement by generating a fresh ID for each request.
   """
   @spec register_sse_handler(GenServer.server(), String.t(), map(), keyword()) :: :ok | {:error, term()}
   def register_sse_handler(transport, session_id, metadata, opts) when is_map(metadata) do
