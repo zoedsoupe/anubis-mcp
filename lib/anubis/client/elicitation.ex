@@ -26,7 +26,13 @@ defmodule Anubis.Client.Elicitation do
   # `mode` is optional for form requests upstream, so only an explicit `"url"`
   # selects URL mode; everything else is form mode.
   defp dispatch_mode(id, %{"mode" => "url"} = params, state) do
-    URL.handle_request(%{"id" => id, "params" => params}, state)
+    case validate_url_elicitation_capability(state) do
+      :ok ->
+        URL.handle_request(%{"id" => id, "params" => params}, state)
+
+      {:error, reason} ->
+        send_elicitation_error(id, reason, "capability_disabled", %{}, state)
+    end
   end
 
   defp dispatch_mode(id, params, state) do
@@ -38,6 +44,15 @@ defmodule Anubis.Client.Elicitation do
       :ok
     else
       {:error, "Client does not have elicitation capability enabled"}
+    end
+  end
+
+  # A client that declares `elicitation: %{}` is form-only by definition, so it
+  # must never be handed a URL-mode request.
+  defp validate_url_elicitation_capability(state) do
+    case Map.get(state.capabilities, "elicitation") do
+      %{"url" => _} -> :ok
+      _ -> {:error, "Client does not have elicitation.url capability enabled"}
     end
   end
 

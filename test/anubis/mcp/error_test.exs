@@ -244,7 +244,8 @@ defmodule Anubis.MCP.ErrorTest do
       reasons = %{
         -32_020 => :header_mismatch,
         -32_021 => :missing_required_client_capability,
-        -32_022 => :unsupported_protocol_version
+        -32_022 => :unsupported_protocol_version,
+        -32_042 => :url_elicitation_required
       }
 
       for {code, reason} <- reasons do
