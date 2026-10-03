@@ -4,6 +4,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
   import Plug.Conn
   import Plug.Test
 
+  alias Anubis.Server.Component
+  alias Anubis.Server.Frame
+  alias Anubis.Server.Handlers
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.Supervisor, as: ServerSupervisor
@@ -21,7 +24,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
   defmodule WhoAmITool do
     @moduledoc false
 
-    use Anubis.Server.Component, type: :tool
+    use Component, type: :tool
 
     alias Anubis.Server.Response
 
@@ -41,6 +44,35 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     end
   end
 
+  defmodule RegionTool do
+    @moduledoc false
+
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+      field :region, :string, required: true, mcp_header: "Region"
+    end
+
+    @impl true
+    def execute(%{region: region}, frame), do: {:reply, Response.text(Response.tool(), region), frame}
+  end
+
+  defmodule DefaultRegionTool do
+    @moduledoc false
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+      field :region, :string, default: "us-west1", mcp_header: "Region"
+    end
+
+    @impl true
+    def execute(%{region: region}, frame), do: {:reply, Response.text(Response.tool(), region), frame}
+  end
+
   defmodule DualEraServer do
     @moduledoc false
 
@@ -50,9 +82,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       capabilities: [:tools],
       protocol_versions: ["2026-07-28", "2025-11-25"]
 
-    alias Anubis.Server.Frame
-
     component(WhoAmITool)
+    component(RegionTool, name: "region")
+    component(DefaultRegionTool, name: "default_region")
 
     @impl true
     def init(client_info, frame) when is_map(client_info),
@@ -105,6 +137,53 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     end
   end
 
+  describe "an upstream JSON parser" do
+    @tag capture_log: false
+    test "can use the bounded decoder before serving a request", %{opts: opts} do
+      parser = Plug.Parsers.init(parsers: [:json], json_decoder: {StatelessBinding, :decode_json!, []})
+
+      conn =
+        7
+        |> discover_body()
+        |> JSON.encode!()
+        |> stateless_conn([{"mcp-method", "server/discover"}])
+        |> Plug.Parsers.call(parser)
+
+      assert conn.body_params["id"] == 7
+      conn = StreamableHTTPPlug.call(conn, opts)
+      assert conn.status == 200
+      assert %{"id" => 7, "result" => _} = JSON.decode!(conn.resp_body)
+    end
+
+    @tag capture_log: false
+    test "rejects oversized integer literals during upstream parsing" do
+      parser = Plug.Parsers.init(parsers: [:json], json_decoder: {StatelessBinding, :decode_json!, []})
+      body = ~s({"n":#{String.duplicate("9", 65)}})
+      conn = stateless_conn(body, [{"mcp-method", "server/discover"}])
+
+      assert_raise Plug.Parsers.ParseError, ~r/Invalid JSON or integer literal exceeds 64 characters/, fn ->
+        Plug.Parsers.call(conn, parser)
+      end
+    end
+
+    @tag capture_log: false
+    test "rejects malformed JSON and trailing content" do
+      for body <- ["{", "{} true"] do
+        assert_raise ArgumentError, ~r/Invalid JSON/, fn ->
+          StatelessBinding.decode_json!(body)
+        end
+      end
+    end
+
+    @tag capture_log: false
+    test "accepts a 64-character integer and leaves numeric strings intact" do
+      digits = String.duplicate("9", 64)
+      quoted = String.duplicate("9", 65)
+      assert %{"n" => number, "s" => ^quoted} = StatelessBinding.decode_json!(~s({"n":#{digits},"s":"#{quoted}"}))
+      assert number == String.to_integer(digits)
+    end
+  end
+
   describe "a body a parser already decoded" do
     test "is validated against the version it declares", %{opts: opts} do
       body = %{"jsonrpc" => "2.0", "id" => 1, "method" => "server/discover", "params" => %{"_meta" => meta(@client_info)}}
@@ -147,6 +226,152 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
         |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 200
+    end
+  end
+
+  describe "Mcp-Param headers" do
+    test "a call whose header matches its argument is served", %{opts: opts} do
+      conn = post_region(opts, "us-west1", [{"mcp-param-region", "us-west1"}])
+
+      assert conn.status == 200
+      assert %{"result" => %{"content" => [%{"text" => "us-west1"}]}} = JSON.decode!(conn.resp_body)
+    end
+
+    test "a Base64 header is decoded before it is compared", %{opts: opts} do
+      conn = post_region(opts, "São Paulo", [{"mcp-param-region", "=?base64?" <> Base.encode64("São Paulo") <> "?="}])
+
+      assert conn.status == 200
+    end
+
+    test "a missing or disagreeing header is a 400 with -32020", %{opts: opts} do
+      for headers <- [[], [{"mcp-param-region", "eu-west1"}], [{"mcp-param-region", "=?base64?dXM?="}]] do
+        conn = post_region(opts, "us-west1", headers)
+
+        assert conn.status == 400, inspect(headers)
+        assert %{"error" => %{"code" => -32_020}, "id" => 1} = JSON.decode!(conn.resp_body)
+      end
+    end
+
+    test "a repeated header is refused, even when every copy agrees", %{opts: opts} do
+      for second <- ["us-west1", "eu-west1"] do
+        conn =
+          "us-west1"
+          |> region_conn([{"mcp-param-region", "us-west1"}])
+          |> repeat_header("mcp-param-region", second)
+          |> StreamableHTTPPlug.call(opts)
+
+        assert_header_mismatch(conn, "Repeated mcp-param-region")
+      end
+    end
+
+    @tag capture_log: false
+    test "stateless calls without HTTP headers do not require mirrored parameters" do
+      config = ServerSupervisor.get_session_config(DualEraServer)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: "without-http",
+           server_module: DualEraServer,
+           transport: config.transport,
+           task_supervisor: config.task_supervisor}
+        )
+
+      request = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "tools/call",
+        "params" => %{
+          "name" => "region",
+          "arguments" => %{"region" => "us-west1"},
+          "_meta" => meta(@client_info)
+        }
+      }
+
+      assert {:ok, response} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert %{"result" => %{"content" => [%{"text" => "us-west1"}]}} = JSON.decode!(response)
+    end
+
+    @tag capture_log: false
+    test "matches the wire arguments before applying server defaults", %{opts: opts} do
+      for params <- [%{"name" => "default_region"}, %{"name" => "default_region", "arguments" => %{}}] do
+        body = %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "tools/call",
+          "params" => Map.put(params, "_meta", meta(@client_info))
+        }
+
+        headers = [{"mcp-method", "tools/call"}, {"mcp-name", "default_region"}]
+
+        conn = post_raw(opts, body, headers)
+        assert conn.status == 200
+        assert %{"result" => %{"content" => [%{"text" => "us-west1"}]}} = JSON.decode!(conn.resp_body)
+
+        log =
+          ExUnit.CaptureLog.capture_log(fn ->
+            conn = post_raw(opts, body, [{"mcp-param-region", "us-west1"} | headers])
+            assert_header_mismatch(conn, "has no argument in the body")
+          end)
+
+        assert log =~ "request_error"
+        assert log =~ "Mcp-Param-Region has no argument in the body"
+      end
+    end
+
+    test "the handshake era does not read them" do
+      request = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "tools/call",
+        "params" => %{"name" => "region", "arguments" => %{"region" => "us-west1"}}
+      }
+
+      assert {:reply, %{"content" => [%{"text" => "us-west1"}]}, _frame} =
+               Handlers.handle(request, DualEraServer, Frame.new())
+    end
+  end
+
+  describe "limits" do
+    test "an id past 256 bytes is -32600 and is not echoed", %{opts: opts} do
+      id = String.duplicate("x", 257)
+      conn = post_raw(opts, discover_body(id), [{"mcp-method", "server/discover"}])
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_600}, "id" => nil} = JSON.decode!(conn.resp_body)
+    end
+
+    test "an integer id outside 64 bits is -32600", %{opts: opts} do
+      conn = post_raw(opts, discover_body(9_223_372_036_854_775_808), [{"mcp-method", "server/discover"}])
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_600}, "id" => nil} = JSON.decode!(conn.resp_body)
+    end
+
+    test "ids at the bounds are served", %{opts: opts} do
+      for id <- [String.duplicate("x", 256), 9_223_372_036_854_775_807, -9_223_372_036_854_775_808] do
+        conn = post_raw(opts, discover_body(id), [{"mcp-method", "server/discover"}])
+        assert %{"id" => ^id, "result" => _} = JSON.decode!(conn.resp_body)
+      end
+    end
+
+    test "an unbounded progressToken is -32602 with the request id", %{opts: opts} do
+      body = put_in(discover_body(5), ["params", "_meta", "progressToken"], String.duplicate("t", 257))
+      conn = post_raw(opts, body, [{"mcp-method", "server/discover"}])
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_602}, "id" => 5} = JSON.decode!(conn.resp_body)
+    end
+
+    test "an integer literal longer than 64 characters is a parse error", %{opts: opts} do
+      body =
+        ~s({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"n":#{String.duplicate("9", 65)},"_meta":) <>
+          JSON.encode!(meta(@client_info)) <> "}}"
+
+      conn = body |> stateless_conn([{"mcp-method", "server/discover"}]) |> StreamableHTTPPlug.call(opts)
+
+      assert conn.status == 400
+      assert %{"error" => %{"code" => -32_700}, "id" => nil} = JSON.decode!(conn.resp_body)
     end
   end
 
@@ -202,6 +427,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       assert get_resp_header(conn, "mcp-session-id") == []
     end
 
+    test "ignores spaces and tabs around an Mcp-Name", %{opts: opts} do
+      conn = post_tool_call(opts, headers: [{"mcp-name", "who_am_i_tool \t "}])
+
+      assert conn.status == 200
+    end
+
     test "accepts an Mcp-Name in the base64 sentinel form", %{opts: opts} do
       encoded = "=?base64?" <> Base.encode64("who_am_i_tool") <> "?="
       conn = post_tool_call(opts, headers: [{"mcp-name", encoded}])
@@ -233,6 +464,29 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       conn = post_tool_call(opts, headers: [{"mcp-name", "another_tool"}])
 
       assert_header_mismatch(conn, "mcp-name")
+    end
+
+    test "rejects a repeated Mcp-Method or Mcp-Name, even when every copy agrees", %{opts: opts} do
+      for header <- ["mcp-method", "mcp-name"] do
+        [{^header, value}] = Enum.filter(tool_call_conn([]).req_headers, &match?({^header, _}, &1))
+
+        conn = [] |> tool_call_conn() |> repeat_header(header, value) |> StreamableHTTPPlug.call(opts)
+
+        assert_header_mismatch(conn, "Repeated #{header}")
+      end
+    end
+
+    test "rejects a repeated MCP-Protocol-Version, whichever era each copy names", %{opts: opts} do
+      for copies <- [[@version, "2025-11-25"], ["2025-11-25", @version], [@version, @version]] do
+        conn = tool_call_conn([])
+        others = Enum.reject(conn.req_headers, &match?({"mcp-protocol-version", _}, &1))
+        repeated = for version <- copies, do: {"mcp-protocol-version", version}
+
+        conn = StreamableHTTPPlug.call(%{conn | req_headers: others ++ repeated}, opts)
+
+        assert_header_mismatch(conn, "Repeated mcp-protocol-version")
+        assert JSON.decode!(conn.resp_body)["id"] == 1, inspect(copies)
+      end
     end
 
     test "answers a request without _meta with -32602 and its id", %{opts: opts} do
@@ -534,4 +788,26 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     assert %{"error" => %{"code" => -32_600, "data" => %{"message" => message}}} = JSON.decode!(conn.resp_body)
     assert message =~ "Batched"
   end
+
+  defp discover_body(id) do
+    %{"jsonrpc" => "2.0", "id" => id, "method" => "server/discover", "params" => %{"_meta" => meta(@client_info)}}
+  end
+
+  defp post_region(opts, region, headers) do
+    region |> region_conn(headers) |> StreamableHTTPPlug.call(opts)
+  end
+
+  defp region_conn(region, headers) do
+    %{
+      "jsonrpc" => "2.0",
+      "id" => 1,
+      "method" => "tools/call",
+      "params" => %{"name" => "region", "arguments" => %{"region" => region}, "_meta" => meta(@client_info)}
+    }
+    |> JSON.encode!()
+    |> stateless_conn([{"mcp-method", "tools/call"}, {"mcp-name", "region"} | headers])
+  end
+
+  # put_req_header/3 replaces a header, and a client can send one twice.
+  defp repeat_header(conn, name, value), do: %{conn | req_headers: conn.req_headers ++ [{name, value}]}
 end

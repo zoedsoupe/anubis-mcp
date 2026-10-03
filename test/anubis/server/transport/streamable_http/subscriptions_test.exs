@@ -229,6 +229,42 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
       refute Frame.resource_subscribed?(frame, @watched)
     end
 
+    test "accepts at most 1,000 resource subscriptions" do
+      at_cap = for n <- 1..1_000, do: "notes:///#{n}"
+
+      assert {:reply, %{"notifications" => %{"resourceSubscriptions" => honored}}, _frame} =
+               Subscriptions.handle_listen(listen_request(at_cap), Frame.new(), ListeningServer)
+
+      assert length(honored) == 1_000
+
+      assert {:error, %Error{code: -32_602}, _frame} =
+               Subscriptions.handle_listen(listen_request(["notes:///0" | at_cap]), Frame.new(), ListeningServer)
+    end
+
+    test "honors a URI asked for twice once" do
+      assert {:reply, %{"notifications" => %{"resourceSubscriptions" => [@watched]}}, _frame} =
+               Subscriptions.handle_listen(listen_request([@watched, @watched]), Frame.new(), ListeningServer)
+    end
+
+    test "a refused filter is answered as JSON, with no stream", %{opts: opts, session_sup: session_sup} do
+      uris = for n <- 0..1_000, do: "notes:///#{n}"
+
+      conn =
+        :post
+        |> conn("/", listen_body(%{"resourceSubscriptions" => uris}))
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json, text/event-stream")
+        |> put_req_header("mcp-protocol-version", @version)
+        |> put_req_header("mcp-method", "subscriptions/listen")
+        |> assign(:test_pid, self())
+        |> StreamableHTTPPlug.call(opts)
+
+      assert [content_type | _] = get_resp_header(conn, "content-type")
+      assert content_type =~ "application/json"
+      assert %{"id" => 7, "error" => %{"code" => -32_602}} = JSON.decode!(conn.resp_body)
+      assert DynamicSupervisor.count_children(session_sup).active == 0
+    end
+
     test "is not served in the handshake era" do
       request = %{"method" => "subscriptions/listen", "params" => %{"notifications" => %{"toolsListChanged" => true}}}
 
@@ -301,5 +337,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
         data = for("data: " <> line <- String.split(event, "\n"), do: line),
         data != [],
         do: JSON.decode!(Enum.join(data, "\n"))
+  end
+
+  defp listen_request(uris) do
+    %{"method" => "subscriptions/listen", "params" => %{"notifications" => %{"resourceSubscriptions" => uris}}}
   end
 end

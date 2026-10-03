@@ -52,6 +52,7 @@ if Code.ensure_loaded?(Plug) do
         session_ref: Process.monitor(session),
         id: subscription_id,
         honored: honored,
+        uris: MapSet.new(Map.get(honored, "resourceSubscriptions", [])),
         schema: Message.notification_schema(protocol_module)
       }
 
@@ -93,18 +94,18 @@ if Code.ensure_loaded?(Plug) do
     defp deliver(state, message) do
       case JSON.decode(message) do
         {:ok, %{"method" => _} = notification} ->
-          if honored?(notification, state.honored), do: emit(state, notification), else: {:ok, state}
+          if honored?(notification, state), do: emit(state, notification), else: {:ok, state}
 
         _other ->
           {:ok, state}
       end
     end
 
-    defp honored?(%{"method" => "notifications/resources/updated", "params" => %{"uri" => uri}}, honored) do
-      uri in Map.get(honored, "resourceSubscriptions", [])
+    defp honored?(%{"method" => "notifications/resources/updated", "params" => %{"uri" => uri}}, state) do
+      MapSet.member?(state.uris, uri)
     end
 
-    defp honored?(%{"method" => method}, honored) do
+    defp honored?(%{"method" => method}, %{honored: honored}) do
       case Map.fetch(@list_changed, method) do
         {:ok, flag} -> Map.get(honored, flag) == true
         :error -> false
