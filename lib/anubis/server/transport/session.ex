@@ -47,6 +47,12 @@ defmodule Anubis.Server.Transport.Session do
   `t:session/0` reference transports already resolved, so a cluster-aware
   implementation can encode routing information in a `:via` tuple or resolve
   the owning node from the session id carried in the `t:context/0`.
+
+  One dispatcher per application is enough: the decision it encodes (which
+  node owns a session) is a property of the deployment, not of an individual
+  server. Running two topologies in one application is the only case that
+  would need a per-server override, and it can be served by encoding the
+  destination in the session reference instead.
   """
 
   @typedoc "A reference to a session process, as resolved by the transport."
