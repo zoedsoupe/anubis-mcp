@@ -303,7 +303,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugPersistenceTest do
         transport: [layer: StubTransport, name: transport_name],
         session_idle_timeout: nil,
         timeout: 30_000,
-        task_supervisor: task_sup
+        task_supervisor: task_sup,
+        session_store: {MockSessionStore, [enabled: true, adapter: MockSessionStore]}
       }
 
       :persistent_term.put({ServerSupervisor, StubServer, :session_config}, session_config)

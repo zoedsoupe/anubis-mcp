@@ -471,7 +471,7 @@ if Code.ensure_loaded?(Plug) do
 
           case StreamableHTTP.close_session_stream(transport, session_id) do
             :ok ->
-              delete_session_from_store(session_id)
+              delete_session_from_store(opts, session_id)
               stop_session_process(opts, session_id)
 
               conn
@@ -552,7 +552,8 @@ if Code.ensure_loaded?(Plug) do
           session_idle_timeout: session_config.session_idle_timeout || 1_800_000,
           timeout: opts.timeout,
           task_supervisor: session_config.task_supervisor,
-          task_store: Map.get(session_config, :task_store)
+          task_store: Map.get(session_config, :task_store),
+          session_store: Map.get(session_config, :session_store)
         ] ++ extra_opts
 
       case ServerSupervisor.start_session(server, session_opts) do
@@ -568,8 +569,8 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp restore_session_from_store(opts, session_id) do
-      case Anubis.get_session_store_adapter() do
+    defp restore_session_from_store(%{server: server} = opts, session_id) do
+      case session_store_adapter(server) do
         nil ->
           {:error, :no_session}
 
@@ -586,6 +587,13 @@ if Code.ensure_loaded?(Plug) do
     end
 
     # Helper functions
+
+    defp session_store_adapter(server) do
+      case ServerSupervisor.get_session_config(server) do
+        %{session_store: {store, _opts}} -> store
+        _ -> nil
+      end
+    end
 
     defp wants_sse?(conn) do
       conn
@@ -865,9 +873,10 @@ if Code.ensure_loaded?(Plug) do
       )
     end
 
-    defp delete_session_from_store(session_id) do
-      if store = Anubis.get_session_store_adapter() do
-        store.delete(session_id, [])
+    defp delete_session_from_store(%{server: server}, session_id) do
+      case ServerSupervisor.get_session_config(server) do
+        %{session_store: {store, _opts}} -> store.delete(session_id, [])
+        _ -> :ok
       end
     end
 

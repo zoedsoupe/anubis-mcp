@@ -41,6 +41,16 @@ defmodule Anubis.Server.Session.Store do
         redis_url: "redis://localhost:6379",
         ttl: 1800
 
+  A server can override that per instance with the `:session_store`
+  option, which takes either a module or a `{module, opts}` pair:
+
+      use Anubis.Server,
+        transport: :streamable_http,
+        session_store: {MyApp.RedisStore, redis_url: "redis://tenant:6379"}
+
+  Pass `session_store: false` to run one server without a store even when
+  a global one is configured.
+
   ## Session Security
 
   Stores should implement appropriate security measures:

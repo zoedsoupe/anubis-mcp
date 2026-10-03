@@ -68,6 +68,48 @@ defmodule Anubis do
     config[:ttl] || @default_session_store_ttl
   end
 
+  @typedoc "A resolved session store: the adapter and the options it was started with."
+  @type session_store :: nil | {module(), keyword()}
+
+  @doc """
+  Resolves the session store a server should use, preferring the server's
+  own `:session_store` option over the global `config :anubis_mcp,
+  :session_store`.
+
+  The `:session_store` option accepts:
+
+    * `{module, opts}` — start this adapter with these opts
+    * `module` — start this adapter with no opts
+    * `false` or `nil` — no store for this server, even when one is
+      configured globally
+
+  Anything else falls back to the global config.
+  """
+  @spec resolve_session_store(keyword()) :: session_store()
+  def resolve_session_store(opts) do
+    case Keyword.get(opts, :session_store, :__global__) do
+      :__global__ -> global_session_store()
+      false -> nil
+      nil -> nil
+      {adapter, store_opts} when is_atom(adapter) and is_list(store_opts) -> {adapter, store_opts}
+      adapter when is_atom(adapter) -> {adapter, []}
+    end
+  end
+
+  @spec global_session_store() :: session_store()
+  defp global_session_store do
+    config = Application.get_env(:anubis_mcp, :session_store) || []
+    enabled? = Keyword.get(config, :enabled, false)
+    adapter = Keyword.get(config, :adapter)
+
+    cond do
+      not enabled? -> nil
+      is_nil(adapter) -> nil
+      Code.ensure_loaded?(adapter) -> {adapter, config}
+      true -> nil
+    end
+  end
+
   @spec get_session_dispatcher :: module
   def get_session_dispatcher do
     Application.get_env(:anubis_mcp, :session_dispatcher, Anubis.Server.Transport.Session.Local)

@@ -183,6 +183,7 @@ defmodule Anubis.Server.Session do
       timeout: opts.timeout,
       task_supervisor: opts.task_supervisor,
       task_store: Tasks.build_store(opts[:task_store]),
+      session_store: Map.get_lazy(opts, :session_store, fn -> Anubis.resolve_session_store([]) end),
       tasks: %{},
       task_refs: %{},
       in_flight: nil,
@@ -193,7 +194,7 @@ defmodule Anubis.Server.Session do
     }
 
     state = schedule_session_expiry(state)
-    maybe_schedule_store_ttl_refresh()
+    maybe_schedule_store_ttl_refresh(state)
 
     Logging.server_event("session_starting", %{
       session_id: opts.session_id,
@@ -243,7 +244,7 @@ defmodule Anubis.Server.Session do
     with [latest_version | _] <- state.supported_versions,
          {:ok, protocol_version, protocol_module} <-
            Anubis.Protocol.Registry.negotiate(latest_version, state.supported_versions) do
-      {restored_client_info, restored_frame, restored_init_meta} = maybe_restore_from_store(state.session_id)
+      {restored_client_info, restored_frame, restored_init_meta} = maybe_restore_from_store(state)
 
       auto_state = %{
         state
@@ -524,7 +525,7 @@ defmodule Anubis.Server.Session do
 
   def handle_info(:refresh_store_ttl, state) do
     refresh_store_ttl(state)
-    maybe_schedule_store_ttl_refresh()
+    maybe_schedule_store_ttl_refresh(state)
     {:noreply, state}
   end
 
@@ -1059,8 +1060,8 @@ defmodule Anubis.Server.Session do
     e -> {:error, e}
   end
 
-  defp maybe_restore_from_store(session_id) do
-    case Anubis.get_session_store_adapter() do
+  defp maybe_restore_from_store(%{session_id: session_id} = state) do
+    case store_adapter(state) do
       nil ->
         {nil, nil, %{}}
 
@@ -1096,18 +1097,30 @@ defmodule Anubis.Server.Session do
     {:reply, :ok, %{auto_state | frame: frame}}
   end
 
-  defp maybe_schedule_store_ttl_refresh do
-    if Anubis.get_session_store_adapter() do
-      interval = div(Anubis.get_session_store_ttl(), 2)
-      Process.send_after(self(), :refresh_store_ttl, interval)
+  # Sessions started by the supervisor carry the store they were resolved
+  # with. A session started by hand (tests, embedded use) falls back to the
+  # global config.
+  defp store_adapter(%{session_store: {adapter, _opts}}), do: adapter
+  defp store_adapter(%{session_store: nil}), do: nil
+  defp store_adapter(_state), do: Anubis.get_session_store_adapter()
+
+  defp store_ttl(%{session_store: {_adapter, opts}}) do
+    Keyword.get(opts, :ttl) || Anubis.get_session_store_ttl()
+  end
+
+  defp store_ttl(_state), do: Anubis.get_session_store_ttl()
+
+  defp maybe_schedule_store_ttl_refresh(state) do
+    if store_adapter(state) do
+      Process.send_after(self(), :refresh_store_ttl, div(store_ttl(state), 2))
     end
   end
 
   defp refresh_store_ttl(%{initialized: false}), do: :ok
 
   defp refresh_store_ttl(%{session_id: session_id} = state) do
-    if store = Anubis.get_session_store_adapter() do
-      case store.update_ttl(session_id, Anubis.get_session_store_ttl(), []) do
+    if store = store_adapter(state) do
+      case store.update_ttl(session_id, store_ttl(state), []) do
         :ok ->
           :ok
 
@@ -1128,7 +1141,7 @@ defmodule Anubis.Server.Session do
   end
 
   defp maybe_persist_session(%{session_id: session_id} = state) do
-    if store = Anubis.get_session_store_adapter() do
+    if store = store_adapter(state) do
       Logging.log(:debug, "Persisting session #{inspect(session_id)} to store", [])
 
       state_map = to_serializable(state)

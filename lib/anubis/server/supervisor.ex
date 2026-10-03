@@ -105,6 +105,7 @@ defmodule Anubis.Server.Supervisor do
       {registry_mod, registry_opts} = resolve_registry(opts, transport, server)
       {sup_mod, _sup_opts} = resolve_session_supervisor(opts)
       {task_store_mod, task_store_opts} = resolve_task_store(opts, server)
+      session_store = Anubis.resolve_session_store(opts)
 
       :persistent_term.put({__MODULE__, server, :session_supervisor_mod}, sup_mod)
 
@@ -121,7 +122,8 @@ defmodule Anubis.Server.Supervisor do
         session_idle_timeout: session_idle_timeout,
         timeout: request_timeout,
         task_supervisor: task_supervisor,
-        task_store: [adapter: task_store_mod, name: task_store_name]
+        task_store: [adapter: task_store_mod, name: task_store_name],
+        session_store: session_store
       }
 
       :persistent_term.put({__MODULE__, server, :session_config}, session_config)
@@ -154,7 +156,7 @@ defmodule Anubis.Server.Supervisor do
           _ ->
             extra_children =
               List.wrap(maybe_finch_child(opts, finch_name)) ++
-                session_store_children(Application.get_env(:anubis_mcp, :session_store, [])) ++
+                session_store_children(session_store) ++
                 List.wrap(event_store_child)
 
             build_http_children(
@@ -233,34 +235,22 @@ defmodule Anubis.Server.Supervisor do
     end
   end
 
-  # ponytail: single global session store; running multiple servers means
-  # starting the store yourself and leaving :session_store disabled here.
   @doc false
-  def session_store_children(config) when is_list(config) do
-    enabled? = Keyword.get(config, :enabled, false)
-    adapter = Keyword.get(config, :adapter)
+  def session_store_children(nil), do: []
 
-    cond do
-      not enabled? ->
-        []
+  def session_store_children({adapter, config}) when is_atom(adapter) and is_list(config) do
+    if Code.ensure_loaded?(adapter) do
+      Logging.log(:info, "Starting session store",
+        enabled: true,
+        adapter: adapter,
+        ttl: Keyword.get(config, :ttl),
+        namespace: Keyword.get(config, :namespace)
+      )
 
-      is_nil(adapter) ->
-        Logging.log(:warning, "Session store enabled but adapter not configured", [])
-        []
-
-      Code.ensure_loaded?(adapter) ->
-        Logging.log(:info, "Starting session store",
-          enabled: true,
-          adapter: adapter,
-          ttl: Keyword.get(config, :ttl),
-          namespace: Keyword.get(config, :namespace)
-        )
-
-        [{adapter, config}]
-
-      true ->
-        Logging.log(:warning, "Session store enabled but adapter not available", adapter: adapter)
-        []
+      [{adapter, config}]
+    else
+      Logging.log(:warning, "Session store adapter not available", adapter: adapter)
+      []
     end
   end
 
@@ -378,7 +368,8 @@ defmodule Anubis.Server.Supervisor do
       session_idle_timeout: session_config.session_idle_timeout || to_timeout(minute: 30),
       timeout: session_config.timeout,
       task_supervisor: task_supervisor,
-      task_store: session_config.task_store
+      task_store: session_config.task_store,
+      session_store: session_config.session_store
     ]
 
     base = [

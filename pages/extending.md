@@ -81,7 +81,7 @@ The session store is configured globally because it starts the adapter process u
 config :anubis_mcp, session_store: [enabled: true, adapter: MyApp.RedixSessionStore, ttl: :timer.minutes(30)]
 ```
 
-Task and event stores are per-server, so two servers in the same application can use different backends.
+Task and event stores are always per-server.
 
 ## Authorization
 
