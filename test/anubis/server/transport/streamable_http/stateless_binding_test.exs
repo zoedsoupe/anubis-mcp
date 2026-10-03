@@ -59,6 +59,20 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
     def execute(%{region: region}, frame), do: {:reply, Response.text(Response.tool(), region), frame}
   end
 
+  defmodule DefaultRegionTool do
+    @moduledoc false
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+      field :region, :string, default: "us-west1", mcp_header: "Region"
+    end
+
+    @impl true
+    def execute(%{region: region}, frame), do: {:reply, Response.text(Response.tool(), region), frame}
+  end
+
   defmodule DualEraServer do
     @moduledoc false
 
@@ -70,6 +84,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
 
     component(WhoAmITool)
     component(RegionTool, name: "region")
+    component(DefaultRegionTool, name: "default_region")
 
     @impl true
     def init(client_info, frame) when is_map(client_info),
@@ -119,6 +134,53 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       result = JSON.decode!(conn.resp_body)["result"]
       assert result["resultType"] == "complete"
       assert result["supportedVersions"] == [@version]
+    end
+  end
+
+  describe "an upstream JSON parser" do
+    @tag capture_log: false
+    test "can use the bounded decoder before serving a request", %{opts: opts} do
+      parser = Plug.Parsers.init(parsers: [:json], json_decoder: {StatelessBinding, :decode_json!, []})
+
+      conn =
+        7
+        |> discover_body()
+        |> JSON.encode!()
+        |> stateless_conn([{"mcp-method", "server/discover"}])
+        |> Plug.Parsers.call(parser)
+
+      assert conn.body_params["id"] == 7
+      conn = StreamableHTTPPlug.call(conn, opts)
+      assert conn.status == 200
+      assert %{"id" => 7, "result" => _} = JSON.decode!(conn.resp_body)
+    end
+
+    @tag capture_log: false
+    test "rejects oversized integer literals during upstream parsing" do
+      parser = Plug.Parsers.init(parsers: [:json], json_decoder: {StatelessBinding, :decode_json!, []})
+      body = ~s({"n":#{String.duplicate("9", 65)}})
+      conn = stateless_conn(body, [{"mcp-method", "server/discover"}])
+
+      assert_raise Plug.Parsers.ParseError, ~r/Invalid JSON or integer literal exceeds 64 characters/, fn ->
+        Plug.Parsers.call(conn, parser)
+      end
+    end
+
+    @tag capture_log: false
+    test "rejects malformed JSON and trailing content" do
+      for body <- ["{", "{} true"] do
+        assert_raise ArgumentError, ~r/Invalid JSON/, fn ->
+          StatelessBinding.decode_json!(body)
+        end
+      end
+    end
+
+    @tag capture_log: false
+    test "accepts a 64-character integer and leaves numeric strings intact" do
+      digits = String.duplicate("9", 64)
+      quoted = String.duplicate("9", 65)
+      assert %{"n" => number, "s" => ^quoted} = StatelessBinding.decode_json!(~s({"n":#{digits},"s":"#{quoted}"}))
+      assert number == String.to_integer(digits)
     end
   end
 
@@ -228,6 +290,33 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
 
       assert {:ok, response} = GenServer.call(session, {:mcp_request, request, %{}})
       assert %{"result" => %{"content" => [%{"text" => "us-west1"}]}} = JSON.decode!(response)
+    end
+
+    @tag capture_log: false
+    test "matches the wire arguments before applying server defaults", %{opts: opts} do
+      for params <- [%{"name" => "default_region"}, %{"name" => "default_region", "arguments" => %{}}] do
+        body = %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "tools/call",
+          "params" => Map.put(params, "_meta", meta(@client_info))
+        }
+
+        headers = [{"mcp-method", "tools/call"}, {"mcp-name", "default_region"}]
+
+        conn = post_raw(opts, body, headers)
+        assert conn.status == 200
+        assert %{"result" => %{"content" => [%{"text" => "us-west1"}]}} = JSON.decode!(conn.resp_body)
+
+        log =
+          ExUnit.CaptureLog.capture_log(fn ->
+            conn = post_raw(opts, body, [{"mcp-param-region", "us-west1"} | headers])
+            assert_header_mismatch(conn, "has no argument in the body")
+          end)
+
+        assert log =~ "request_error"
+        assert log =~ "Mcp-Param-Region has no argument in the body"
+      end
     end
 
     test "the handshake era does not read them" do

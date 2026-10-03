@@ -49,7 +49,9 @@ if Code.ensure_loaded?(Plug) do
     64-bit range; otherwise the request is `-32600` and the error carries no
     echo of it. A `progressToken` outside the same bounds is `-32602`. A body
     this binding decodes itself refuses integer literals longer than 64
-    characters as a parse error, before converting them.
+    characters as a parse error, before converting them. If `Plug.Parsers`
+    already decoded the body, configure it with `decode_json!/1` to enforce
+    this lexical limit before conversion there too.
 
     ## Status codes
 
@@ -179,6 +181,35 @@ if Code.ensure_loaded?(Plug) do
 
       {id, conn} = raw_request_id(conn, opts)
       send_error(conn, 400, error, id)
+    end
+
+    @doc """
+    Decodes JSON with the same integer-literal limit as the stateless binding.
+
+    Raises `ArgumentError` for invalid JSON or an integer literal longer than
+    64 characters, including its sign. The limit is checked before conversion;
+    numeric strings are unaffected. This decodes any JSON value and does not
+    validate a JSON-RPC envelope.
+
+    When `Plug.Parsers` runs before the MCP plug, configure its `:json_decoder`
+    as `{#{inspect(__MODULE__)}, :decode_json!, []}` to retain this protection.
+    Plug turns decoding exceptions into `Plug.Parsers.ParseError` (HTTP 400),
+    before the MCP plug can produce a JSON-RPC error response.
+
+    ## Examples
+
+        iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.decode_json!(~s({"n":42}))
+        %{"n" => 42}
+    """
+    @spec decode_json!(binary()) :: term()
+    def decode_json!(body) do
+      case decode(body) do
+        {:ok, value} ->
+          value
+
+        {:error, _reason} ->
+          raise ArgumentError, "Invalid JSON or integer literal exceeds #{@max_integer_literal} characters"
+      end
     end
 
     @doc """
