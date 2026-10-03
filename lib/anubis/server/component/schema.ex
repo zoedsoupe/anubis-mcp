@@ -11,6 +11,13 @@ defmodule Anubis.Server.Component.Schema do
 
   @json_schema_dialect "https://json-schema.org/draft/2020-12/schema"
 
+  @doc """
+  Builds a JSON Schema 2020-12 object from a component's fields.
+
+  Omits server-side defaults and preserves valid `mcp_header:` annotations.
+  A nil schema produces an empty object schema. Raises `ArgumentError` for
+  invalid header annotations.
+  """
   @spec to_json_schema(schema() | nil) :: json_schema()
   def to_json_schema(nil), do: %{"$schema" => @json_schema_dialect, "type" => "object"}
 

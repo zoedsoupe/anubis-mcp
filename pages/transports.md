@@ -115,6 +115,23 @@ The `MCP-Protocol-Version` header picks the era for each request. Without it, or
 - A version the server does not declare is a 400 with `-32022` listing the stateless versions it serves. A server that declares none answers as before, so clients that speak both eras fall back to `initialize`.
 - A request id must be a string of at most 256 bytes or a 64-bit integer (`-32600` otherwise, with no echo of it), and a `progressToken` has the same bounds (`-32602`). A body the plug decodes itself refuses integer literals longer than 64 characters.
 
+#### JSON parsers before the MCP plug
+
+The integer-literal limit protects decoding only when Anubis receives the raw body. A Phoenix endpoint commonly runs `Plug.Parsers` before its router; in that arrangement the JSON decoder has already converted numbers by the time Anubis receives `body_params`. Request ID and progress-token bounds still apply, but cannot undo that decoding work.
+
+Either let the MCP plug read the raw body, or configure the earlier parser to use the same bounded decoder:
+
+```elixir
+plug Plug.Parsers,
+  parsers: [:urlencoded, :multipart, :json],
+  pass: ["*/*"],
+  json_decoder: {Anubis.Server.Transport.StreamableHTTP.StatelessBinding, :decode_json!, []}
+```
+
+This opt-in limit applies to **every request parsed by that parser**, including non-MCP routes if the parser is shared. Use it in an MCP-specific pipeline when other routes need larger integer literals or different decoder behavior. Keep the parser's body-size and read-timeout limits as well. An oversized literal raises `Plug.Parsers.ParseError` (HTTP 400) before Anubis runs, so this path does not produce a JSON-RPC error envelope. Invalid raw bodies decoded by Anubis return `-32700`.
+
+See [`Plug.Parsers` decoder configuration](https://hexdocs.pm/plug/Plug.Parsers.html) and [`JSON.decode/3` integer callbacks](https://hexdocs.pm/elixir/JSON.html#decode/3).
+
 #### Tool parameters in headers
 
 A tool can ask 2026-07-28 clients to mirror a parameter into an `Mcp-Param-{Name}` header, so that a proxy or load balancer can route on it without reading the body:
@@ -126,6 +143,10 @@ end
 ```
 
 The parameter's schema then carries `"x-mcp-header": "Region"`. The name must be an HTTP token, unique regardless of case within the tool, on a string, integer or boolean parameter that is not inside a list; building the schema raises otherwise. A `tools/call` whose header is missing for an argument the body carries, disagrees with it after `=?base64?…?=` decoding, or holds characters a header value cannot, is refused with `-32020` and HTTP 400. Handshake-era and non-HTTP requests are not checked.
+
+Headers mirror the values in the request body **before** server-side defaults or input transformations. An absent or null argument has no header; a default applied later does not require the client to invent one. Mirrored integers must be within `-(2^53 - 1)..(2^53 - 1)`, as required by the [MCP header specification](https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http#custom-headers-from-tool-parameters).
+
+For a parameter that selects a tenant, region or other security-sensitive destination, declare it `required: true` as above and keep its routing meaning unchanged during validation. Enforce access to the selected destination in the application. Header/body agreement checks consistency at the transport boundary; it does not authorize a destination or compare the header with values later derived by application code.
 
 #### Progress and cancellation
 

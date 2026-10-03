@@ -63,6 +63,12 @@ if Code.ensure_loaded?(Plug) do
 
     # Plug callbacks
 
+    @doc """
+    Builds transport options from a keyword list with a required `:server`.
+
+    Applies the default session header, timeout and subscriber metadata callback.
+    Raises `KeyError` when `:server` is absent.
+    """
     @impl Plug
     def init(opts) do
       server = Keyword.fetch!(opts, :server)
@@ -102,6 +108,14 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    @doc """
+    Authorizes an HTTP request and dispatches it to its protocol-era binding.
+
+    Takes options returned by `init/1` and returns the response connection.
+    Serves OAuth resource metadata on its well-known path; other requests use
+    the declared protocol versions, with duplicate version headers rejected
+    when the server supports the stateless era.
+    """
     @impl Plug
     def call(conn, opts) do
       opts = resolve_runtime_config(opts)

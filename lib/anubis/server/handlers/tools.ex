@@ -30,6 +30,14 @@ defmodule Anubis.Server.Handlers.Tools do
      ), frame}
   end
 
+  @doc """
+  Validates and executes a named tool using the current request frame.
+
+  For stateless HTTP, checks mirrored headers against the received arguments
+  before input validation applies defaults or transformations. Scope, input
+  and task-policy failures return `{:error, error, frame}`; successful calls
+  return `{:reply, result, frame}`.
+  """
   @spec handle_call(map(), Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_call(%{"params" => %{"name" => tool_name, "arguments" => params}} = request, frame, server) do
