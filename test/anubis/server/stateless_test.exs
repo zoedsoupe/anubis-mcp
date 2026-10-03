@@ -6,6 +6,7 @@ defmodule Anubis.Server.StatelessTest do
   alias Anubis.Protocol.Registry, as: ProtocolRegistry
   alias Anubis.Protocol.Schema
   alias Anubis.Protocol.V2026_07_28
+  alias Anubis.Server.Component
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.Stateless
@@ -20,7 +21,7 @@ defmodule Anubis.Server.StatelessTest do
   defmodule EchoContextTool do
     @moduledoc false
 
-    use Anubis.Server.Component, type: :tool
+    use Component, type: :tool
 
     alias Anubis.Server.Response
 
@@ -30,6 +31,23 @@ defmodule Anubis.Server.StatelessTest do
     @impl true
     def execute(_params, frame) do
       {:reply, Response.json(Response.tool(), %{capabilities: frame.context.client_capabilities}), frame}
+    end
+  end
+
+  defmodule LoggingTool do
+    @moduledoc false
+    use Component, type: :tool
+
+    alias Anubis.Server.Response
+
+    schema do
+    end
+
+    @impl true
+    def execute(_params, frame) do
+      Anubis.Server.send_log_message(:debug, "detail")
+      Anubis.Server.send_log_message(:info, "working")
+      {:reply, Response.text(Response.tool(), "done"), frame}
     end
   end
 
@@ -44,6 +62,7 @@ defmodule Anubis.Server.StatelessTest do
       instructions: "Serves both eras."
 
     component(EchoContextTool)
+    component(LoggingTool)
   end
 
   defmodule StatelessOnlyServer do
@@ -150,6 +169,49 @@ defmodule Anubis.Server.StatelessTest do
     end
   end
 
+  @tag capture_log: false
+  test "a persistent session uses each active request's log level" do
+    session = start_session(DualEraServer)
+    transport = Registry.transport_name(DualEraServer, StubTransport)
+
+    for {level, expected} <- [{"info", ["info"]}, {nil, []}, {"debug", ["debug", "info"]}] do
+      StubTransport.clear(transport)
+
+      meta = request_meta([])
+      meta = if level, do: Map.put(meta, "io.modelcontextprotocol/logLevel", level), else: meta
+
+      params = %{
+        "name" => "logging_tool",
+        "arguments" => %{},
+        "_meta" => meta
+      }
+
+      request = build_request("tools/call", params)
+      assert {:ok, _} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert is_nil(:sys.get_state(session).request_context)
+
+      logs =
+        for %{"method" => "notifications/message", "params" => params} <- StubTransport.get_messages(transport),
+            do: params["level"]
+
+      assert logs == expected
+    end
+  end
+
+  @tag capture_log: false
+  test "an owned stateless session without logLevel suppresses logs outside a handler" do
+    session = start_session(DualEraServer, owner: self())
+    transport = Registry.transport_name(DualEraServer, StubTransport)
+    assert %{"resultType" => "complete"} = request!(session, "server/discover")
+    StubTransport.clear(transport)
+
+    send(session, {:send_notification, "notifications/message", %{"level" => "info", "data" => "working"}})
+    state = :sys.get_state(session)
+    assert is_nil(state.in_flight)
+    assert %{log_level: nil} = Stateless.context(state.request_context)
+    assert StubTransport.get_messages(transport) == []
+  end
+
   describe "result shaping" do
     test "every stateless result carries resultType and the server identity" do
       session = start_session(DualEraServer)
@@ -219,7 +281,7 @@ defmodule Anubis.Server.StatelessTest do
     end
   end
 
-  defp start_session(server_module) do
+  defp start_session(server_module, opts \\ []) do
     session_id = "stateless-#{System.unique_integer([:positive])}"
     transport_name = Registry.transport_name(server_module, StubTransport)
     start_supervised!({StubTransport, name: transport_name}, id: transport_name)
@@ -231,11 +293,13 @@ defmodule Anubis.Server.StatelessTest do
 
     start_supervised!(
       {Session,
-       session_id: session_id,
-       server_module: server_module,
-       name: session_name,
-       transport: [layer: StubTransport, name: transport_name],
-       task_supervisor: task_sup},
+       [
+         session_id: session_id,
+         server_module: server_module,
+         name: session_name,
+         transport: [layer: StubTransport, name: transport_name],
+         task_supervisor: task_sup
+       ] ++ opts},
       id: session_name
     )
   end

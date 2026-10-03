@@ -2,6 +2,7 @@ defmodule Anubis.Server.TasksTest do
   use Anubis.MCP.Case, async: false
 
   alias Anubis.MCP.Message
+  alias Anubis.Server.Frame
   alias Anubis.Server.Registry
   alias Anubis.Server.Session
   alias Anubis.Server.TaskStore.Local, as: TaskStoreLocal
@@ -32,8 +33,10 @@ defmodule Anubis.Server.TasksTest do
       send(pid, {:proceed, :alpha})
     end
 
-    test "preserves the authenticated request context in the worker frame", %{
-      session: session
+    @tag capture_log: false
+    test "preserves the authenticated request context and delivers worker progress", %{
+      session: session,
+      transport: transport
     } do
       auth = %{
         sub: "actor-123",
@@ -53,14 +56,25 @@ defmodule Anubis.Server.TasksTest do
         auth: auth
       }
 
-      request = build_request_with_task("capture_context", %{}, "req-context")
+      meta = %{"progressToken" => "task-progress"}
+      request = put_in(build_request_with_task("capture_context", %{}, "req-context"), ["params", "_meta"], meta)
       decoded = call_session(session, request, transport_context)
 
       assert is_binary(decoded["result"]["task"]["taskId"])
       assert_receive {:task_context, context}, 500
+      assert context.request_meta == meta
+      frame = %Frame{context: context}
+      assert Frame.request_meta(frame) == meta
+      assert Frame.progress_token(frame) == "task-progress"
       assert context.auth == auth
       assert context.headers == %{"x-request-id" => "task-request"}
       assert context.remote_ip == {203, 0, 113, 42}
+
+      task_id = decoded["result"]["task"]["taskId"]
+      SyncHelpers.await_state(session, fn state -> not Map.has_key?(state.tasks, task_id) end)
+
+      assert %{"params" => %{"progressToken" => "task-progress", "progress" => 100, "total" => 100}} =
+               Enum.find(StubTransport.get_messages(transport), &(&1["method"] == "notifications/progress"))
     end
 
     test "rejects forbidden tool with -32601", %{session: session} do

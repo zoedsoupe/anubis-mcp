@@ -27,6 +27,29 @@ defmodule Anubis.Server.Transport.StreamableHTTPTest do
     end
   end
 
+  @tag capture_log: false
+  test "short-lived registrations share one keepalive timer" do
+    transport =
+      start_supervised!(
+        {StreamableHTTP,
+         server: StubServer,
+         name: :keepalive_regression,
+         task_supervisor: Registry.task_supervisor_name(StubServer),
+         keepalive_interval: 500}
+      )
+
+    for i <- 1..25 do
+      :ok = StreamableHTTP.register_sse_handler(transport, "short-#{i}")
+      :ok = StreamableHTTP.unregister_sse_handler(transport, "short-#{i}")
+    end
+
+    :ok = StreamableHTTP.register_sse_handler(transport, "slow")
+    assert_receive :sse_keepalive, 1_000
+    refute_receive :sse_keepalive, 100
+    assert_receive :sse_keepalive, 1_000
+    refute_receive :sse_keepalive, 100
+  end
+
   describe "with running transport" do
     setup do
       name = Registry.transport_name(StubServer, :streamable_http)

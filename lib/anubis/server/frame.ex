@@ -394,6 +394,32 @@ defmodule Anubis.Server.Frame do
     Map.has_key?(capabilities || %{}, capability)
   end
 
+  @doc false
+  @spec put_request_meta(t(), map()) :: t()
+  def put_request_meta(%__MODULE__{context: context} = frame, request) do
+    meta = get_in(request, ["params", "_meta"])
+    %{frame | context: %{context | request_meta: if(is_map(meta), do: meta, else: %{})}}
+  end
+
+  @doc """
+  Returns the `_meta` of the request being served, or an empty map.
+  """
+  @spec request_meta(t()) :: map()
+  def request_meta(%__MODULE__{context: %Context{request_meta: meta}}), do: meta || %{}
+
+  @doc """
+  Returns the `progressToken` the client sent with the request being served,
+  or `nil` when it asked for no progress.
+
+  ## Examples
+
+      if token = Frame.progress_token(frame) do
+        Anubis.Server.send_progress(token, 50, total: 100)
+      end
+  """
+  @spec progress_token(t()) :: String.t() | integer() | nil
+  def progress_token(%__MODULE__{} = frame), do: Map.get(request_meta(frame), "progressToken")
+
   @doc """
   Returns the list of granted scopes from the bearer token.
 

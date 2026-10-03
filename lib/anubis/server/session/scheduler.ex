@@ -164,11 +164,13 @@ defmodule Anubis.Server.Session.Scheduler do
       %{id: request_id, method: method}
     )
 
-    frame = frame_fn.(state, transport_context)
+    frame = Frame.put_request_meta(frame_fn.(state, transport_context), request)
     module = state.server_module
+    session = self()
 
     task =
       Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+        Anubis.Server.put_session(session)
         do_handle_request(module, request, frame, method)
       end)
 

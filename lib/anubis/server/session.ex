@@ -498,16 +498,12 @@ defmodule Anubis.Server.Session do
   # Handle info messages
 
   @impl GenServer
-  def handle_info({:send_notification, method, params}, state) do
-    with {:ok, notification} <- ServerRequests.encode_notification(method, params, state),
-         :ok <- ServerRequests.send_to_transport(state.transport, notification, ServerRequests.transport_opts(state)) do
-      {:noreply, state}
-    else
-      {:error, err} ->
-        Logging.server_event("failed_send_notification", %{method: method, error: err}, level: :error)
+  def handle_info({:send_notification, "notifications/message" = method, %{"level" => level} = params}, state) do
+    if logged?(level, log_threshold(state)), do: send_notification(method, params, state), else: {:noreply, state}
+  end
 
-        {:noreply, state}
-    end
+  def handle_info({:send_notification, method, params}, state) do
+    send_notification(method, params, state)
   end
 
   def handle_info({:send_resource_update, uri, params}, state) do
@@ -1209,4 +1205,44 @@ defmodule Anubis.Server.Session do
 
   defp maybe_put_instructions(result, instructions) when is_binary(instructions),
     do: Map.put(result, "instructions", instructions)
+
+  defp send_notification(method, params, state) do
+    with {:ok, notification} <- ServerRequests.encode_notification(method, params, state),
+         :ok <- ServerRequests.send_to_transport(state.transport, notification, ServerRequests.transport_opts(state)) do
+      {:noreply, state}
+    else
+      {:error, err} ->
+        Logging.server_event("failed_send_notification", %{method: method, error: err}, level: :error)
+
+        {:noreply, state}
+    end
+  end
+
+  # RFC 5424 severities, as `logging/setLevel` names them. Only legacy sessions
+  # allow every level when the client has not set a threshold.
+  @log_levels ~w(debug info notice warning error critical alert emergency)
+
+  # A stateless request declares its own level in `_meta`; a handshake-era
+  # session keeps the one `logging/setLevel` set.
+  defp log_threshold(%{in_flight: %{stateless: %{log_level: level}}}), do: level || :disabled
+
+  defp log_threshold(state) do
+    case Stateless.context(state.request_context) do
+      %{log_level: level} -> level || :disabled
+      _other -> state.log_level
+    end
+  end
+
+  defp logged?(_level, :disabled), do: false
+  defp logged?(_level, nil), do: true
+
+  defp logged?(level, threshold) do
+    case {Enum.find_index(@log_levels, &(&1 == level)), Enum.find_index(@log_levels, &(&1 == threshold))} do
+      {level_index, threshold_index} when is_integer(level_index) and is_integer(threshold_index) ->
+        level_index >= threshold_index
+
+      _unknown ->
+        true
+    end
+  end
 end
