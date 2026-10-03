@@ -112,6 +112,19 @@ defmodule Anubis.Server.McpParamTest do
       end
     end
 
+    test "bounds mirrored integers to the interoperable JSON range", %{schema: schema} do
+      limit = 9_007_199_254_740_991
+
+      for value <- [-limit, limit] do
+        assert :ok = McpParam.validate(schema, %{"count" => value}, %{"mcp-param-count" => Integer.to_string(value)})
+      end
+
+      for value <- [-limit - 1, limit + 1] do
+        assert {:error, %Error{code: -32_020}} =
+                 McpParam.validate(schema, %{"count" => value}, %{"mcp-param-count" => Integer.to_string(value)})
+      end
+    end
+
     test "has nothing to check without annotations" do
       assert :ok = McpParam.validate(%{"type" => "object"}, %{"a" => 1}, %{"mcp-param-a" => "2"})
       assert :ok = McpParam.validate(nil, nil, %{})

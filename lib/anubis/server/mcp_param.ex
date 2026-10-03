@@ -15,6 +15,11 @@ defmodule Anubis.Server.McpParam do
   string, integer or boolean parameter reachable from the schema root through
   `properties` alone. A schema that breaks any of these raises
   `ArgumentError` when its JSON Schema is built.
+
+  Headers mirror wire arguments before defaults or transformations. A routing
+  selector that must be visible to intermediaries should be required and keep
+  the same meaning during validation; authorization remains the application's
+  responsibility. See the [transport guide](transports.md#tool-parameters-in-headers).
   """
 
   alias Anubis.MCP.Error
@@ -22,6 +27,7 @@ defmodule Anubis.Server.McpParam do
   @base64_prefix "=?base64?"
   @base64_suffix "?="
   @header_types ["string", "integer", "boolean"]
+  @max_safe_integer 9_007_199_254_740_991
   @token ~r/\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/
 
   @doc """
@@ -86,7 +92,12 @@ defmodule Anubis.Server.McpParam do
   Checks the `Mcp-Param-*` headers of a `tools/call` against its arguments.
 
   `input_schema` is the tool's JSON Schema, `arguments` the call's arguments
-  and `headers` the request's headers, with lowercase names.
+  and `headers` the request's headers, with lowercase names. Arguments are the
+  values received on the wire, before server defaults or transformations.
+  Absent or null values require no header. Returns `:ok` when they match,
+  otherwise `{:error, error}` with protocol code `-32020`.
+
+  Mirrored integers must be within the IEEE 754 safe range, ±(2^53 - 1).
   """
   @spec validate(map() | nil, map() | nil, %{String.t() => String.t()}) :: :ok | {:error, Error.t()}
   def validate(input_schema, arguments, headers) do
@@ -103,6 +114,10 @@ defmodule Anubis.Server.McpParam do
   defp check(nil, nil, _name), do: :ok
   defp check(nil, _header, name), do: {:error, "Mcp-Param-#{name} has no argument in the body to match"}
   defp check(_value, nil, name), do: {:error, "Missing required header Mcp-Param-#{name}"}
+
+  defp check(value, _header, name) when is_integer(value) and (value < -@max_safe_integer or value > @max_safe_integer) do
+    {:error, "Mcp-Param-#{name} requires an integer within the IEEE 754 safe range"}
+  end
 
   defp check(value, header, name) do
     with true <- header_value?(header),
