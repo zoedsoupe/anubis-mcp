@@ -125,7 +125,7 @@ schema do
 end
 ```
 
-The parameter's schema then carries `"x-mcp-header": "Region"`. The name must be an HTTP token, unique regardless of case within the tool, on a string, integer or boolean parameter that is not inside a list; building the schema raises otherwise. A `tools/call` whose header is missing for an argument the body carries, disagrees with it after `=?base64?…?=` decoding, or holds characters a header value cannot, is refused with `-32020` and HTTP 400. Handshake-era requests are not checked.
+The parameter's schema then carries `"x-mcp-header": "Region"`. The name must be an HTTP token, unique regardless of case within the tool, on a string, integer or boolean parameter that is not inside a list; building the schema raises otherwise. A `tools/call` whose header is missing for an argument the body carries, disagrees with it after `=?base64?…?=` decoding, or holds characters a header value cannot, is refused with `-32020` and HTTP 400. Handshake-era and non-HTTP requests are not checked.
 
 #### Progress and cancellation
 

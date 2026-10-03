@@ -65,8 +65,12 @@ defmodule Anubis.Server.Handlers.Tools do
     end
   end
 
-  # Only a stateless request arrives with its arguments mirrored into headers.
-  defp check_param_headers(%Tool{input_schema: schema}, arguments, %Frame{context: context} = frame) do
+  # Stateless HTTP requires this header; STDIO has no mirrored parameters.
+  defp check_param_headers(
+         %Tool{input_schema: schema},
+         arguments,
+         %Frame{context: %{headers: %{"mcp-protocol-version" => _}} = context} = frame
+       ) do
     if Stateless.era(context.protocol_module) == :stateless do
       case McpParam.validate(schema, arguments, context.headers) do
         :ok -> :ok
@@ -76,6 +80,8 @@ defmodule Anubis.Server.Handlers.Tools do
       :ok
     end
   end
+
+  defp check_param_headers(_tool, _arguments, _frame), do: :ok
 
   defp check_scopes(%Tool{scopes: []}, _frame), do: :ok
 

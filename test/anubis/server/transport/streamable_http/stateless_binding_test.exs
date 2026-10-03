@@ -202,6 +202,34 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       end
     end
 
+    @tag capture_log: false
+    test "stateless calls without HTTP headers do not require mirrored parameters" do
+      config = ServerSupervisor.get_session_config(DualEraServer)
+
+      session =
+        start_supervised!(
+          {Session,
+           session_id: "without-http",
+           server_module: DualEraServer,
+           transport: config.transport,
+           task_supervisor: config.task_supervisor}
+        )
+
+      request = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "tools/call",
+        "params" => %{
+          "name" => "region",
+          "arguments" => %{"region" => "us-west1"},
+          "_meta" => meta(@client_info)
+        }
+      }
+
+      assert {:ok, response} = GenServer.call(session, {:mcp_request, request, %{}})
+      assert %{"result" => %{"content" => [%{"text" => "us-west1"}]}} = JSON.decode!(response)
+    end
+
     test "the handshake era does not read them" do
       request = %{
         "jsonrpc" => "2.0",
