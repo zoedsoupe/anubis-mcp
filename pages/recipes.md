@@ -215,7 +215,7 @@ defmodule MyApp.Server do
 
   @impl true
   def handle_info({:catalog_updated, _payload}, frame) do
-    Anubis.Server.send_resources_list_changed()
+    Notifier.resources_list_changed(frame)
     {:noreply, frame}
   end
 end
@@ -258,7 +258,7 @@ Servers with the `:logging` capability can stream log messages to clients over t
 
 ```elixir
 # server side, inside any callback
-Anubis.Server.send_log_message(:info, "reindex started", %{index: "products"})
+Notifier.log_message(frame, :info, "reindex started", %{index: "products"})
 ```
 
 ```elixir

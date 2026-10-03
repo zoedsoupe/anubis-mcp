@@ -130,7 +130,7 @@ Use `:public` only for a result that is the same for every caller; a list filter
 
 `subscriptions/listen` answers with an SSE stream that stays open. It opens with `notifications/subscriptions/acknowledged`, naming the part of the client's filter the server honors: a list-changed flag for a capability declared with `list_changed?: true`, and a resource URI when `resources` is declared with `subscribe?: true` and the URI passes the same scope check as `resources/subscribe`. Only those notifications follow, each carrying the subscription id in `_meta`.
 
-The stream is served by a session that lives as long as the stream does and does not expire when idle. `init/2` runs for it once, and the server emits into it the way it does in the handshake era, from its own callbacks: `Anubis.Server.send_resource_updated/2`, `send_tools_list_changed/0` and the other list-changed helpers, typically from `handle_info/2` after subscribing the session to the application's events in `init/2`. Other notifications, such as log messages, never reach the stream. When the session stops or the transport shuts down, the stream ends with a completion result for the `subscriptions/listen` request.
+The stream is served by a session that lives as long as the stream does and does not expire when idle. `init/2` runs for it once, and the server emits into it the way it does in the handshake era, from its own callbacks: `Notifier.resource_updated/3`, `Notifier.tools_list_changed/1` and the other list-changed helpers, typically from `handle_info/2` after subscribing the session to the application's events in `init/2`. Other notifications, such as log messages, never reach the stream. When the session stops or the transport shuts down, the stream ends with a completion result for the `subscriptions/listen` request.
 
 ```elixir
 @impl true
@@ -141,7 +141,7 @@ end
 
 @impl true
 def handle_info({:report_ready, id}, frame) do
-  Anubis.Server.send_resource_updated("reports://#{id}")
+  Notifier.resource_updated(frame, "reports://#{id}")
   {:noreply, frame}
 end
 ```

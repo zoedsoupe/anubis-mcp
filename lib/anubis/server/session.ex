@@ -190,7 +190,8 @@ defmodule Anubis.Server.Session do
       request_queue: :queue.new(),
       deferred_callbacks: :queue.new(),
       owner_ref: monitor_owner(opts[:owner]),
-      request_context: nil
+      request_context: nil,
+      request_meta: %{}
     }
 
     state = schedule_session_expiry(state)
@@ -222,6 +223,7 @@ defmodule Anubis.Server.Session do
   def handle_call({:mcp_request, decoded, transport_context}, from, state) when is_map(decoded) do
     state = merge_transport_assigns(state, transport_context)
     state = reset_session_expiry(state)
+    state = put_request_meta(state, decoded)
 
     with {:ok, decoded, transport_context} <- admit_request(decoded, transport_context, state),
          {:ok, state} <- maybe_init_for_request(transport_context, state) do
@@ -318,14 +320,14 @@ defmodule Anubis.Server.Session do
   def handle_cast({:mcp_notification, decoded, _ctx} = msg, %{in_flight: f} = state)
       when not is_nil(f) and is_map(decoded) do
     if cancellation_notification?(decoded) do
-      process_mcp_notification(msg, state)
+      process_mcp_notification(msg, put_request_meta(state, decoded))
     else
       {:noreply, Scheduler.defer(state, {:cast, msg})}
     end
   end
 
   def handle_cast({:mcp_notification, decoded, _ctx} = msg, state) when is_map(decoded) do
-    process_mcp_notification(msg, state)
+    process_mcp_notification(msg, put_request_meta(state, decoded))
   end
 
   # Server-initiated request responses (sampling/roots)
@@ -879,39 +881,28 @@ defmodule Anubis.Server.Session do
   defp prepare_frame(state, transport_context \\ nil) do
     transport_context = transport_context || state.request_context
 
-    headers =
-      case transport_context do
-        %{req_headers: req_headers} -> normalize_headers(req_headers)
-        _ -> %{}
-      end
-
-    remote_ip =
-      case transport_context do
-        %{remote_ip: ip} -> ip
-        _ -> nil
-      end
-
-    auth =
-      case transport_context do
-        %{auth: claims} -> claims
-        _ -> nil
-      end
-
     context = %Context{
       session_id: state.session_id,
       client_info: state.client_info,
       init_meta: state.init_meta,
-      headers: headers,
-      remote_ip: remote_ip,
-      auth: auth,
+      headers: transport_context_field(transport_context, :req_headers, &normalize_headers/1, %{}),
+      remote_ip: transport_context_field(transport_context, :remote_ip, & &1, nil),
+      auth: transport_context_field(transport_context, :auth, & &1, nil),
       protocol_version: state.protocol_version,
       protocol_module: state.protocol_module,
       client_capabilities: state.client_capabilities || %{},
-      log_level: state.log_level
+      log_level: state.log_level,
+      session_pid: self(),
+      request_meta: state.request_meta || %{}
     }
 
     %{state.frame | context: apply_stateless_context(context, Stateless.context(transport_context))}
   end
+
+  defp transport_context_field(%{req_headers: headers}, :req_headers, normalize, _default), do: normalize.(headers)
+
+  defp transport_context_field(context, field, _normalize, _default) when is_map(context), do: Map.get(context, field)
+  defp transport_context_field(_context, _field, _normalize, default), do: default
 
   defp apply_stateless_context(context, nil), do: context
 
@@ -924,6 +915,16 @@ defmodule Anubis.Server.Session do
         client_info: stateless.client_info,
         log_level: stateless.log_level
     }
+  end
+
+  defp put_request_meta(state, decoded) do
+    meta =
+      case decoded do
+        %{"params" => %{"_meta" => meta}} when is_map(meta) -> meta
+        _ -> %{}
+      end
+
+    %{state | request_meta: meta}
   end
 
   defp merge_transport_assigns(state, %{assigns: assigns}) when is_map(assigns) do

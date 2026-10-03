@@ -118,13 +118,16 @@ def handle_tool_call(name, args, frame), do: {:reply, response, frame}
 ### Notifications (inside callbacks)
 
 ```elixir
-Anubis.Server.send_tools_list_changed()
-Anubis.Server.send_resources_list_changed()
-Anubis.Server.send_prompts_list_changed()
-Anubis.Server.send_resource_updated(uri)
-Anubis.Server.send_log_message(:info, "msg", %{meta: 1})
-Anubis.Server.send_progress(token, 50, total: 100)
+Notifier.tools_list_changed(frame)
+Notifier.resources_list_changed(frame)
+Notifier.prompts_list_changed(frame)
+Notifier.resource_updated(frame, uri)
+Notifier.log_message(frame, :info, "msg", %{meta: 1})
+Notifier.progress(frame, frame.context.request_meta["progressToken"], 50, total: 100)
 ```
+
+Frame-carried, so they work from any process. `Anubis.Server.send_*` targets
+`self()` and only fires inside the session process.
 
 ## Components
 {: .col-2}

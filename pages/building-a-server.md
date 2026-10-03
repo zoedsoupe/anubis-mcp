@@ -286,14 +286,15 @@ end
 
 ## Notifications
 
-Servers can push notifications to connected clients. Call these from inside server callbacks:
+Servers can push notifications to connected clients. `Anubis.Server.Notifier` reads the session pid off the frame, so its helpers work from any process — including a task spawned inside a tool callback:
 
 ```elixir
-Anubis.Server.send_tools_list_changed()
-Anubis.Server.send_resources_list_changed()
-Anubis.Server.send_prompts_list_changed()
-Anubis.Server.send_resource_updated(uri)
-Anubis.Server.send_log_message(:info, "reindex finished")
+Notifier.tools_list_changed(frame)
+Notifier.resources_list_changed(frame)
+Notifier.prompts_list_changed(frame)
+Notifier.resource_updated(frame, uri)
+Notifier.log_message(frame, :info, "reindex finished")
+Notifier.progress(frame, token, 50, total: 100)
 ```
 
 The list-changed notifications require the matching capability option, for example `{:tools, list_changed?: true}`. A common pattern bridges application events into MCP notifications through `handle_info/2`:
@@ -307,12 +308,23 @@ end
 
 @impl true
 def handle_info({:catalog_updated, _}, frame) do
-  Anubis.Server.send_resources_list_changed()
+  Notifier.resources_list_changed(frame)
   {:noreply, frame}
 end
 ```
 
-These functions message the current session process, so they only work inside callbacks. From an external process, send to the session PID directly.
+The progress token for `Notifier.progress/4` is the one the client sent on the request, which the session exposes as `frame.context.request_meta`:
+
+```elixir
+@impl true
+def execute(_args, frame) do
+  token = frame.context.request_meta["progressToken"]
+  MyApp.Job.run(fn step -> Notifier.progress(frame, token, step.done, total: step.total) end)
+  {:reply, Response.text(Response.tool(), "queued"), frame}
+end
+```
+
+`Anubis.Server.send_tools_list_changed/0` and its siblings use `send(self(), ...)`, so they only fire when called from the session process itself. Prefer `Notifier` in callbacks.
 
 ## Next steps
 

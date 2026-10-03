@@ -33,6 +33,16 @@ defmodule Anubis.Server.Context do
   including `init/2`. Empty map when the client sent none. Metadata sent under
   `clientInfo._meta` is preserved inside `client_info` itself.
 
+  ## Per-request fields
+
+    * `session_pid` - the Session process serving this request. Use it to
+      send notifications back to the client from any process, including a
+      task spawned inside a tool callback. `nil` outside a session.
+    * `request_meta` - the `_meta` map the client sent on this request's
+      params. This is where `progressToken` and the
+      `io.modelcontextprotocol/tasks` extension declaration live. Empty map
+      when the client sent none.
+
   ## Protocol era fields
 
   `protocol_version`, `protocol_module`, `client_capabilities` and `log_level`
@@ -81,6 +91,8 @@ defmodule Anubis.Server.Context do
           protocol_module: module() | nil,
           client_capabilities: map(),
           log_level: String.t() | nil,
+          session_pid: pid() | nil,
+          request_meta: map(),
           input_responses: %{String.t() => map()},
           request_state: term(),
           request_digest: binary() | nil
@@ -96,6 +108,8 @@ defmodule Anubis.Server.Context do
             protocol_module: nil,
             client_capabilities: %{},
             log_level: nil,
+            session_pid: nil,
+            request_meta: %{},
             input_responses: %{},
             request_state: nil,
             request_digest: nil
