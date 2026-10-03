@@ -59,6 +59,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     @moduledoc false
     use Component, type: :tool
 
+    alias Anubis.Server.Frame
     alias Anubis.Server.Response
 
     schema do
@@ -69,7 +70,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
       send(ResponseStreamTest, {:tool_running, self()})
 
       receive do
-        :finish -> {:reply, Response.text(Response.tool(), "finished"), frame}
+        :finish ->
+          if token = Frame.progress_token(frame), do: Anubis.Server.send_progress(token, 100)
+          {:reply, Response.text(Response.tool(), "finished"), frame}
       end
     end
   end
@@ -281,6 +284,53 @@ defmodule Anubis.Server.Transport.StreamableHTTP.ResponseStreamTest do
     assert conn.status == 200
     assert chunks(conn) == ": keepalive\n\n"
     assert events(conn) == []
+  end
+
+  for event_store? <- [false, true] do
+    @tag event_store: event_store?
+    test "broadcasts stay off request streams with event_store=#{event_store?}", %{opts: opts, event_store: stored?} do
+      Process.register(self(), ResponseStreamTest)
+      transport = Registry.transport_name(StreamingServer, :streamable_http)
+      :ok = StreamableHTTP.register_sse_handler(transport, "listener")
+      meta = %{"progressToken" => "own", "io.modelcontextprotocol/logLevel" => "info"}
+      request = Task.async(fn -> call(opts, meta, "application/json, text/event-stream", "slow") end)
+      assert_receive {:tool_running, tool}
+
+      progress =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "method" => "notifications/progress",
+          "params" => %{"progressToken" => "unrelated", "progress" => 50}
+        })
+
+      log =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "method" => "notifications/message",
+          "params" => %{"level" => "info", "data" => "unrelated"}
+        })
+
+      :ok = StreamableHTTP.send_message(transport, progress, [])
+      :ok = StreamableHTTP.send_message_to_subscribers(transport, fn _metadata -> true end, log)
+
+      if stored? do
+        assert_receive {:sse_message, ^progress, _event_id}
+      else
+        assert_receive {:sse_message, ^progress}
+      end
+
+      assert_receive {:sse_message, ^log}
+
+      send(tool, :finish)
+      conn = Task.await(request)
+
+      assert [
+               %{"method" => "notifications/progress", "params" => %{"progressToken" => "own", "progress" => 100}},
+               %{"id" => 1, "result" => %{"content" => [%{"text" => "finished"}]}}
+             ] = events(conn)
+
+      assert StreamableHTTP.handler_count(transport) == 1
+    end
   end
 
   test "a client that disconnects cancels the running tool", %{opts: opts} do

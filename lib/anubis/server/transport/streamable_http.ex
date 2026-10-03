@@ -162,6 +162,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   @doc """
   Registers an SSE handler with transport options. Set `resumable: false` for
   request-scoped streams whose events cannot be replayed after completion.
+  These streams receive session-directed messages, not global or selected
+  subscriber broadcasts.
 
   Non-resumable registration requires a session ID with no existing resumable
   stream: it does not clear an earlier registration's replay state. The stateless
@@ -221,12 +223,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @doc """
-  Sends a message to every connected SSE handler whose metadata satisfies `selector`.
+  Sends a message to every connected subscriber whose metadata satisfies `selector`.
+  Request-scoped streams registered with `resumable: false` are excluded.
 
   `selector` receives each handler's opaque metadata map (see
   `register_sse_handler/3`) and returns a truthy value for the subscribers that
   should receive `message`. This complements `route_to_session/3` (a single
-  session) and `send_message/3` (broadcast to all handlers) with delivery to an
+  session) and `send_message/3` (broadcast to all subscribers) with delivery to an
   arbitrary, application-defined subset.
 
   `opts` accepts `:timeout` (default `5000`).
@@ -281,6 +284,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       registry: opts.registry,
       task_supervisor: opts.task_supervisor,
       sse_handlers: %{},
+      request_streams: MapSet.new(),
       keepalive_interval: opts.keepalive_interval,
       keepalive_enabled: opts.keepalive,
       keepalive_timer: nil,
@@ -356,10 +360,22 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     # Open the session's stream so broadcasts keep recording into it across
     # handler disconnects (the reconnect gap), and cancel any pending grace-close
     # timer since the client has reconnected.
-    streams = if Keyword.get(opts, :resumable, true), do: open_stream(state, session_id), else: state.streams
+    resumable? = Keyword.get(opts, :resumable, true)
+    streams = if resumable?, do: open_stream(state, session_id), else: state.streams
     stream_timers = cancel_close_timer(state.stream_timers, session_id)
 
-    new_state = %{state | sse_handlers: sse_handlers, streams: streams, stream_timers: stream_timers}
+    request_streams =
+      if resumable?,
+        do: MapSet.delete(state.request_streams, session_id),
+        else: MapSet.put(state.request_streams, session_id)
+
+    new_state = %{
+      state
+      | sse_handlers: sse_handlers,
+        streams: streams,
+        stream_timers: stream_timers,
+        request_streams: request_streams
+    }
 
     {:reply, :ok, schedule_keepalive(new_state)}
   end
@@ -394,7 +410,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
   @impl GenServer
   def handle_call({:send_message_to_subscribers, selector, message}, _from, state) do
-    for {_session_id, {pid, _ref, metadata}} <- state.sse_handlers, selector.(metadata) do
+    for {session_id, {pid, _ref, metadata}} <- state.sse_handlers,
+        not MapSet.member?(state.request_streams, session_id),
+        selector.(metadata) do
       send(pid, {:sse_message, message})
     end
 
@@ -449,7 +467,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
       {pid, ref, _meta} ->
         Process.demonitor(ref, [:flush])
         pg_leave(state.pg_scope, session_id, pid)
-        state = %{state | sse_handlers: Map.delete(state.sse_handlers, session_id)}
+
+        state = %{
+          state
+          | sse_handlers: Map.delete(state.sse_handlers, session_id),
+            request_streams: MapSet.delete(state.request_streams, session_id)
+        }
+
         {:noreply, schedule_close_if_open(state, session_id)}
 
       nil ->
@@ -482,7 +506,13 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
 
       session_id ->
         Logging.transport_event("sse_handler_down", %{reason: inspect(reason)})
-        state = %{state | sse_handlers: Map.delete(state.sse_handlers, session_id)}
+
+        state = %{
+          state
+          | sse_handlers: Map.delete(state.sse_handlers, session_id),
+            request_streams: MapSet.delete(state.request_streams, session_id)
+        }
+
         {:noreply, schedule_close_if_open(state, session_id)}
     end
   end
@@ -575,7 +605,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   defp broadcast(%{event_store: nil} = state, message) do
-    for {_session_id, {pid, _ref, _meta}} <- state.sse_handlers do
+    for {session_id, {pid, _ref, _meta}} <- state.sse_handlers,
+        not MapSet.member?(state.request_streams, session_id) do
       send(pid, {:sse_message, message})
     end
 
@@ -585,11 +616,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   # Records into every open stream; returns the first append error (if any) so a
   # dropped write is surfaced to the caller rather than silently swallowed.
   defp broadcast(%{event_store: {_mod, _name} = store} = state, message) do
-    for {session_id, {pid, _ref, _meta}} <- state.sse_handlers,
-        not MapSet.member?(state.streams, session_id) do
-      send(pid, {:sse_message, message})
-    end
-
     failures =
       Enum.reduce(state.streams, [], fn session_id, acc ->
         case record_and_deliver(store, state, session_id, message) do
