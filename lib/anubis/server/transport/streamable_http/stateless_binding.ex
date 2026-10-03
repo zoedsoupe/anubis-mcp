@@ -599,7 +599,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp send_error(conn, status, %Error{} = error, id) do
-      {:ok, body} = Error.to_json_rpc(error, id || ID.generate_error_id())
+      body = error |> Error.build_json_rpc(id) |> JSON.encode!()
 
       conn
       |> put_resp_content_type("application/json")

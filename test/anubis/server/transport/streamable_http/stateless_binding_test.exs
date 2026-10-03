@@ -338,15 +338,14 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       conn = post_raw(opts, discover_body(id), [{"mcp-method", "server/discover"}])
 
       assert conn.status == 400
-      assert %{"error" => %{"code" => -32_600}, "id" => echoed} = JSON.decode!(conn.resp_body)
-      refute echoed == id
+      assert %{"error" => %{"code" => -32_600}, "id" => nil} = JSON.decode!(conn.resp_body)
     end
 
     test "an integer id outside 64 bits is -32600", %{opts: opts} do
       conn = post_raw(opts, discover_body(9_223_372_036_854_775_808), [{"mcp-method", "server/discover"}])
 
       assert conn.status == 400
-      assert %{"error" => %{"code" => -32_600}} = JSON.decode!(conn.resp_body)
+      assert %{"error" => %{"code" => -32_600}, "id" => nil} = JSON.decode!(conn.resp_body)
     end
 
     test "ids at the bounds are served", %{opts: opts} do
@@ -372,7 +371,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       conn = body |> stateless_conn([{"mcp-method", "server/discover"}]) |> StreamableHTTPPlug.call(opts)
 
       assert conn.status == 400
-      assert %{"error" => %{"code" => -32_700}} = JSON.decode!(conn.resp_body)
+      assert %{"error" => %{"code" => -32_700}, "id" => nil} = JSON.decode!(conn.resp_body)
     end
   end
 
