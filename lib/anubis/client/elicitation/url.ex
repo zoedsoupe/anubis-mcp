@@ -42,6 +42,14 @@ defmodule Anubis.Client.Elicitation.URL do
 
       {:error, reason} ->
         error(id, reason, "elicitation_error", state)
+
+      other ->
+        error(
+          id,
+          "Invalid URL elicitation callback result: #{inspect(other)}",
+          "elicitation_callback_error",
+          state
+        )
     end
   rescue
     e ->

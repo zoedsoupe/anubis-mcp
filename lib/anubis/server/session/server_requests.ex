@@ -317,17 +317,24 @@ defmodule Anubis.Server.Session.ServerRequests do
   defp protocol_module(%{protocol_module: nil}), do: Anubis.Protocol.Registry.latest_module()
   defp protocol_module(%{protocol_module: protocol_module}), do: protocol_module
 
+  # A URL-mode accept carries no content: the interaction happened out of band,
+  # so an in-band payload would bypass every schema check. Clause sits before
+  # the form-mode one because `%{"action" => "accept"}` also matches a map that
+  # carries extra keys.
+  defp sanitize_elicitation_result(%{"action" => "accept", "content" => _}, %{mode: :url}) do
+    {:error, "url mode elicitation must not return content"}
+  end
+
+  defp sanitize_elicitation_result(%{"action" => "accept"} = result, %{mode: :url}) do
+    {:ok, result}
+  end
+
   defp sanitize_elicitation_result(%{"action" => "accept", "content" => content} = result, %{requested_schema: schema})
        when is_map(content) do
     case ElicitationSchema.validate_content(content, schema) do
       :ok -> {:ok, result}
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  # A URL-mode accept carries no content: the interaction happened out of band.
-  defp sanitize_elicitation_result(%{"action" => "accept"} = result, %{mode: :url}) do
-    {:ok, result}
   end
 
   defp sanitize_elicitation_result(%{"action" => "accept"}, _info) do

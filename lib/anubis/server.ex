@@ -586,15 +586,17 @@ defmodule Anubis.Server do
 
   defp component_icons(mod) do
     if Anubis.exported?(mod, :icons, 0) do
-      validate_component_icons(mod.icons())
+      validate_component_icons(mod, mod.icons())
     end
   end
 
-  defp validate_component_icons(nil), do: nil
+  defp validate_component_icons(_mod, nil), do: nil
 
-  defp validate_component_icons(icons) do
-    {:ok, icons} = Icons.icons(icons)
-    icons
+  defp validate_component_icons(mod, icons) do
+    case Icons.icons(icons) do
+      {:ok, icons} -> icons
+      {:error, reason} -> raise ArgumentError, "invalid icons for #{inspect(mod)}: #{inspect(reason)}"
+    end
   end
 
   defp input_validator(mod) do

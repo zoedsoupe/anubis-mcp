@@ -50,6 +50,8 @@ defmodule Anubis.Client.Handlers do
     state
   end
 
+  defp handle_elicitation_complete_notification(_notification, state), do: state
+
   defp handle_cancelled_notification(%{"params" => params}, state) do
     request_id = params["requestId"]
     reason = Map.get(params, "reason", "unknown")

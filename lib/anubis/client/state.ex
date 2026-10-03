@@ -735,6 +735,14 @@ defmodule Anubis.Client.State do
   @spec get_elicitation_complete_callback(t()) :: (String.t() -> any()) | nil
   def get_elicitation_complete_callback(state), do: state.elicitation_complete_callback
 
+  @doc """
+  Clears the `notifications/elicitation/complete` callback.
+  """
+  @spec clear_elicitation_complete_callback(t()) :: t()
+  def clear_elicitation_complete_callback(state) do
+    %{state | elicitation_complete_callback: nil}
+  end
+
   # Helper functions
 
   defp valid_capability?(_capabilities, ["ping"]), do: true

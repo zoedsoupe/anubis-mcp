@@ -726,6 +726,60 @@ defmodule Anubis.Server.SessionTest do
       assert state.frame.assigns.last_elicitation_response == %{"action" => "accept"}
       assert map_size(state.server_requests) == 0
     end
+
+    test "a url mode accept carrying content never reaches the callback", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      send(session, {:send_url_elicitation_request, @url_params, 30_000})
+      Process.sleep(10)
+      assert_receive {:send_message, request_data}
+      assert {:ok, [decoded]} = Message.decode(request_data)
+
+      response = %{
+        "id" => decoded["id"],
+        "result" => %{"action" => "accept", "content" => %{"anything" => "goes"}}
+      }
+
+      :ok = GenServer.cast(session, {:mcp_response, response, %{}})
+      Process.sleep(10)
+
+      state = :sys.get_state(session)
+      refute Map.has_key?(state.frame.assigns, :last_elicitation_response)
+      assert map_size(state.server_requests) == 0
+    end
+  end
+
+  describe "url elicitation against an older protocol version" do
+    setup do
+      initialized_server(%{
+        client_capabilities: %{"elicitation" => %{"url" => %{}}},
+        protocol_version: "2025-06-18"
+      })
+    end
+
+    test "the request is dropped rather than encoded against the older schema", %{
+      server: session,
+      transport: transport
+    } do
+      :ok = StubTransport.set_test_pid(transport, self())
+
+      params = %{
+        "mode" => "url",
+        "message" => "Authorize access",
+        "elicitationId" => "e-1",
+        "url" => "https://example.com/authorize"
+      }
+
+      send(session, {:send_url_elicitation_request, params, 30_000})
+      Process.sleep(10)
+
+      state = :sys.get_state(session)
+      assert map_size(state.server_requests) == 0
+      refute_received {:send_message, _}
+    end
   end
 
   describe "url elicitation against a form-only client" do

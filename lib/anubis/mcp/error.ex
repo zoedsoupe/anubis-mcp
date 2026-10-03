@@ -468,6 +468,7 @@ defmodule Anubis.MCP.Error do
   defp reason_from_code(@header_mismatch), do: :header_mismatch
   defp reason_from_code(@missing_required_client_capability), do: :missing_required_client_capability
   defp reason_from_code(@unsupported_protocol_version), do: :unsupported_protocol_version
+  defp reason_from_code(@url_elicitation_required), do: :url_elicitation_required
   defp reason_from_code(_), do: :server_error
 
   defp default_message(reason) do

@@ -171,6 +171,20 @@ defmodule Anubis.Server.Component.IconsTest do
       assert {:error, _} = Icons.icons([%{src: 42}])
     end
 
+    test "rejects an icon whose :src is not a URI" do
+      assert {:error, _} = Icons.icons([%{src: "example.com/icon.png"}])
+    end
+
+    test "keeps the optional theme and validates its value" do
+      assert {:ok, [%{src: _, theme: "dark"}]} =
+               Icons.icons([%{src: "https://example.com/icon.png", theme: "dark"}])
+
+      assert {:ok, [%{src: _, theme: "light"}]} =
+               Icons.icons([%{src: "https://example.com/icon.png", theme: "light"}])
+
+      assert {:error, _} = Icons.icons([%{src: "https://example.com/icon.png", theme: "blue"}])
+    end
+
     test "rejects an icon with a non-string :mimeType" do
       assert {:error, _} = Icons.icons([%{src: "https://example.com/icon.png", mimeType: :png}])
     end
@@ -182,7 +196,7 @@ defmodule Anubis.Server.Component.IconsTest do
     end
 
     test "parse_components rejects a component with malformed icons" do
-      assert_raise MatchError, fn ->
+      assert_raise ArgumentError, ~r/invalid icons for .*ToolWithInvalidIcons/, fn ->
         Anubis.Server.parse_components([{ToolWithInvalidIcons, []}])
       end
     end

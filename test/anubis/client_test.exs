@@ -1962,6 +1962,106 @@ defmodule Anubis.ClientTest do
     end
 
     @tag client_capabilities: %{"elicitation" => %{}}
+    test "ignores a malformed elicitation/complete notification", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_elicitation_complete_callback(client, fn _id ->
+          send(test_pid, {:elicitation_complete, :called})
+        end)
+
+      # built by hand: the notification schema already rejects a payload with no
+      # `elicitationId`, so this covers a peer that skips the schema entirely.
+      encoded =
+        JSON.encode!(%{
+          "jsonrpc" => "2.0",
+          "method" => "notifications/elicitation/complete",
+          "params" => %{}
+        })
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(50)
+
+      refute_received {:elicitation_complete, :called}
+
+      # the client survived and still handles the next message
+      assert Process.alive?(client)
+
+      assert {:ok, encoded} =
+               Message.encode_notification(
+                 Message.build_notification(
+                   "notifications/elicitation/complete",
+                   %{"elicitationId" => "550e8400"}
+                 )
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      assert_receive {:elicitation_complete, :called}
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
+    test "rejects url mode when the client declared no elicitation.url capability", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_url_elicitation_callback(client, fn _u, _i, _m ->
+          send(test_pid, {:url_elicit_called})
+          :accept
+        end)
+
+      request_id = "url_elicit_req_no_url_cap"
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:mcp_send, message})
+
+        decoded = JSON.decode!(message)
+        assert decoded["id"] == request_id
+        assert decoded["error"]["message"] =~ "elicitation.url"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(50)
+
+      refute_received {:url_elicit_called}
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "errors on a url callback returning neither an action nor an error tuple", %{client: client} do
+      test_pid = self()
+
+      :ok =
+        Anubis.Client.register_url_elicitation_callback(client, fn _u, _i, _m ->
+          {:accept, %{}}
+        end)
+
+      request_id = "url_elicit_req_bad_return"
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:mcp_send, message})
+
+        decoded = JSON.decode!(message)
+        assert decoded["error"]["message"] =~ "Invalid URL elicitation callback result"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(50)
+    end
+
+    @tag client_capabilities: %{"elicitation" => %{}}
     test "unregistering the url callback is a no-op on the form callback", %{client: client} do
       :ok = Anubis.Client.register_elicitation_callback(client, fn _m, _s -> :cancel end)
       :ok = Anubis.Client.register_url_elicitation_callback(client, fn _u, _i, _m -> :accept end)

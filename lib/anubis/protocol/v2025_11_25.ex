@@ -24,7 +24,7 @@ defmodule Anubis.Protocol.V2025_11_25 do
 
   @base_features V2025_06_18.supported_features()
 
-  @features [:tasks | @base_features]
+  @features [:tasks, :url_elicitation | @base_features]
 
   @task_request_methods ~w(tasks/get tasks/result tasks/list tasks/cancel)
 
@@ -58,6 +58,9 @@ defmodule Anubis.Protocol.V2025_11_25 do
   # `content` stays `:map`: a multi-select returns a `string[]` value, and the
   # per-property check against `requestedSchema` is what actually constrains the
   # contents. Re-deriving it here would only duplicate `ElicitationSchema`.
+  # The schema is shared by both modes; the no-content rule for URL mode is
+  # enforced on the receiving side, in
+  # `Anubis.Server.Session.ServerRequests.sanitize_elicitation_result/2`.
   @elicitation_result_schema %{
     "action" => {:required, {:enum, ~w(accept decline cancel)}},
     "content" => :map

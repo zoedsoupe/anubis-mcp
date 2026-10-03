@@ -1143,7 +1143,7 @@ defmodule Anubis.Client do
   end
 
   def handle_call(:unregister_elicitation_complete_callback, _from, state) do
-    {:reply, :ok, %{state | elicitation_complete_callback: nil}}
+    {:reply, :ok, State.clear_elicitation_complete_callback(state)}
   end
 
   def handle_call({:register_progress_callback, token, callback}, _from, state) do

@@ -492,6 +492,12 @@ defmodule Anubis.Server.Session do
     }
   end
 
+  defp url_elicitation_supported?(%{protocol_version: version}) when is_binary(version) do
+    Anubis.Protocol.supports_feature?(version, :url_elicitation)
+  end
+
+  defp url_elicitation_supported?(_state), do: false
+
   defp scheduler_callbacks do
     %{frame: &prepare_frame/2, apply_deferred: &apply_deferred/2}
   end
@@ -558,7 +564,19 @@ defmodule Anubis.Server.Session do
   end
 
   def handle_info({:send_url_elicitation_request, params, timeout}, state) do
-    ServerRequests.send_request(:elicitation, params, timeout, state, url_elicitation_extra())
+    # URL mode only exists in 2025-11-25. Encoding a request for an older
+    # negotiated version fails at the schema, so drop it here with a log
+    # instead of enqueueing a request that can never be encoded.
+    if url_elicitation_supported?(state) do
+      ServerRequests.send_request(:elicitation, params, timeout, state, url_elicitation_extra())
+    else
+      Logging.server_event("failed_send_elicitation_request", %{
+        error: :unsupported_protocol_version,
+        protocol_version: state.protocol_version
+      })
+
+      {:noreply, state}
+    end
   end
 
   def handle_info({:elicitation_request_timeout, request_id}, state) do
