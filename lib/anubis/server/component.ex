@@ -315,6 +315,13 @@ defmodule Anubis.Server.Component do
         field :bio, :string, description: "Short biography"
         field :avatar_url, :string, format: "uri"
       end
+
+      # Mirrored into the Mcp-Param-Region header by 2026-07-28 clients
+      field :region, :string, required: true, mcp_header: "Region"
+
+  `mcp_header:` puts `x-mcp-header` on the parameter; see
+  `Anubis.Server.McpParam` for the rules it must follow and how the header is
+  checked.
   """
   defmacro field(name, type, opts \\ []) when not is_nil(type) and is_list(opts) do
     quote do
@@ -495,7 +502,8 @@ defmodule Anubis.Server.Component do
     :read_only,
     :write_only,
     :content_encoding,
-    :content_media_type
+    :content_media_type,
+    :mcp_header
   ]
 
   # Peri-native list constraint keys (passed through verbatim to Peri encoder)

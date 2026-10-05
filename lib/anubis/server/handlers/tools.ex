@@ -8,7 +8,9 @@ defmodule Anubis.Server.Handlers.Tools do
   alias Anubis.Server.Handlers
   alias Anubis.Server.Handlers.InputRequests
   alias Anubis.Server.InputRequired
+  alias Anubis.Server.McpParam
   alias Anubis.Server.Response
+  alias Anubis.Server.Stateless
 
   @spec handle_list(map, Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
@@ -28,13 +30,22 @@ defmodule Anubis.Server.Handlers.Tools do
      ), frame}
   end
 
+  @doc """
+  Validates and executes a named tool using the current request frame.
+
+  For stateless HTTP, checks mirrored headers against the received arguments
+  before input validation applies defaults or transformations. Scope, input
+  and task-policy failures return `{:error, error, frame}`; successful calls
+  return `{:reply, result, frame}`.
+  """
   @spec handle_call(map(), Frame.t(), module()) ::
           {:reply, map(), Frame.t()} | {:error, Error.t(), Frame.t()}
   def handle_call(%{"params" => %{"name" => tool_name, "arguments" => params}} = request, frame, server) do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with :ok <- check_scopes(tool, frame),
+      with :ok <- check_param_headers(tool, params, frame),
+           :ok <- check_scopes(tool, frame),
            {:ok, frame} <- InputRequests.admit(request, frame, {server, "tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(params, tool, frame),
@@ -50,7 +61,8 @@ defmodule Anubis.Server.Handlers.Tools do
     registered_tools = Handlers.get_server_tools(server, frame)
 
     if tool = find_tool_module(registered_tools, tool_name) do
-      with :ok <- check_scopes(tool, frame),
+      with :ok <- check_param_headers(tool, %{}, frame),
+           :ok <- check_scopes(tool, frame),
            {:ok, frame} <- InputRequests.admit(request, frame, {server, "tools/call", tool_name}),
            :ok <- check_task_policy(tool, request, frame),
            {:ok, params} <- validate_params(%{}, tool, frame),
@@ -60,6 +72,24 @@ defmodule Anubis.Server.Handlers.Tools do
       {:error, Error.protocol(:invalid_params, payload), frame}
     end
   end
+
+  # Stateless HTTP requires this header; STDIO has no mirrored parameters.
+  defp check_param_headers(
+         %Tool{input_schema: schema},
+         arguments,
+         %Frame{context: %{headers: %{"mcp-protocol-version" => _}} = context} = frame
+       ) do
+    if Stateless.era(context.protocol_module) == :stateless do
+      case McpParam.validate(schema, arguments, context.headers) do
+        :ok -> :ok
+        {:error, error} -> {:error, error, frame}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp check_param_headers(_tool, _arguments, _frame), do: :ok
 
   defp check_scopes(%Tool{scopes: []}, _frame), do: :ok
 

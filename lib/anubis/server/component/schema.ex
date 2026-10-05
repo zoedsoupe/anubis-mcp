@@ -2,6 +2,7 @@ defmodule Anubis.Server.Component.Schema do
   @moduledoc false
 
   alias Anubis.Server.Component
+  alias Anubis.Server.McpParam
 
   @type schema :: map() | list()
   @type field_type :: atom() | tuple()
@@ -10,6 +11,13 @@ defmodule Anubis.Server.Component.Schema do
 
   @json_schema_dialect "https://json-schema.org/draft/2020-12/schema"
 
+  @doc """
+  Builds a JSON Schema 2020-12 object from a component's fields.
+
+  Omits server-side defaults and preserves valid `mcp_header:` annotations.
+  A nil schema produces an empty object schema. Raises `ArgumentError` for
+  invalid header annotations.
+  """
   @spec to_json_schema(schema() | nil) :: json_schema()
   def to_json_schema(nil), do: %{"$schema" => @json_schema_dialect, "type" => "object"}
 
@@ -21,11 +29,13 @@ defmodule Anubis.Server.Component.Schema do
     # Defaults live in `{type, {:default, v}}` after `__build_field__/2`. Strip
     # them from JSON Schema output so consumer schemas don't surface internal
     # defaults — prompt docs and validation still use them.
-    schema
-    |> Component.__expand_user_input__()
+    expanded = Component.__expand_user_input__(schema)
+
+    expanded
     |> Peri.to_json_schema(exclude_meta_keys: [:default])
     |> to_json_schema_2020_12()
     |> Map.put("$schema", @json_schema_dialect)
+    |> McpParam.annotate(expanded)
   end
 
   # Peri encodes tuples as draft-07 `"items" => [schemas]`, which JSON Schema

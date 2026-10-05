@@ -35,8 +35,23 @@ if Code.ensure_loaded?(Plug) do
         and `resources/read` (`params.uri`), and is compared after decoding the
         `=?base64?…?=` sentinel.
 
-    `Mcp-Param-*` headers are not validated: they mirror tool arguments a tool
-    opts into with `x-mcp-header`, which no component declares yet.
+    `Mcp-Param-*` headers are checked against the tool's arguments when the
+    tool call is handled; see `Anubis.Server.McpParam`.
+
+    A request that repeats `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name` or
+    any `Mcp-Param-*` header is refused with `-32020`, since an intermediary
+    that routes on one copy could see a different value from the one checked
+    against the body.
+
+    ## Limits
+
+    A request id must be a string of at most 256 bytes or an integer in the
+    64-bit range; otherwise the request is `-32600` and the error carries no
+    echo of it. A `progressToken` outside the same bounds is `-32602`. A body
+    this binding decodes itself refuses integer literals longer than 64
+    characters as a parse error, before converting them. If `Plug.Parsers`
+    already decoded the body, configure it with `decode_json!/1` to enforce
+    this lexical limit before conversion there too.
 
     ## Status codes
 
@@ -54,6 +69,7 @@ if Code.ensure_loaded?(Plug) do
     alias Anubis.MCP.Message
     alias Anubis.Protocol.Registry, as: ProtocolRegistry
     alias Anubis.Protocol.Schema
+    alias Anubis.Server.McpParam
     alias Anubis.Server.Stateless
     alias Anubis.Server.Supervisor, as: ServerSupervisor
     alias Anubis.Server.Transport.Session
@@ -65,16 +81,17 @@ if Code.ensure_loaded?(Plug) do
 
     require Message
 
+    @max_id_bytes 256
+    @max_integer_literal 64
+    @int64_limit 9_223_372_036_854_775_808
     @protocol_version_key Schema.protocol_version_key()
     @client_capabilities_key "io.modelcontextprotocol/clientCapabilities"
-    @base64_prefix "=?base64?"
-    @base64_suffix "?="
 
     # Error replies are small; a reply longer than this is a result, and is not
     # decoded just to learn that.
     @error_probe_bytes 4_096
 
-    @type classification :: :legacy | {:stateless, String.t()} | {:unsupported, String.t()}
+    @type classification :: :legacy | {:stateless, String.t()} | {:unsupported, String.t()} | :repeated
 
     @doc """
     Decides which era serves a request from its `MCP-Protocol-Version` header.
@@ -82,6 +99,10 @@ if Code.ensure_loaded?(Plug) do
     A request without the header, or naming a legacy version the server
     declares, stays on the session-oriented binding. A stateless version the
     server declares is served here. Anything else is unsupported.
+
+    On a server that serves a stateless version, a repeated header is
+    `:repeated`, because the copies could name different eras. A server that
+    serves none keeps reading the first copy.
 
     ## Examples
 
@@ -96,6 +117,12 @@ if Code.ensure_loaded?(Plug) do
         iex> conn = Plug.Conn.put_req_header(Plug.Test.conn(:post, "/"), "mcp-protocol-version", "2026-07-28")
         iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.classify(conn, ["2025-11-25"])
         {:unsupported, "2026-07-28"}
+
+        iex> conn = %{Plug.Test.conn(:post, "/") | req_headers: [{"mcp-protocol-version", "2025-11-25"}, {"mcp-protocol-version", "2026-07-28"}]}
+        iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.classify(conn, ["2026-07-28", "2025-11-25"])
+        :repeated
+        iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.classify(conn, ["2025-11-25"])
+        :legacy
     """
     @spec classify(Plug.Conn.t(), [String.t()]) :: classification()
     def classify(conn, declared_versions) do
@@ -103,12 +130,21 @@ if Code.ensure_loaded?(Plug) do
         [] ->
           :legacy
 
-        [version | _] ->
-          cond do
-            version not in declared_versions -> {:unsupported, version}
-            ProtocolRegistry.era(version) == {:ok, :stateless} -> {:stateless, version}
-            true -> :legacy
-          end
+        [_, _ | _] = versions ->
+          if serves_stateless?(declared_versions),
+            do: :repeated,
+            else: versions |> hd() |> classify_version(declared_versions)
+
+        [version] ->
+          classify_version(version, declared_versions)
+      end
+    end
+
+    defp classify_version(version, declared_versions) do
+      cond do
+        version not in declared_versions -> {:unsupported, version}
+        ProtocolRegistry.era(version) == {:ok, :stateless} -> {:stateless, version}
+        true -> :legacy
       end
     end
 
@@ -133,6 +169,47 @@ if Code.ensure_loaded?(Plug) do
 
       {id, conn} = raw_request_id(conn, opts)
       send_error(conn, 400, error, id)
+    end
+
+    @doc """
+    Answers a request that repeats `MCP-Protocol-Version` with `HeaderMismatch`
+    (`-32020`, HTTP 400).
+    """
+    @spec send_repeated_version(Plug.Conn.t(), map()) :: Plug.Conn.t()
+    def send_repeated_version(conn, opts) do
+      error = Error.protocol(:header_mismatch, %{message: "Repeated mcp-protocol-version header"})
+
+      {id, conn} = raw_request_id(conn, opts)
+      send_error(conn, 400, error, id)
+    end
+
+    @doc """
+    Decodes JSON with the same integer-literal limit as the stateless binding.
+
+    Raises `ArgumentError` for invalid JSON or an integer literal longer than
+    64 characters, including its sign. The limit is checked before conversion;
+    numeric strings are unaffected. This decodes any JSON value and does not
+    validate a JSON-RPC envelope.
+
+    When `Plug.Parsers` runs before the MCP plug, configure its `:json_decoder`
+    as `{#{inspect(__MODULE__)}, :decode_json!, []}` to retain this protection.
+    Plug turns decoding exceptions into `Plug.Parsers.ParseError` (HTTP 400),
+    before the MCP plug can produce a JSON-RPC error response.
+
+    ## Examples
+
+        iex> Anubis.Server.Transport.StreamableHTTP.StatelessBinding.decode_json!(~s({"n":42}))
+        %{"n" => 42}
+    """
+    @spec decode_json!(binary()) :: term()
+    def decode_json!(body) do
+      case decode(body) do
+        {:ok, value} ->
+          value
+
+        {:error, _reason} ->
+          raise ArgumentError, "Invalid JSON or integer literal exceeds #{@max_integer_literal} characters"
+      end
     end
 
     @doc """
@@ -165,7 +242,8 @@ if Code.ensure_loaded?(Plug) do
     # A request's _meta is checked for shape before the schema runs, so a missing
     # field is the -32602 the stateless era defines rather than a schema miss.
     defp admit(conn, raw, version, context, opts) do
-      with :ok <- validate_request_meta(raw),
+      with :ok <- validate_id(raw),
+           :ok <- validate_request_meta(raw),
            {:ok, message} <- Message.validate_message(raw) do
         serve(conn, message, version, context, opts)
       else
@@ -173,11 +251,19 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    # Ids and progress tokens are echoed on every response and notification of a
+    # request, so an unbounded one costs the server to encode again and again.
+    defp validate_id(%{"id" => id}) do
+      if bounded_id?(id), do: :ok, else: {:error, :unbounded_id}
+    end
+
+    defp validate_id(_message), do: :ok
+
     defp validate_request_meta(%{"id" => _, "method" => _} = message) do
       case get_in(message, ["params", "_meta"]) do
-        %{@protocol_version_key => version, @client_capabilities_key => capabilities}
+        %{@protocol_version_key => version, @client_capabilities_key => capabilities} = meta
         when is_binary(version) and is_map(capabilities) ->
-          :ok
+          if bounded_id?(Map.get(meta, "progressToken", 0)), do: :ok, else: {:error, :unbounded_progress_token}
 
         _incomplete ->
           {:error, :invalid_meta}
@@ -201,11 +287,26 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp validate_headers(conn, message, version) do
-      with :ok <- match_protocol_version(message, version),
+      with :ok <- refuse_repeated_headers(conn),
+           :ok <- match_protocol_version(message, version),
            :ok <- match_header(conn, "mcp-method", message["method"]) do
         match_name(conn, message)
       end
     end
+
+    defp refuse_repeated_headers(conn) do
+      conn.req_headers
+      |> Enum.map(fn {name, _value} -> name end)
+      |> Enum.filter(&mirrored_header?/1)
+      |> Enum.frequencies()
+      |> Enum.find(fn {_name, count} -> count > 1 end)
+      |> case do
+        nil -> :ok
+        {name, _count} -> {:error, Error.protocol(:header_mismatch, %{message: "Repeated #{name} header"})}
+      end
+    end
+
+    defp mirrored_header?(name), do: name in ~w(mcp-method mcp-name) or String.starts_with?(name, "mcp-param-")
 
     defp match_protocol_version(%{"params" => %{"_meta" => %{@protocol_version_key => version}}}, version), do: :ok
 
@@ -230,7 +331,7 @@ if Code.ensure_loaded?(Plug) do
           {:error, Error.protocol(:header_mismatch, %{message: "Missing required header #{header}"})}
 
         [value | _] ->
-          case decode_header_value(value) do
+          case McpParam.decode_header_value(value) do
             {:ok, ^body_value} -> :ok
             {:ok, decoded} -> mismatch(header, decoded, body_value)
             :error -> {:error, Error.protocol(:header_mismatch, %{message: "Malformed #{header} header"})}
@@ -242,18 +343,6 @@ if Code.ensure_loaded?(Plug) do
       message = "#{header} header value #{inspect(header_value)} does not match body value #{inspect(body_value)}"
       {:error, Error.protocol(:header_mismatch, %{message: message})}
     end
-
-    defp decode_header_value(@base64_prefix <> rest = value) do
-      if String.ends_with?(rest, @base64_suffix) do
-        rest
-        |> binary_part(0, byte_size(rest) - byte_size(@base64_suffix))
-        |> Base.decode64()
-      else
-        {:ok, value}
-      end
-    end
-
-    defp decode_header_value(value), do: {:ok, value}
 
     defp serve_request(conn, session, session_id, %{"method" => "subscriptions/listen"} = message, version, context, opts) do
       metadata = StreamableHTTPPlug.resolve_subscriber_metadata(opts, conn)
@@ -445,13 +534,32 @@ if Code.ensure_loaded?(Plug) do
     defp parse(body) when is_map(body), do: {:ok, body}
 
     defp parse(body) when is_binary(body) do
-      case JSON.decode(body) do
+      case decode(body) do
         {:ok, message} when is_map(message) -> {:ok, message}
         {:ok, list} when is_list(list) -> {:error, :batch}
         {:ok, _other} -> {:error, :invalid_request}
         {:error, _reason} -> {:error, :parse_error}
       end
     end
+
+    # Converting an integer literal costs more than linear time in its length, so
+    # literals longer than any id, token or argument needs are refused unread.
+    defp decode(body) do
+      case JSON.decode(body, nil, integer: &bounded_integer/1) do
+        {term, nil, rest} -> if String.trim(rest) == "", do: {:ok, term}, else: {:error, :parse_error}
+        {:error, reason} -> {:error, reason}
+      end
+    catch
+      :throw, :integer_too_long -> {:error, :parse_error}
+    end
+
+    defp bounded_integer(literal) do
+      if byte_size(literal) > @max_integer_literal, do: throw(:integer_too_long), else: String.to_integer(literal)
+    end
+
+    defp bounded_id?(id) when is_binary(id), do: byte_size(id) <= @max_id_bytes
+    defp bounded_id?(id) when is_integer(id), do: id >= -@int64_limit and id < @int64_limit
+    defp bounded_id?(_id), do: false
 
     defp read_request_body(%{body_params: %Unfetched{aspect: :body_params}} = conn, %{timeout: timeout}) do
       Plug.Conn.read_body(conn, read_timeout: timeout)
@@ -468,6 +576,16 @@ if Code.ensure_loaded?(Plug) do
       send_error(conn, 400, Error.protocol(:invalid_params, %{message: message}), id)
     end
 
+    defp send_decode_error(conn, :unbounded_id, _id) do
+      message = "Request ids must be a string of at most #{@max_id_bytes} bytes or a 64-bit integer"
+      send_error(conn, 400, Error.protocol(:invalid_request, %{message: message}), nil)
+    end
+
+    defp send_decode_error(conn, :unbounded_progress_token, id) do
+      message = "progressToken must be a string of at most #{@max_id_bytes} bytes or a 64-bit integer"
+      send_error(conn, 400, Error.protocol(:invalid_params, %{message: message}), id)
+    end
+
     defp send_decode_error(conn, :batch, id) do
       send_error(conn, 400, Error.protocol(:invalid_request, %{message: "Batched requests are not supported"}), id)
     end
@@ -481,7 +599,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp send_error(conn, status, %Error{} = error, id) do
-      {:ok, body} = Error.to_json_rpc(error, id || ID.generate_error_id())
+      body = error |> Error.build_json_rpc(id) |> JSON.encode!()
 
       conn
       |> put_resp_content_type("application/json")
@@ -493,7 +611,7 @@ if Code.ensure_loaded?(Plug) do
     defp raw_request_id(conn, opts) do
       case read_request_body(conn, opts) do
         {:ok, body, conn} when is_binary(body) ->
-          case JSON.decode(body) do
+          case decode(body) do
             {:ok, message} -> {request_id(message), conn}
             _ -> {nil, conn}
           end
@@ -506,7 +624,7 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp request_id(%{"id" => id}), do: id
+    defp request_id(%{"id" => id}), do: if(bounded_id?(id), do: id)
     defp request_id(_message), do: nil
   end
 end
