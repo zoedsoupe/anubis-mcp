@@ -2,6 +2,57 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.0](https://github.com/zoedsoupe/anubis-mcp/compare/v2.0.0...v2.1.0) (2026-10-05)
+
+
+### Features
+
+* **protocol:** add the 2026-07-28 stateless dialect ([#269](https://github.com/zoedsoupe/anubis-mcp/issues/269)) ([986fca6](https://github.com/zoedsoupe/anubis-mcp/commit/986fca684c6c8157269ed8363d627d736c192187))
+* **server:** add caching hints to stateless results ([#312](https://github.com/zoedsoupe/anubis-mcp/issues/312)) ([5c94d1a](https://github.com/zoedsoupe/anubis-mcp/commit/5c94d1afcf33757c4ca3ba13856893907a0320a3))
+* **server:** add frame-based Notifier and expose per-request _meta on the context ([ced5e43](https://github.com/zoedsoupe/anubis-mcp/commit/ced5e431ef948544d42383eea12c47413a72c83e))
+* **server:** emit JSON Schema 2020-12 dialect on tool schemas ([476029b](https://github.com/zoedsoupe/anubis-mcp/commit/476029b8acac26e737166c0606f0351795351d8e)), closes [#262](https://github.com/zoedsoupe/anubis-mcp/issues/262)
+* **server:** optional per-connection instructions and tool surface ([#303](https://github.com/zoedsoupe/anubis-mcp/issues/303)) ([4da798c](https://github.com/zoedsoupe/anubis-mcp/commit/4da798c32ea485b93b3f7581c6cdbc013060d22c))
+* **server:** resolve the session store per server instead of globally ([b655178](https://github.com/zoedsoupe/anubis-mcp/commit/b655178067faebe1705385700d4fc65af2e89598))
+* **server:** serve the 2026-07-28 stateless era ([#285](https://github.com/zoedsoupe/anubis-mcp/issues/285)) ([93d5cca](https://github.com/zoedsoupe/anubis-mcp/commit/93d5ccacb6f6adcdbfa82a89a849534b1f33edd6))
+* **server:** support icons metadata on components and implementation ([9ed745f](https://github.com/zoedsoupe/anubis-mcp/commit/9ed745f75fcf89439d9b1872f50ba2eb159fb5cd))
+* **server:** support multi round-trip requests with InputRequiredResult ([#311](https://github.com/zoedsoupe/anubis-mcp/issues/311)) ([eb8be73](https://github.com/zoedsoupe/anubis-mcp/commit/eb8be730a25746aacb124ac44b7ee03e60daa69f))
+* **transport:** serve subscriptions/listen in the stateless era ([#309](https://github.com/zoedsoupe/anubis-mcp/issues/309)) ([826f396](https://github.com/zoedsoupe/anubis-mcp/commit/826f39688f083543b723aab4c973cd204aff7771))
+* **transport:** serve the 2026-07-28 stateless era over Streamable HTTP ([#307](https://github.com/zoedsoupe/anubis-mcp/issues/307)) ([cb63242](https://github.com/zoedsoupe/anubis-mcp/commit/cb6324201745d75275ff6c0bb0e3d8c4260022cd))
+
+
+### Bug Fixes
+
+* **client:** restrict listChanged to roots and drop dead Protocol.validate_client_config/3 ([75e7b12](https://github.com/zoedsoupe/anubis-mcp/commit/75e7b125769b48ac4a974eaf51ec13e45296df3f))
+* **server:** bound stateless inputs and validate Mcp-Param headers ([#315](https://github.com/zoedsoupe/anubis-mcp/issues/315)) ([f92577d](https://github.com/zoedsoupe/anubis-mcp/commit/f92577dd4f79a6f9e89f23d8f1c40eef850ed08f))
+* **server:** deliver and stream request-scoped progress ([#313](https://github.com/zoedsoupe/anubis-mcp/issues/313)) ([27db1b9](https://github.com/zoedsoupe/anubis-mcp/commit/27db1b9e436596b94e190d673a3e7eadc4c1be9a))
+
+
+### Documentation
+
+* add extending guide and fix unclosed fence in building-a-client ([a2ee2d3](https://github.com/zoedsoupe/anubis-mcp/commit/a2ee2d30e55dac758ab2d81545d618b0878a2254))
+* **session:** state why the session dispatcher is application-scoped ([13fc149](https://github.com/zoedsoupe/anubis-mcp/commit/13fc1493ab6c32053e59f93814b15a346b615e6c))
+* **telemetry,component:** document public behaviours and drop never-emitted events ([f9109e5](https://github.com/zoedsoupe/anubis-mcp/commit/f9109e5aa89a640e8a6bdb5799724e091383b04b))
+
+
+### Miscellaneous Chores
+
+* deprecate duplicate public APIs ([0276c4e](https://github.com/zoedsoupe/anubis-mcp/commit/0276c4e280211676d168cb0287efc354b45102b8))
+* remove websocket transport ([f081a9b](https://github.com/zoedsoupe/anubis-mcp/commit/f081a9b455150e9d7bb9bafe5d85a14e12b9790c))
+
+
+### Code Refactoring
+
+* **client:** unify request dispatch and validate opts ([245748d](https://github.com/zoedsoupe/anubis-mcp/commit/245748da409a9287589afdb05fbda815d3de3b86))
+* **server:** use compiled peri validators for components ([1edfc09](https://github.com/zoedsoupe/anubis-mcp/commit/1edfc090f3a7e9e2521bf6dcbb9a96c6ec12711e))
+* **test:** drop dead support modules and unused StubTransport API ([318e7df](https://github.com/zoedsoupe/anubis-mcp/commit/318e7df69c12096b146b2d0d06b73f8623ef3ae1))
+* **test:** remove mox and mimic deps ([e12af6e](https://github.com/zoedsoupe/anubis-mcp/commit/e12af6e2fb687c47f00af27f024a61a55cb6e226))
+* **transport:** merge functional callbacks into Transport.Behaviour ([a340e3e](https://github.com/zoedsoupe/anubis-mcp/commit/a340e3ecd265784413459649f98177e325a193b8))
+
+
+### Tests
+
+* capture expected diagnostics and clean up SSE tests ([#310](https://github.com/zoedsoupe/anubis-mcp/issues/310)) ([85f0fc6](https://github.com/zoedsoupe/anubis-mcp/commit/85f0fc69c6e731f4edb51dfa671afa83d0fd54d0))
+
 ## [2.0.0](https://github.com/zoedsoupe/anubis-mcp/compare/v1.14.0...v2.0.0) (2026-08-07)
 
 
