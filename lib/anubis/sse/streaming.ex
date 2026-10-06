@@ -113,7 +113,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     defp handle_message(:sse_keepalive, conn, idle_timeout, session_id, event_counter, last_id) do
-      continue(conn, keep_alive(conn), idle_timeout, session_id, event_counter + 1, last_id, "sse_keepalive_failed")
+      continue(conn, keep_alive(conn), idle_timeout, session_id, event_counter, last_id, "sse_keepalive_failed")
     end
 
     defp handle_message({:sse_message, message}, conn, idle_timeout, session_id, event_counter, last_id)

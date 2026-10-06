@@ -102,6 +102,40 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SSELifecycleTest do
     end
   end
 
+  @tag keepalive: false
+  test "transport keepalives do not consume legacy event IDs", context do
+    {stream, _} = open_stream(context, "keepalive-ids")
+    pid = stream.pid
+
+    send(pid, {:sse_message, "first"})
+    assert_receive {:sse_chunk, ^pid, "id: 0\nevent: message\ndata: first\n\n"}
+    send(pid, :sse_keepalive)
+    assert_receive {:sse_chunk, ^pid, ": keepalive\n\n"}
+    send(pid, {:sse_message, "second"})
+    assert_receive {:sse_chunk, ^pid, "id: 1\nevent: message\ndata: second\n\n"}
+
+    send(pid, :close_sse)
+    assert {:ok, _} = Task.yield(stream, 1_000)
+  end
+
+  test "idle keepalives do not consume legacy event IDs", context do
+    try do
+      {stream, _} = open_stream(context, "idle-ids", fn -> :sys.suspend(context.transport) end)
+      pid = stream.pid
+
+      send(pid, {:sse_message, "first"})
+      assert_receive {:sse_chunk, ^pid, "id: 0\nevent: message\ndata: first\n\n"}
+      assert_receive {:sse_chunk, ^pid, ": keepalive\n\n"}, 300
+      send(pid, {:sse_message, "second"})
+      assert_receive {:sse_chunk, ^pid, "id: 1\nevent: message\ndata: second\n\n"}
+
+      send(pid, :close_sse)
+      assert {:ok, _} = Task.yield(stream, 1_000)
+    after
+      :sys.resume(context.transport)
+    end
+  end
+
   defp open_stream(context, session_id, on_open \\ fn -> :ok end) do
     conn =
       :get
