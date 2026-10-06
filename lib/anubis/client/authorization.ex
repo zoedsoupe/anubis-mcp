@@ -15,6 +15,7 @@ defmodule Anubis.Client.Authorization do
   alias Anubis.MCP.Error
 
   @max_metadata_bytes 1_048_576
+  @default_http_options [receive_timeout: 5_000, request_timeout: 10_000]
 
   defschema(:resource_schema, %{
     "resource" => {:required, :string},
@@ -45,7 +46,10 @@ defmodule Anubis.Client.Authorization do
     * `:challenge` — a `Challenge` returned by the HTTP transport, for reactive discovery.
     * `:authorization_server` — selects an advertised issuer; required when more than one is advertised.
     * `:finch_name` — an existing Finch pool (default `Anubis.Finch`).
-    * `:http_options` — Finch request options (default `receive_timeout: 5_000`).
+    * `:http_options` — Finch request options (defaults `receive_timeout: 5_000`,
+      `request_timeout: 10_000`). HTTP/1 uses an idle receive timeout and a best-effort
+      total response timeout. Finch HTTP/2 uses `receive_timeout` as a total response
+      timeout and ignores `request_timeout`. Overrides may relax or disable these limits.
     * `:allow_insecure_localhost` — permits HTTP on localhost/loopback for development (default false).
     * `:url_policy` — optional `fn url -> :ok | {:error, reason} end`, called before each metadata fetch.
       Hosts accepting untrusted server URLs must enforce their network access policy here
@@ -179,7 +183,7 @@ defmodule Anubis.Client.Authorization do
 
   defp fetch(url, opts) do
     request = Finch.build(:get, url, [{"accept", "application/json"}])
-    options = Keyword.merge([receive_timeout: 5_000], Keyword.get(opts, :http_options, []))
+    options = Keyword.merge(@default_http_options, Keyword.get(opts, :http_options, []))
     initial = %{status: nil, chunks: [], size: 0}
 
     case Finch.stream_while(request, Keyword.get(opts, :finch_name, Anubis.Finch), initial, &receive_metadata/2, options) do

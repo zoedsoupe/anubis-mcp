@@ -1,6 +1,7 @@
 defmodule Anubis.Client.Authorization.URL do
   @moduledoc false
 
+  @doc "Validates an absolute HTTPS URL, allowing loopback HTTP only with explicit opt-in."
   @spec validate(String.t(), keyword()) :: :ok | {:error, :invalid_discovery_url}
   def validate(url, opts) when is_binary(url) do
     with {:ok, uri} <- URI.new(url),
@@ -16,12 +17,14 @@ defmodule Anubis.Client.Authorization.URL do
 
   def validate(_, _), do: {:error, :invalid_discovery_url}
 
+  @doc "Returns the origin of a validated URL, without its path, query or fragment."
   @spec origin(String.t()) :: String.t()
   def origin(url) do
     uri = URI.new!(url)
     URI.to_string(%{uri | path: nil, query: nil, fragment: nil})
   end
 
+  @doc "Inserts a well-known metadata suffix before a validated URL's path, preserving its query."
   @spec well_known(String.t(), String.t()) :: String.t()
   def well_known(url, suffix) do
     uri = URI.new!(url)

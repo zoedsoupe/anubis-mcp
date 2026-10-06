@@ -246,6 +246,29 @@ defmodule Anubis.Client.AuthorizationTest do
     assert {:error, %{reason: :metadata_request_failed}} = Authorization.discover(ctx.url, ctx.opts)
   end
 
+  for {protocol, version} <- [http1: :"HTTP/1.1", http2: :"HTTP/2"] do
+    @tag timeout: 20_000
+    test "bounds a continuously streaming metadata response over #{protocol} by default", ctx do
+      protocol = unquote(protocol)
+      finch = Module.concat(__MODULE__, protocol)
+      start_supervised!({Finch, name: finch, pools: %{default: [protocols: [protocol]]}})
+      ref = make_ref()
+
+      start_supervised!(
+        {Plug.Cowboy, scheme: :http, plug: {Anubis.Test.SlowMetadata, self()}, options: [port: 0, ref: ref]}
+      )
+
+      url = "http://localhost:#{:ranch.get_port(ref)}/mcp"
+
+      assert {:error, %{reason: :metadata_request_failed, data: %{original_reason: %{reason: :timeout}}}} =
+               Authorization.discover(url, Keyword.put(ctx.opts, :finch_name, finch))
+
+      assert_received {:metadata_stream, handler, unquote(version)}
+      monitor = Process.monitor(handler)
+      assert_receive {:DOWN, ^monitor, :process, ^handler, _reason}, 1_000
+    end
+  end
+
   test "preserves a resource query when requesting its well-known metadata", ctx do
     ctx = %{ctx | url: ctx.url <> "?tenant=one"}
 
