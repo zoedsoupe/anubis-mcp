@@ -29,6 +29,8 @@ if Code.ensure_loaded?(Plug) do
       - `opts` - Options including:
         - `:initial_event_id` - Starting event ID for the legacy path (default: 0)
         - `:on_close` - Function to call when connection closes
+        - `:keepalive_interval` - Idle time before probing the connection in milliseconds;
+          `:infinity` (default) disables the idle probe
         - `:event_store` - `{module, name}` of the resumability store, or `nil`
         - `:resume_from` - client `Last-Event-ID` cursor, or `nil` on fresh connect
         - `:retry` - SSE `retry:` reconnect delay in milliseconds, or `nil`
@@ -39,13 +41,14 @@ if Code.ensure_loaded?(Plug) do
       - `:close_sse` - Close the connection gracefully
     """
     @spec start(conn, transport, session_id, keyword()) :: conn
-    def start(conn, transport, session_id, opts \\ []) do
+    def start(conn, _transport, session_id, opts \\ []) do
       initial_event_id = Keyword.get(opts, :initial_event_id, 0)
+      keepalive_interval = Keyword.get(opts, :keepalive_interval, :infinity)
       on_close = Keyword.get(opts, :on_close, fn -> :ok end)
 
       try do
         case prime_and_replay(conn, session_id, opts) do
-          {:ok, conn, last_id} -> loop(conn, transport, session_id, initial_event_id, last_id)
+          {:ok, conn, last_id} -> loop(conn, keepalive_interval, session_id, initial_event_id, last_id)
           {:error, conn} -> conn
         end
       after
@@ -100,42 +103,45 @@ if Code.ensure_loaded?(Plug) do
     # store-assigned id written on the resumable path; it is used to drop any
     # live message whose id was already delivered during replay, keeping delivery
     # exactly-once across the register-then-replay window.
-    defp loop(conn, transport, session_id, event_counter, last_id) do
+    defp loop(conn, idle_timeout, session_id, event_counter, last_id) do
       receive do
-        message -> handle_message(message, conn, transport, session_id, event_counter, last_id)
+        message -> handle_message(message, conn, idle_timeout, session_id, event_counter, last_id)
+      after
+        idle_timeout ->
+          handle_message(:sse_keepalive, conn, idle_timeout, session_id, event_counter, last_id)
       end
     end
 
-    defp handle_message(:sse_keepalive, conn, transport, session_id, event_counter, last_id) do
-      continue(conn, keep_alive(conn), transport, session_id, event_counter + 1, last_id, "sse_keepalive_failed")
+    defp handle_message(:sse_keepalive, conn, idle_timeout, session_id, event_counter, last_id) do
+      continue(conn, keep_alive(conn), idle_timeout, session_id, event_counter, last_id, "sse_keepalive_failed")
     end
 
-    defp handle_message({:sse_message, message}, conn, transport, session_id, event_counter, last_id)
+    defp handle_message({:sse_message, message}, conn, idle_timeout, session_id, event_counter, last_id)
          when is_binary(message) do
       sent = send_event(conn, message, event_counter)
-      continue(conn, sent, transport, session_id, event_counter + 1, last_id, "sse_send_failed")
+      continue(conn, sent, idle_timeout, session_id, event_counter + 1, last_id, "sse_send_failed")
     end
 
-    defp handle_message({:sse_message, message, event_id}, conn, transport, session_id, event_counter, last_id)
+    defp handle_message({:sse_message, message, event_id}, conn, idle_timeout, session_id, event_counter, last_id)
          when is_binary(message) and is_integer(event_id) and event_id > last_id do
       # Resumable path: the transport assigned and recorded the id before routing,
       # so we write exactly that id and leave the legacy counter untouched.
       sent = send_event(conn, message, event_id)
-      continue(conn, sent, transport, session_id, event_counter, event_id, "sse_send_failed")
+      continue(conn, sent, idle_timeout, session_id, event_counter, event_id, "sse_send_failed")
     end
 
-    defp handle_message({:sse_message, _message, event_id}, conn, transport, session_id, event_counter, last_id)
+    defp handle_message({:sse_message, _message, event_id}, conn, idle_timeout, session_id, event_counter, last_id)
          when is_integer(event_id) do
       # Already delivered during replay (id <= last_id). Drop the duplicate.
-      loop(conn, transport, session_id, event_counter, last_id)
+      loop(conn, idle_timeout, session_id, event_counter, last_id)
     end
 
-    defp handle_message({:sse_message, message, {from, ref}}, conn, transport, session_id, event_counter, last_id)
+    defp handle_message({:sse_message, message, {from, ref}}, conn, idle_timeout, session_id, event_counter, last_id)
          when is_binary(message) do
       case send_event(conn, message, event_counter) do
         {:ok, conn} ->
           send(from, {ref, :ok})
-          loop(conn, transport, session_id, event_counter + 1, last_id)
+          loop(conn, idle_timeout, session_id, event_counter + 1, last_id)
 
         {:error, reason} ->
           Logging.transport_event("sse_send_failed", %{session_id: session_id, reason: reason}, level: :warning)
@@ -144,28 +150,28 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
-    defp handle_message(:close_sse, conn, _transport, session_id, _event_counter, _last_id) do
+    defp handle_message(:close_sse, conn, _idle_timeout, session_id, _event_counter, _last_id) do
       Logging.transport_event("sse_closing", %{session_id: session_id})
       Plug.Conn.halt(conn)
     end
 
-    defp handle_message({:plug_conn, :sent}, conn, transport, session_id, event_counter, last_id) do
+    defp handle_message({:plug_conn, :sent}, conn, idle_timeout, session_id, event_counter, last_id) do
       # Ignore Plug internal messages
-      loop(conn, transport, session_id, event_counter, last_id)
+      loop(conn, idle_timeout, session_id, event_counter, last_id)
     end
 
-    defp handle_message(msg, conn, transport, session_id, event_counter, last_id) do
+    defp handle_message(msg, conn, idle_timeout, session_id, event_counter, last_id) do
       Logging.transport_event("sse_unknown_message", %{session_id: session_id, message: inspect(msg)}, level: :warning)
-      loop(conn, transport, session_id, event_counter, last_id)
+      loop(conn, idle_timeout, session_id, event_counter, last_id)
     end
 
     # Continues the loop after a chunk write, or logs and returns the last good
     # conn on failure (the loop is abandoned and Plug finalizes the response).
-    defp continue(_prev, {:ok, conn}, transport, session_id, event_counter, last_id, _event) do
-      loop(conn, transport, session_id, event_counter, last_id)
+    defp continue(_prev, {:ok, conn}, idle_timeout, session_id, event_counter, last_id, _event) do
+      loop(conn, idle_timeout, session_id, event_counter, last_id)
     end
 
-    defp continue(conn, {:error, reason}, _transport, session_id, _event_counter, _last_id, event) do
+    defp continue(conn, {:error, reason}, _idle_timeout, session_id, _event_counter, _last_id, event) do
       Logging.transport_event(event, %{session_id: session_id, reason: reason}, level: :warning)
       conn
     end
