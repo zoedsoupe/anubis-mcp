@@ -1,10 +1,12 @@
 defmodule Anubis.ClientTest do
   use Anubis.MCP.Case, async: false
 
+  alias Anubis.Client.Authorization.Challenge
   alias Anubis.MCP.Error
   alias Anubis.MCP.ID
   alias Anubis.MCP.Message
   alias Anubis.MCP.Response
+  alias Anubis.Test.SyncHelpers
 
   @moduletag capture_log: true
 
@@ -55,6 +57,36 @@ defmodule Anubis.ClientTest do
 
       assert Process.alive?(client)
     end
+  end
+
+  @tag capture_log: false
+  test "await_ready returns the authorization challenge without stopping the client" do
+    challenge = Challenge.from_response("https://example.com/mcp", 401, [])
+    FakeTransport.expect_send(FakeTransport, fn _message -> {:error, {:authorization_required, challenge}} end)
+
+    client =
+      start_supervised!(%{
+        id: Anubis.Client,
+        start:
+          {Anubis.Client, :start_link_server,
+           [
+             [
+               transport: [layer: FakeTransport, name: FakeTransport],
+               client_info: %{"name" => "AuthClient", "version" => "1.0.0"},
+               capabilities: %{}
+             ]
+           ]},
+        restart: :temporary
+      })
+
+    waiter = Task.async(fn -> Anubis.Client.await_ready(client) end)
+    SyncHelpers.await_state(client, &(&1.ready_waiters != []))
+    GenServer.cast(client, :initialize)
+    assert {:error, error} = Task.await(waiter)
+    assert error.data.original_reason == {:authorization_required, challenge}
+    assert Anubis.Client.await_ready(client) == {:error, error}
+    assert Process.alive?(client)
+    assert :sys.get_state(client).pending_requests == %{}
   end
 
   describe "request methods" do

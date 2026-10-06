@@ -31,6 +31,8 @@ defmodule Anubis.Transport.StreamableHTTP do
   - 202 Accepted: Message acknowledged, no immediate response
   - 200 OK with application/json: Single JSON response forwarded to client
   - 200 OK with text/event-stream: SSE stream parsed and events forwarded to client
+  - 401 Unauthorized: Returns `{:error, {:authorization_required, Challenge.t()}}` with the original challenge
+  - 403 Forbidden with `insufficient_scope`: Returns the authorization challenge for scope escalation
   - 404 Not Found: Session expired, triggers reinitialization
 
   ## SSE Support
@@ -46,6 +48,7 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   import Peri
 
+  alias Anubis.Client.Authorization.Challenge
   alias Anubis.HTTP
   alias Anubis.SSE
   alias Anubis.SSE.Event
@@ -234,6 +237,9 @@ defmodule Anubis.Transport.StreamableHTTP do
         Logging.transport_event("got_http_response", %{status: response.status})
         handle_response(response, new_state)
 
+      {:error, {:authorization_required, _challenge}} = error ->
+        {:reply, error, %{state | active_request: nil}}
+
       {:error, {:http_error, 404, _body}} when not is_nil(state.session_id) ->
         Logging.transport_event("session_expired", %{session_id: state.session_id})
         GenServer.cast(state.client, :session_expired)
@@ -339,6 +345,15 @@ defmodule Anubis.Transport.StreamableHTTP do
     |> case do
       {:ok, %{status: status} = response} when status in 200..299 ->
         {:ok, response}
+
+      {:ok, %{status: status, headers: headers, body: body}} when status in [401, 403] ->
+        challenge = Challenge.from_response(url, status, headers)
+
+        if status == 401 or challenge.error == "insufficient_scope" do
+          {:error, {:authorization_required, challenge}}
+        else
+          {:error, {:http_error, status, body}}
+        end
 
       {:ok, %{status: status, body: body}} ->
         {:error, {:http_error, status, body}}
