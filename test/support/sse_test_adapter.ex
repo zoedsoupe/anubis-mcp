@@ -15,9 +15,10 @@ defmodule Anubis.Test.SSEAdapter do
   defdelegate get_ssl_data(payload), to: Conn
 
   def send_chunked(payload, status, headers) do
+    {:ok, body, payload} = Conn.send_chunked(payload, status, headers)
     if on_open = Map.get(payload, :on_open), do: on_open.()
     send(payload.owner, {:sse_opened, self()})
-    Conn.send_chunked(payload, status, headers)
+    {:ok, body, payload}
   end
 
   def chunk(payload, body) do
