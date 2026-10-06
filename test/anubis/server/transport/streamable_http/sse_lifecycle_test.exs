@@ -90,7 +90,19 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SSELifecycleTest do
     end
   end
 
-  defp open_stream(context, session_id) do
+  test "a stream can start and close while the transport is suspended after headers", context do
+    try do
+      {stream, _} =
+        open_stream(context, "suspended-transport", fn -> :sys.suspend(context.transport) end)
+
+      send(stream.pid, :close_sse)
+      assert {:ok, %{halted: true}} = Task.yield(stream, 1_000)
+    after
+      :sys.resume(context.transport)
+    end
+  end
+
+  defp open_stream(context, session_id, on_open \\ fn -> :ok end) do
     conn =
       :get
       |> conn("/mcp")
@@ -99,7 +111,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SSELifecycleTest do
 
     {_, payload} = conn.adapter
     disconnected = :atomics.new(1, [])
-    conn = %{conn | adapter: {SSEAdapter, Map.put(payload, :disconnected, disconnected)}}
+    payload = Map.merge(payload, %{disconnected: disconnected, on_open: on_open})
+    conn = %{conn | adapter: {SSEAdapter, payload}}
     task = Task.Supervisor.async_nolink(context.task_sup, fn -> StreamableHTTPPlug.call(conn, context.opts) end)
     pid = task.pid
     assert_receive {:sse_opened, ^pid}
