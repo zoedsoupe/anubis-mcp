@@ -97,15 +97,16 @@ Each connecting client gets its own session process, identified by the session i
 
 ### Stateless requests (2026-07-28)
 
-Protocol revision 2026-07-28 drops the `initialize` handshake and the session: every request carries its protocol version, client info and capabilities in `params._meta`. The plug serves it once the server declares it, next to the handshake versions it keeps serving:
+Protocol revision 2026-07-28 drops the `initialize` handshake and the session: every request carries its protocol version, client info and capabilities in `params._meta`. Servers enable all registered versions by default, so the plug serves this era alongside the handshake versions without extra configuration:
 
 ```elixir
 use Anubis.Server,
   name: "my-server",
   version: "1.0.0",
-  capabilities: [:tools],
-  protocol_versions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]
+  capabilities: [:tools]
 ```
+
+Set `protocol_versions: ["2025-11-25", "2025-06-18", "2025-03-26"]` to keep a server legacy-only, or provide another explicit subset. An implemented `supported_protocol_versions/0` callback takes precedence over the option. The `initialize` handshake still negotiates only legacy versions; stateless clients use `server/discover`.
 
 The `MCP-Protocol-Version` header picks the era for each request. Without it, or with a handshake version, requests use the legacy session path. A body declaring a stateless protocol version on that path is rejected with HTTP 400 and `-32020` before the session is accessed. With `2026-07-28`:
 
