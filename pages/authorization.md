@@ -163,4 +163,56 @@ forward "/.well-known/oauth-protected-resource",
 | RFC 7662        | Token Introspection                                                   |
 | RFC 7519 + 7517 | JWT + JWKS verification                                               |
 
-Client-side OAuth flows (PKCE, discovery, token store, refresh) are out of scope. Use a dedicated OAuth client library for those.
+## Client-side discovery
+
+`Anubis.Client.Authorization.discover/2` discovers the metadata needed by an OAuth client, using the application's existing Finch pool. The URL is the full MCP endpoint, including its path:
+
+```elixir
+alias Anubis.Client.Authorization
+
+{:ok, metadata} = Authorization.discover("https://mcp.example.com/api/mcp")
+
+metadata.authorization_endpoint
+metadata.token_endpoint
+metadata.resource
+```
+
+Discovery first requests `/.well-known/oauth-protected-resource/api/mcp`, then the root metadata location if the first returns 404 or 405. It discovers the selected issuer through OAuth authorization server metadata, then the two OIDC locations defined by MCP for issuers with paths. Invalid documents fail validation instead of falling through to another location. Missing metadata is an error, not evidence that the server permits unauthenticated access.
+
+The result is an `Anubis.Client.Authorization.Metadata` struct. Pass its `resource` value in **both authorization and token requests** as required by RFC 8707. Keep using `mcp_url` as the MCP connection URL: a root metadata document may identify a broader resource. `scopes_supported` describes resource scopes; a challenge's `scope` is separate and authoritative for the challenged request.
+
+### Reactive discovery
+
+The HTTP transport preserves `WWW-Authenticate` on a 401, and on a 403 carrying `error="insufficient_scope"`. Direct transport calls return `{:error, {:authorization_required, challenge}}`. Client calls wrap that value in `Anubis.MCP.Error.data.original_reason`; this also works through `await_ready/2` when initialization requires authorization:
+
+```elixir
+alias Anubis.Client
+alias Anubis.Client.Authorization
+alias Anubis.MCP.Error
+
+case Client.await_ready(MyApp.MCPClient) do
+  :ok ->
+    :ok
+
+  {:error, %Error{data: %{original_reason: {:authorization_required, challenge}}}} ->
+    Authorization.discover(challenge.mcp_url, challenge: challenge)
+end
+```
+
+The challenge retains the original header values, HTTP status, `scope`, `error` and `error_description`. Its `resource_metadata` URL takes precedence over well-known locations. Distinct Bearer challenges are rejected as ambiguous. An authorization failure during initialization leaves the client alive and releases initialization waiters with the error; it does not retry or open a browser. After obtaining a token, the host can restart the client with its normal `Authorization: Bearer ...` transport header.
+
+### Issuer selection and network access
+
+If resource metadata advertises multiple authorization servers, discovery returns an error with reason `:authorization_server_selection_required` and the list in `error.data.authorization_servers`. Select an advertised issuer explicitly:
+
+```elixir
+Authorization.discover("https://mcp.example.com/api/mcp",
+  authorization_server: "https://auth.example.com/tenant"
+)
+```
+
+The returned resource and issuer identifiers are checked against the discovery context; endpoint URLs and metadata fields are validated. HTTPS is required. Local development can opt into HTTP on `localhost`, `127.0.0.1` or `::1` with `allow_insecure_localhost: true`.
+
+Metadata requests carry no bearer tokens or other credentials, do not follow redirects, and accept responses up to 1 MiB. Configure `:finch_name` and `:http_options` to use an application-owned pool and timeouts. `:url_policy` accepts a `fn url -> :ok | {:error, reason} end` callback before every metadata fetch. Hosts accepting untrusted MCP URLs must apply their own egress policy, including private-address and DNS-rebinding restrictions; HTTPS and identifier validation alone do not provide SSRF protection.
+
+Consent UI, client registration, PKCE, token storage and refresh remain the responsibility of the host application's OAuth client. Discovery does not acquire tokens or implement the server-side features tracked in #261.
