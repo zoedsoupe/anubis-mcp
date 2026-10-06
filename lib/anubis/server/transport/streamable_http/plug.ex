@@ -882,6 +882,7 @@ if Code.ensure_loaded?(Plug) do
       |> Streaming.prepare_connection()
       |> Streaming.start(transport, session_id,
         event_store: event_store,
+        keepalive_interval: StreamableHTTP.keepalive_interval(transport),
         resume_from: Map.get(params, :resume_from),
         retry: retry,
         on_close: fn ->
