@@ -33,6 +33,10 @@ defmodule Anubis.Protocol.V2026_07_28Test do
     %{"jsonrpc" => "2.0", "method" => method, "params" => params}
   end
 
+  defp input_required(request) do
+    %{"resultType" => "input_required", "inputRequests" => %{"ask" => request}}
+  end
+
   describe "version/0 and era/0" do
     test "identifies the first stateless version" do
       assert V2026_07_28.version() == "2026-07-28"
@@ -343,6 +347,297 @@ defmodule Anubis.Protocol.V2026_07_28Test do
       "cacheScope" => "private"
     }
 
+    @input_required_examples [
+      ~S"""
+      {
+        "resultType": "input_required",
+        "inputRequests": {
+          "github_login": {
+            "method": "elicitation/create",
+            "params": {
+              "message": "Please provide your GitHub username",
+              "requestedSchema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["name"]
+              }
+            }
+          },
+          "capital_of_france": {
+            "method": "sampling/createMessage",
+            "params": {
+              "messages": [
+                {
+                  "role": "user",
+                  "content": {
+                    "type": "text",
+                    "text": "What is the capital of France?"
+                  }
+                }
+              ],
+              "maxTokens": 100
+            }
+          }
+        },
+        "requestState": "eyJsb2NhdGlvbiI6Ik5ldyBZb3JrIn0"
+      }
+      """,
+      ~S"""
+      {
+        "resultType": "input_required",
+        "requestState": "eyJwcm9ncmVzcyI6IjUwJSIsInN0YXRlIjoicHJvY2Vzc2luZyJ9"
+      }
+      """
+    ]
+
+    @published_examples %{
+      "server/discover" => [
+        ~S"""
+        {
+          "resultType": "complete",
+          "supportedVersions": ["2026-07-28"],
+          "capabilities": {
+            "tools": {},
+            "resources": {}
+          },
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "ExampleServer",
+              "version": "1.0.0"
+            }
+          },
+          "instructions": "This server provides weather and resource utilities. Prefer `get_weather` for forecast lookups.",
+          "ttlMs": 3600000,
+          "cacheScope": "public"
+        }
+        """
+      ],
+      "subscriptions/listen" => [
+        ~S"""
+        {
+          "resultType": "complete",
+          "_meta": {
+            "io.modelcontextprotocol/subscriptionId": "listen-1"
+          }
+        }
+        """
+      ],
+      "resources/list" => [
+        ~S"""
+        {
+          "resultType": "complete",
+          "resources": [
+            {
+              "uri": "file:///project/src/main.rs",
+              "name": "main.rs",
+              "title": "Rust Software Application Main File",
+              "description": "Primary application entry point",
+              "mimeType": "text/x-rust",
+              "icons": [
+                {
+                  "src": "https://example.com/rust-file-icon.png",
+                  "mimeType": "image/png",
+                  "sizes": ["48x48"]
+                }
+              ]
+            }
+          ],
+          "nextCursor": "eyJwYWdlIjogM30=",
+          "ttlMs": 600000,
+          "cacheScope": "private"
+        }
+        """
+      ],
+      "resources/templates/list" => [
+        ~S"""
+        {
+          "resultType": "complete",
+          "resourceTemplates": [
+            {
+              "uriTemplate": "file:///{path}",
+              "name": "Project Files",
+              "title": "📁 Project Files",
+              "description": "Access files in the project directory",
+              "mimeType": "application/octet-stream",
+              "icons": [
+                {
+                  "src": "https://example.com/folder-icon.png",
+                  "mimeType": "image/png",
+                  "sizes": ["48x48"]
+                }
+              ]
+            }
+          ],
+          "nextCursor": "next-page-cursor",
+          "ttlMs": 3600000,
+          "cacheScope": "public"
+        }
+        """
+      ],
+      "resources/read" =>
+        [
+          ~S"""
+          {
+            "resultType": "complete",
+            "contents": [
+              {
+                "uri": "file:///project/src/main.rs",
+                "mimeType": "text/x-rust",
+                "text": "fn main() {\n    println!(\"Hello world!\");\n}"
+              }
+            ],
+            "ttlMs": 60000,
+            "cacheScope": "private"
+          }
+          """
+        ] ++ @input_required_examples,
+      "prompts/get" =>
+        [
+          ~S"""
+          {
+            "resultType": "complete",
+            "description": "Code review prompt",
+            "messages": [
+              {
+                "role": "user",
+                "content": {
+                  "type": "text",
+                  "text": "Please review this Python code:\ndef hello():\n    print('world')"
+                }
+              }
+            ]
+          }
+          """
+        ] ++ @input_required_examples,
+      "prompts/list" => [
+        ~S"""
+        {
+          "resultType": "complete",
+          "prompts": [
+            {
+              "name": "code_review",
+              "title": "Request Code Review",
+              "description": "Asks the LLM to analyze code quality and suggest improvements",
+              "arguments": [
+                {
+                  "name": "code",
+                  "description": "The code to review",
+                  "required": true
+                }
+              ],
+              "icons": [
+                {
+                  "src": "https://example.com/review-icon.svg",
+                  "mimeType": "image/svg+xml",
+                  "sizes": ["any"]
+                }
+              ]
+            }
+          ],
+          "nextCursor": "next-page-cursor",
+          "ttlMs": 600000,
+          "cacheScope": "public"
+        }
+        """
+      ],
+      "tools/call" =>
+        [
+          ~S"""
+          {
+            "resultType": "complete",
+            "content": [
+              {
+                "type": "text",
+                "text": "Invalid departure date: must be in the future. Current date is 08/08/2025."
+              }
+            ],
+            "isError": true
+          }
+          """,
+          ~S"""
+          {
+            "resultType": "complete",
+            "content": [
+              {
+                "type": "text",
+                "text": "Found 2 users: Alice (alice@example.com) and Bob (bob@example.com)."
+              }
+            ],
+            "structuredContent": [
+              { "id": "1", "name": "Alice", "email": "alice@example.com" },
+              { "id": "2", "name": "Bob", "email": "bob@example.com" }
+            ]
+          }
+          """,
+          ~S"""
+          {
+            "resultType": "complete",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"temperature\": 22.5, \"conditions\": \"Partly cloudy\", \"humidity\": 65}"
+              }
+            ],
+            "structuredContent": {
+              "temperature": 22.5,
+              "conditions": "Partly cloudy",
+              "humidity": 65
+            }
+          }
+          """,
+          ~S"""
+          {
+            "resultType": "complete",
+            "content": [
+              {
+                "type": "text",
+                "text": "Current weather in New York:\nTemperature: 72°F\nConditions: Partly cloudy"
+              }
+            ],
+            "isError": false
+          }
+          """
+        ] ++ @input_required_examples,
+      "tools/list" => [
+        ~S"""
+        {
+          "resultType": "complete",
+          "tools": [
+            {
+              "name": "get_weather",
+              "title": "Weather Information Provider",
+              "description": "Get current weather information for a location",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "location": {
+                    "type": "string",
+                    "description": "City name or zip code"
+                  }
+                },
+                "required": ["location"]
+              },
+              "icons": [
+                {
+                  "src": "https://example.com/weather-icon.png",
+                  "mimeType": "image/png",
+                  "sizes": ["48x48"]
+                }
+              ]
+            }
+          ],
+          "nextCursor": "next-page-cursor",
+          "ttlMs": 300000,
+          "cacheScope": "public"
+        }
+        """
+      ]
+    }
+
     test "server/discover models the result this revision requires" do
       schema = V2026_07_28.request_result_schema("server/discover")
 
@@ -365,10 +660,76 @@ defmodule Anubis.Protocol.V2026_07_28Test do
       assert {:error, _} = Peri.validate(schema, Map.put(@discover_result, "cacheScope", "shared"))
     end
 
-    test "every other method is still unmodeled" do
-      for method <- V2026_07_28.request_methods(), method != "server/discover" do
-        assert is_nil(V2026_07_28.request_result_schema(method))
+    test "models the result of every request method except completion/complete" do
+      for method <- V2026_07_28.request_methods(), method != "completion/complete" do
+        assert V2026_07_28.request_result_schema(method), "#{method} has no result schema"
       end
+
+      assert is_nil(V2026_07_28.request_result_schema("completion/complete"))
+    end
+
+    test "the spec's published examples validate unchanged" do
+      for {method, examples} <- @published_examples, json <- examples do
+        example = JSON.decode!(json)
+
+        assert Peri.validate(V2026_07_28.request_result_schema(method), example) == {:ok, example},
+               "#{method} did not accept the spec example unchanged:\n#{json}"
+      end
+    end
+
+    test "an input-required result carries input requests or request state" do
+      for method <- ~w(tools/call prompts/get resources/read) do
+        schema = V2026_07_28.request_result_schema(method)
+
+        assert {:error, _} = Peri.validate(schema, %{"resultType" => "input_required"})
+      end
+    end
+
+    test "input requests are sampling, elicitation or roots requests with their params" do
+      schema = V2026_07_28.request_result_schema("tools/call")
+      url_elicitation = %{"mode" => "url", "message" => "Sign in", "url" => "https://example.com/login"}
+
+      assert {:ok, _} = Peri.validate(schema, input_required(%{"method" => "roots/list"}))
+
+      assert {:ok, _} =
+               Peri.validate(schema, input_required(%{"method" => "elicitation/create", "params" => url_elicitation}))
+
+      assert {:error, _} = Peri.validate(schema, input_required(%{"method" => "sampling/createMessage"}))
+      assert {:error, _} = Peri.validate(schema, input_required(%{"method" => "tools/call", "params" => %{}}))
+    end
+
+    test "an unrecognized result type is invalid" do
+      schema = V2026_07_28.request_result_schema("tools/call")
+
+      assert {:error, _} = Peri.validate(schema, %{"resultType" => "pending", "content" => []})
+    end
+
+    test "only tools/call, prompts/get and resources/read may ask for input" do
+      result = %{"resultType" => "input_required", "requestState" => "state"}
+      excluded = ~w(tools/call prompts/get resources/read completion/complete)
+
+      for method <- V2026_07_28.request_methods(), method not in excluded do
+        assert {:error, _} = Peri.validate(V2026_07_28.request_result_schema(method), result)
+      end
+    end
+
+    test "list results carry cache hints" do
+      schema = V2026_07_28.request_result_schema("tools/list")
+      result = %{"resultType" => "complete", "tools" => [], "ttlMs" => 0, "cacheScope" => "private"}
+
+      assert {:ok, ^result} = Peri.validate(schema, result)
+
+      for key <- ~w(ttlMs cacheScope) do
+        assert {:error, _} = Peri.validate(schema, Map.delete(result, key))
+      end
+    end
+
+    test "the listen result is tagged with its subscription" do
+      schema = V2026_07_28.request_result_schema("subscriptions/listen")
+
+      assert {:ok, _} = Peri.validate(schema, %{"resultType" => "complete", "_meta" => %{@subscription_id => 7}})
+      assert {:error, _} = Peri.validate(schema, %{"resultType" => "complete", "_meta" => %{}})
+      assert {:error, _} = Peri.validate(schema, %{"resultType" => "complete"})
     end
   end
 

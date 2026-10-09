@@ -1,6 +1,7 @@
 defmodule Anubis.Server.InputRequiredTest do
   use Anubis.MCP.Case, async: false
 
+  alias Anubis.Protocol.V2026_07_28
   alias Anubis.Server.Component
   alias Anubis.Server.Frame
   alias Anubis.Server.Handlers.InputRequests
@@ -388,6 +389,48 @@ defmodule Anubis.Server.InputRequiredTest do
     end
   end
 
+  describe "dialect conformance" do
+    test "complete results are exactly what the dialect models", %{session: session} do
+      for method <- ~w(server/discover tools/list prompts/list resources/list resources/templates/list) do
+        assert_conforms(method, request(session, method, %{}))
+      end
+    end
+
+    test "tool input requests and the retry they unlock are exactly what the dialect models", %{session: session} do
+      assert %{"inputRequests" => %{"user_name" => %{"method" => "elicitation/create"}}} =
+               assert_conforms("tools/call", call(session, "greet"))
+
+      assert %{"inputRequests" => %{"answer" => %{"method" => "sampling/createMessage"}}} =
+               assert_conforms("tools/call", call(session, "ask", nil, capabilities: %{"sampling" => %{}}))
+
+      assert %{"inputRequests" => %{"step1" => _}, "requestState" => _} =
+               assert_conforms("tools/call", call(session, "wizard"))
+
+      answer = %{"user_name" => %{"action" => "accept", "content" => %{"name" => "Ada"}}}
+      assert %{"resultType" => "complete"} = assert_conforms("tools/call", call(session, "greet", answer))
+    end
+
+    test "prompt and resource input requests and their retries are exactly what the dialect models",
+         %{session: session} do
+      prompt = %{"name" => "context_prompt"}
+      answered = Map.put(prompt, "inputResponses", %{"user_context" => %{"content" => %{"context" => "x"}}})
+
+      assert %{"resultType" => "input_required"} =
+               assert_conforms("prompts/get", request(session, "prompts/get", prompt))
+
+      assert %{"resultType" => "complete"} = assert_conforms("prompts/get", request(session, "prompts/get", answered))
+
+      resource = %{"uri" => "notes://draft"}
+      unlocked = Map.put(resource, "inputResponses", %{"unlock" => %{"action" => "accept"}})
+
+      assert %{"resultType" => "input_required"} =
+               assert_conforms("resources/read", request(session, "resources/read", resource))
+
+      assert %{"resultType" => "complete"} =
+               assert_conforms("resources/read", request(session, "resources/read", unlocked))
+    end
+  end
+
   describe "the handshake era" do
     test "does not receive an InputRequiredResult" do
       session = start_session()
@@ -446,6 +489,13 @@ defmodule Anubis.Server.InputRequiredTest do
     request(session, "tools/call", tool_params(tool, responses, opts), opts)
   end
 
+  defp assert_conforms(method, result) do
+    assert Peri.validate(V2026_07_28.request_result_schema(method), result) == {:ok, result},
+           "#{method} result is not exactly what the dialect models: #{inspect(result)}"
+
+    result
+  end
+
   defp respond(input, capabilities) do
     frame = Frame.new()
 
@@ -453,7 +503,7 @@ defmodule Anubis.Server.InputRequiredTest do
       frame
       | context: %{
           frame.context
-          | protocol_module: Anubis.Protocol.V2026_07_28,
+          | protocol_module: V2026_07_28,
             client_capabilities: capabilities
         }
     }
