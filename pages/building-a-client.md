@@ -214,6 +214,12 @@ Anubis.Client.close(MyApp.MCPClient)
 
 This closes the connection and stops the transport. Under a supervisor you rarely call it yourself; stopping the supervisor tree does the same work.
 
+## Runnable web search example
+
+The [Parallel Search client](https://github.com/zoedsoupe/anubis-mcp/tree/main/examples/parallel-search)
+uses Streamable HTTP to search the web and fetch page excerpts without an API key.
+It includes installation instructions and direct tool calls through `Anubis.Client`.
+
 ## Next steps
 
 - [Transports](transports.md) details each transport option and when to pick it.
