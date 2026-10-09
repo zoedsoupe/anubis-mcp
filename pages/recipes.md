@@ -254,7 +254,7 @@ The error strings go to the model, so make them actionable: "unknown city" invit
 
 ## Interactive UIs (MCP Apps)
 
-The [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview) (`io.modelcontextprotocol/ui`) lets a host render a tool result in an HTML view. Its server side is plain `_meta`: a `ui://` resource serving `text/html;profile=mcp-app`, and a tool that points to it.
+The [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview) (`io.modelcontextprotocol/ui`) lets a host render a tool result in an HTML view. Its server side is mostly `_meta`: a `ui://` resource serving `text/html;profile=mcp-app`, and a tool that points to it.
 
 ```elixir
 defmodule MyApp.MCP.WeatherView do
@@ -264,6 +264,8 @@ defmodule MyApp.MCP.WeatherView do
     type: :resource,
     uri: "ui://weather/dashboard",
     mime_type: "text/html;profile=mcp-app"
+
+  alias Anubis.Server.Response
 
   @impl true
   def read(_params, frame) do
@@ -283,6 +285,8 @@ defmodule MyApp.MCP.GetWeather do
     type: :tool,
     meta: %{"ui" => %{"resourceUri" => "ui://weather/dashboard"}}
 
+  alias Anubis.Server.Response
+
   schema do
     field :city, :string, required: true
   end
@@ -296,18 +300,42 @@ end
 
 Tool results still need text content for the model and for hosts without UI support; `Response.structured/2` writes it alongside `structuredContent`. Data meant only for the view goes in the result's `_meta` with `Response.meta/2`.
 
-Hosts declare support under `capabilities.extensions`. To offer a text-only variant elsewhere, filter on it in `server_tools/2`:
+Hosts declare support under `capabilities.extensions`, and the server advertises its own (sent from protocol revision 2026-07-28, which added `extensions` to the server capabilities). Hosts without UI support see the tools as plain tools, and they know nothing of `visibility`, so drop the tools meant only for the view and strip the `"ui"` entry from the rest:
 
 ```elixir
-@impl Anubis.Server
-def server_tools(tools, frame) do
-  ui? =
+defmodule MyApp.MCP.Server do
+  use Anubis.Server,
+    name: "weather",
+    version: "1.0.0",
+    capabilities: [:tools, :resources, extensions: %{"io.modelcontextprotocol/ui" => %{}}]
+
+  alias Anubis.Server.Frame
+
+  component MyApp.MCP.WeatherView
+  component MyApp.MCP.GetWeather
+
+  @impl Anubis.Server
+  def server_tools(tools, frame) do
+    if ui_host?(frame), do: tools, else: Enum.flat_map(tools, &text_only/1)
+  end
+
+  defp ui_host?(frame) do
     case Frame.client_extension(frame, "io.modelcontextprotocol/ui") do
       %{"mimeTypes" => types} -> "text/html;profile=mcp-app" in types
       _ -> false
     end
+  end
 
-  if ui?, do: tools, else: Enum.map(tools, &%{&1 | meta: nil})
+  defp text_only(%{meta: %{"ui" => ui} = meta} = tool) do
+    if "model" in Map.get(ui, "visibility", ["model"]) do
+      rest = Map.delete(meta, "ui")
+      [%{tool | meta: if(rest == %{}, do: nil, else: rest)}]
+    else
+      []
+    end
+  end
+
+  defp text_only(tool), do: [tool]
 end
 ```
 

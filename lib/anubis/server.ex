@@ -61,6 +61,13 @@ defmodule Anubis.Server do
           {:prompts, list_changed?: true}      # Notify when prompts change
         ]
 
+  Extensions are declared by identifier with their settings map. They are
+  advertised from protocol revision 2026-07-28, which added `extensions` to
+  the server capabilities:
+
+      use Anubis.Server,
+        capabilities: [:tools, extensions: %{"io.modelcontextprotocol/ui" => %{}}]
+
   ## Components
 
   Register tools, resources, and prompts as components:
@@ -715,6 +722,10 @@ defmodule Anubis.Server do
     capability_config = if is_nil(list_changed?), do: %{}, else: %{listChanged: list_changed?}
 
     Map.put(capabilities, to_string(capability), capability_config)
+  end
+
+  def parse_capability({:extensions, extensions}, %{} = capabilities) when is_map(extensions) do
+    Map.put(capabilities, "extensions", extensions)
   end
 
   def parse_capability(:tasks, %{} = capabilities) do
