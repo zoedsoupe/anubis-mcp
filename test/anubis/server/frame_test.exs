@@ -34,6 +34,31 @@ defmodule Anubis.Server.FrameTest do
     end
   end
 
+  describe "client_extension/2" do
+    @ui "io.modelcontextprotocol/ui"
+
+    defp frame_with_capabilities(capabilities), do: %Frame{context: %Context{client_capabilities: capabilities}}
+
+    test "returns the settings the client declared for the extension" do
+      settings = %{"mimeTypes" => ["text/html;profile=mcp-app"]}
+      frame = frame_with_capabilities(%{"extensions" => %{@ui => settings}})
+
+      assert Frame.client_extension(frame, @ui) == settings
+    end
+
+    test "returns an empty map for an extension declared without settings" do
+      frame = frame_with_capabilities(%{"extensions" => %{@ui => %{}}})
+
+      assert Frame.client_extension(frame, @ui) == %{}
+    end
+
+    test "returns nil when the extension is not declared" do
+      assert Frame.client_extension(frame_with_capabilities(%{}), @ui) == nil
+      assert Frame.client_extension(frame_with_capabilities(%{"extensions" => %{}}), @ui) == nil
+      assert Frame.client_extension(Frame.new(), @ui) == nil
+    end
+  end
+
   describe "register_resource_template/3" do
     test "registers a resource template at runtime" do
       frame = Frame.new()

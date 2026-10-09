@@ -32,7 +32,7 @@ defmodule Anubis.Server.Component do
     * `:description` - defaults to the module `@moduledoc`.
     * `:annotations` - behaviour-specific hints (`readOnlyHint`,
       `destructiveHint`, ...).
-    * `:meta` - arbitrary `_meta` merged into the component descriptor.
+    * `:meta` - arbitrary `_meta` on the tool or resource descriptor.
     * `:icons` - icons rendered by supporting clients.
     * `:scopes` - authorization scopes required to see this component.
 
@@ -157,11 +157,6 @@ defmodule Anubis.Server.Component do
           def annotations, do: unquote(annotations)
         end
 
-        if unquote(meta) != nil do
-          @impl true
-          def meta, do: unquote(meta)
-        end
-
         if unquote(task_support) != nil do
           @impl true
           def task_support, do: unquote(task_support)
@@ -207,6 +202,11 @@ defmodule Anubis.Server.Component do
         def mime_type, do: unquote(mime_type)
 
         defoverridable mime_type: 0
+      end
+
+      if unquote(type) in [:tool, :resource] and unquote(meta) != nil do
+        @impl true
+        def meta, do: unquote(meta)
       end
 
       if unquote(icons) != nil do
