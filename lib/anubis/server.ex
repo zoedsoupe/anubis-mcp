@@ -573,6 +573,7 @@ defmodule Anubis.Server do
     has_uri = Anubis.exported?(mod, :uri, 0)
     has_uri_template = Anubis.exported?(mod, :uri_template, 0)
     icons = component_icons(mod)
+    meta = if Anubis.exported?(mod, :meta, 0), do: mod.meta()
     scopes = if Anubis.exported?(mod, :__scopes__, 0), do: mod.__scopes__(), else: []
 
     cond do
@@ -586,6 +587,7 @@ defmodule Anubis.Server do
             mime_type: mod.mime_type(),
             handler: mod,
             icons: icons,
+            meta: meta,
             scopes: scopes
           }
         ]
@@ -600,6 +602,7 @@ defmodule Anubis.Server do
             mime_type: mod.mime_type(),
             handler: mod,
             icons: icons,
+            meta: meta,
             scopes: scopes
           }
         ]

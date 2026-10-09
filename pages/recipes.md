@@ -252,6 +252,65 @@ end
 
 The error strings go to the model, so make them actionable: "unknown city" invites a corrected retry, where a stack trace invites nothing.
 
+## Interactive UIs (MCP Apps)
+
+The [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview) (`io.modelcontextprotocol/ui`) lets a host render a tool result in an HTML view. Its server side is plain `_meta`: a `ui://` resource serving `text/html;profile=mcp-app`, and a tool that points to it.
+
+```elixir
+defmodule MyApp.MCP.WeatherView do
+  @moduledoc "Interactive weather dashboard"
+
+  use Anubis.Server.Component,
+    type: :resource,
+    uri: "ui://weather/dashboard",
+    mime_type: "text/html;profile=mcp-app"
+
+  @impl true
+  def read(_params, frame) do
+    response =
+      Response.resource()
+      |> Response.text(MyApp.Weather.dashboard_html())
+      |> Response.meta(%{"ui" => %{"csp" => %{"connectDomains" => ["https://api.weather.example"]}}})
+
+    {:reply, response, frame}
+  end
+end
+
+defmodule MyApp.MCP.GetWeather do
+  @moduledoc "Current weather for a city"
+
+  use Anubis.Server.Component,
+    type: :tool,
+    meta: %{"ui" => %{"resourceUri" => "ui://weather/dashboard"}}
+
+  schema do
+    field :city, :string, required: true
+  end
+
+  @impl true
+  def execute(%{city: city}, frame) do
+    {:reply, Response.structured(Response.tool(), MyApp.Weather.fetch!(city)), frame}
+  end
+end
+```
+
+Tool results still need text content for the model and for hosts without UI support; `Response.structured/2` writes it alongside `structuredContent`. Data meant only for the view goes in the result's `_meta` with `Response.meta/2`.
+
+Hosts declare support under `capabilities.extensions`. To offer a text-only variant elsewhere, filter on it in `server_tools/2`:
+
+```elixir
+@impl Anubis.Server
+def server_tools(tools, frame) do
+  ui? =
+    case Frame.client_extension(frame, "io.modelcontextprotocol/ui") do
+      %{"mimeTypes" => types} -> "text/html;profile=mcp-app" in types
+      _ -> false
+    end
+
+  if ui?, do: tools, else: Enum.map(tools, &%{&1 | meta: nil})
+end
+```
+
 ## MCP-level logging
 
 Servers with the `:logging` capability can stream log messages to clients over the protocol itself, which is useful when the client is an agent that should see what happened:

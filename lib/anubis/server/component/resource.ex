@@ -113,6 +113,7 @@ defmodule Anubis.Server.Component.Resource do
           handler: module | nil,
           title: String.t() | nil,
           icons: [map()] | nil,
+          meta: map() | nil,
           scopes: [String.t()]
         }
 
@@ -125,6 +126,7 @@ defmodule Anubis.Server.Component.Resource do
     handler: nil,
     title: nil,
     icons: nil,
+    meta: nil,
     scopes: []
   ]
 
@@ -212,6 +214,14 @@ defmodule Anubis.Server.Component.Resource do
   @callback icons() :: [map()] | nil
 
   @doc """
+  Returns optional metadata for the resource.
+
+  Emitted as `_meta` on the resource's entry in `resources/list` and
+  `resources/templates/list`. This is an optional callback.
+  """
+  @callback meta() :: map()
+
+  @doc """
   Reads the resource content.
 
   ## Parameters
@@ -238,7 +248,7 @@ defmodule Anubis.Server.Component.Resource do
               | {:noreply, new_state :: Frame.t()}
               | {:error, error :: Error.t(), new_state :: Frame.t()}
 
-  @optional_callbacks title: 0, uri: 0, uri_template: 0, description: 0, icons: 0
+  @optional_callbacks title: 0, uri: 0, uri_template: 0, description: 0, icons: 0, meta: 0
 
   defimpl JSON.Encoder, for: __MODULE__ do
     alias Anubis.Server.Component.Resource
@@ -252,6 +262,7 @@ defmodule Anubis.Server.Component.Resource do
       |> then(&if resource.description, do: Map.put(&1, :description, resource.description), else: &1)
       |> then(&if resource.mime_type, do: Map.put(&1, :mimeType, resource.mime_type), else: &1)
       |> then(&if resource.icons, do: Map.put(&1, :icons, resource.icons), else: &1)
+      |> then(&if resource.meta, do: Map.put(&1, :_meta, resource.meta), else: &1)
       |> JSON.encode!()
     end
 
@@ -260,6 +271,7 @@ defmodule Anubis.Server.Component.Resource do
       |> Map.take([:name, :uri, :description, :title])
       |> Map.put(:mimeType, resource.mime_type)
       |> then(&if resource.icons, do: Map.put(&1, :icons, resource.icons), else: &1)
+      |> then(&if resource.meta, do: Map.put(&1, :_meta, resource.meta), else: &1)
       |> JSON.encode!()
     end
   end
