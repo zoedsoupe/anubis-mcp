@@ -407,7 +407,7 @@ defmodule Anubis.Server.Frame do
   ## Examples
 
       case Frame.client_extension(frame, "io.modelcontextprotocol/ui") do
-        %{"mimeTypes" => types} -> "text/html;profile=mcp-app" in types
+        %{"mimeTypes" => types} when is_list(types) -> "text/html;profile=mcp-app" in types
         _ -> false
       end
   """

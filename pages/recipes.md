@@ -321,7 +321,7 @@ defmodule MyApp.MCP.Server do
 
   defp ui_host?(frame) do
     case Frame.client_extension(frame, "io.modelcontextprotocol/ui") do
-      %{"mimeTypes" => types} -> "text/html;profile=mcp-app" in types
+      %{"mimeTypes" => types} when is_list(types) -> "text/html;profile=mcp-app" in types
       _ -> false
     end
   end
