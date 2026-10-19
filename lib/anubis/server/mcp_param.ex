@@ -69,6 +69,43 @@ defmodule Anubis.Server.McpParam do
   defp decode_trimmed(value), do: {:ok, value}
 
   @doc """
+  Encodes a value for a `Mcp-Name`-style header, the inverse of
+  `decode_header_value/1`.
+
+  A value that is already a safe header value (visible ASCII only, no leading
+  or trailing space or tab, not starting with the base64 sentinel) is returned
+  as written; anything else is wrapped in the `=?base64?...?=` sentinel so the
+  server decodes it back to the exact body value.
+
+  ## Examples
+
+      iex> Anubis.Server.McpParam.encode_header_value("us-west1")
+      "us-west1"
+
+      iex> Anubis.Server.McpParam.encode_header_value("Héllo")
+      "=?base64?" <> Base.encode64("Héllo") <> "?="
+
+      iex> Anubis.Server.McpParam.decode_header_value(Anubis.Server.McpParam.encode_header_value(" padded "))
+      {:ok, " padded "}
+  """
+  @spec encode_header_value(String.t()) :: String.t()
+  def encode_header_value(value) when is_binary(value) do
+    if safe_header_value?(value), do: value, else: @base64_prefix <> Base.encode64(value) <> @base64_suffix
+  end
+
+  # A value the server's decode_header_value/1 returns as written: RFC 9110
+  # visible ASCII, nothing trimmed away, and not mistaken for an encoded one.
+  # The edge-whitespace check mirrors the regex decode_header_value/1 trims
+  # with, so both sides agree on what "trimmed away" means (String.trim/2 with
+  # a " \t" set trims nothing).
+  defp safe_header_value?(value) do
+    bytes = :binary.bin_to_list(value)
+
+    Enum.all?(bytes, &(&1 in 32..126)) and value == String.replace(value, ~r/\A[ \t]+|[ \t]+\z/, "") and
+      not String.starts_with?(value, @base64_prefix)
+  end
+
+  @doc """
   Puts the `x-mcp-header` annotations of a component schema into the JSON
   Schema built from it.
 

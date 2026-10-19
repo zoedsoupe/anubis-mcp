@@ -131,5 +131,31 @@ defmodule Anubis.Server.McpParamTest do
     end
   end
 
+  describe "encoding a header value" do
+    @tag timeout: 5_000
+    test "keeps safe values as written" do
+      for value <- ["us-west1", "test_tool", "a=b", "Tool 1", ""] do
+        assert McpParam.encode_header_value(value) == value
+      end
+    end
+
+    test "wraps unsafe values in the base64 sentinel" do
+      for value <- [" padded ", "\ttabbed\t", "Héllo", "=?base64?dGVzdA==?=", "line\nbreak"] do
+        encoded = McpParam.encode_header_value(value)
+        assert encoded != value
+        assert String.starts_with?(encoded, "=?base64?")
+        assert String.ends_with?(encoded, "?=")
+      end
+    end
+
+    test "round-trips any binary through decode_header_value/1" do
+      safe = ["us-west1", "test_tool", "a=b", "", " x ", "Héllo", "héllo wôrld", "=?base64?ZQ==?="]
+
+      for value <- safe do
+        assert {:ok, ^value} = value |> McpParam.encode_header_value() |> McpParam.decode_header_value()
+      end
+    end
+  end
+
   defp build(type, opts), do: Component.__build_field__(type, opts)
 end

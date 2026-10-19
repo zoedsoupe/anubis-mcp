@@ -36,6 +36,10 @@ defmodule Anubis.Protocol.Schema do
 
   @protocol_version_key "io.modelcontextprotocol/protocolVersion"
 
+  @client_capabilities_key "io.modelcontextprotocol/clientCapabilities"
+
+  @client_info_key "io.modelcontextprotocol/clientInfo"
+
   @doc """
   Returns the schema fragment for the `params._meta.progressToken` slot
   shared by all MCP requests.
@@ -90,6 +94,36 @@ defmodule Anubis.Protocol.Schema do
   """
   @spec protocol_version_key() :: String.t()
   def protocol_version_key, do: @protocol_version_key
+
+  @doc """
+  Returns the `_meta` key a stateless-era request declares its client
+  capabilities under.
+
+  The server gates multi round-trip input requests on this key, so the client
+  advertises it on every request of the era.
+
+  ## Examples
+
+      iex> Anubis.Protocol.Schema.client_capabilities_key()
+      "io.modelcontextprotocol/clientCapabilities"
+  """
+  @spec client_capabilities_key() :: String.t()
+  def client_capabilities_key, do: @client_capabilities_key
+
+  @doc """
+  Returns the `_meta` key a stateless-era request declares the client
+  identity under.
+
+  Optional in the schema: a client without a version omits the key instead of
+  sending an identity the peer would reject.
+
+  ## Examples
+
+      iex> Anubis.Protocol.Schema.client_info_key()
+      "io.modelcontextprotocol/clientInfo"
+  """
+  @spec client_info_key() :: String.t()
+  def client_info_key, do: @client_info_key
 
   @doc """
   Merges the stateless-era per-request `_meta` slot into a params schema map.
@@ -206,14 +240,14 @@ defmodule Anubis.Protocol.Schema do
   end
 
   defp validate_client_capabilities(meta) do
-    case Map.get(meta, "io.modelcontextprotocol/clientCapabilities") do
+    case Map.get(meta, @client_capabilities_key) do
       capabilities when is_map(capabilities) -> :ok
-      _ -> {:error, "_meta is missing required key %{key}", key: "io.modelcontextprotocol/clientCapabilities"}
+      _ -> {:error, "_meta is missing required key %{key}", key: @client_capabilities_key}
     end
   end
 
   defp validate_client_info(meta) do
-    case Map.get(meta, "io.modelcontextprotocol/clientInfo") do
+    case Map.get(meta, @client_info_key) do
       nil -> :ok
       %{"name" => name, "version" => version} when is_binary(name) and is_binary(version) -> :ok
       other -> {:error, "clientInfo must declare a name and version, got %{actual}", actual: inspect(other)}
