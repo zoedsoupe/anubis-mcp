@@ -241,7 +241,10 @@ defmodule Anubis.Client.StatelessRequestsTest do
       assert_receive {:first, first}, 500
       refute Map.has_key?(first["params"]["_meta"] || %{}, @version_key)
 
-      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", first["id"], %{"supported" => ["2026-07-28"]}))
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", first["id"], %{"supported" => ["2026-07-28"]})
+      )
 
       assert_receive {:retry, retry}, 500
       assert retry["id"] == first["id"]
@@ -275,10 +278,18 @@ defmodule Anubis.Client.StatelessRequestsTest do
       task = Task.async(fn -> Anubis.Client.list_tools(client) end)
 
       assert_receive {:first, first}, 500
-      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", first["id"], %{"supported" => ["2026-07-28"]}))
+
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", first["id"], %{"supported" => ["2026-07-28"]})
+      )
 
       assert_receive {:retry, retry}, 500
-      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", retry["id"], %{"supported" => ["2026-07-28"]}))
+
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", retry["id"], %{"supported" => ["2026-07-28"]})
+      )
 
       assert {:error, error} = Task.await(task)
       assert error.code == -32_022
@@ -296,7 +307,10 @@ defmodule Anubis.Client.StatelessRequestsTest do
       request_id = get_request_id(client, "tools/list")
       assert request_id
 
-      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["2026-07-28"]}))
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["2026-07-28"]})
+      )
 
       assert {:error, error} = Task.await(task)
       assert error.code == -32_022
@@ -314,7 +328,10 @@ defmodule Anubis.Client.StatelessRequestsTest do
       request_id = get_request_id(client, "tools/list")
       assert request_id
 
-      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["9999-01-01"]}))
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["9999-01-01"]})
+      )
 
       assert {:error, _} = Task.await(task)
 
@@ -331,7 +348,10 @@ defmodule Anubis.Client.StatelessRequestsTest do
       request_id = get_request_id(client, "tools/list")
       assert request_id
 
-      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["2026-07-28"]}))
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["2026-07-28"]})
+      )
 
       assert {:error, error} = Task.await(task)
       assert error.code == -32_022
