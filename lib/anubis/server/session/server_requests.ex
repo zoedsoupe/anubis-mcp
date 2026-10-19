@@ -24,11 +24,13 @@ defmodule Anubis.Server.Session.ServerRequests do
   `state.server_requests`, validates the client capability, and encodes and
   sends the request. On any failure the timer is cancelled and the request
   untracked. `extra` is merged into the tracked request info (elicitation
-  uses it for the `requested_schema` needed to validate the response).
+  uses it for the `requested_schema` needed to validate the response), and its
+  `:required_capability` key overrides the kind's default capability check.
   """
   @spec send_request(kind(), map(), non_neg_integer(), state(), map()) :: {:noreply, state()}
   def send_request(kind, params, timeout, state, extra \\ %{}) do
     config = config(kind)
+    {capability, extra} = Map.pop(extra, :required_capability, config.capability)
     request_id = ID.generate_request_id()
     timer_ref = Process.send_after(self(), {config.timeout_message, request_id}, timeout)
 
@@ -39,7 +41,7 @@ defmodule Anubis.Server.Session.ServerRequests do
 
     state = put_in(state.server_requests[request_id], request_info)
 
-    with :ok <- validate_client_capability(state, config.capability),
+    with :ok <- validate_client_capability(state, capability),
          {:ok, request_data} <- encode_request(config.method, params, request_id, state),
          :ok <- send_to_transport(state.transport, request_data, transport_opts(state)) do
       Logging.server_event(config.sent_event, %{request_id: request_id})
@@ -231,7 +233,7 @@ defmodule Anubis.Server.Session.ServerRequests do
     %{
       sampling: %{
         method: "sampling/createMessage",
-        capability: "sampling",
+        capability: %{"sampling" => %{}},
         callback: :handle_sampling,
         timeout_message: :sampling_request_timeout,
         track_id: false,
@@ -245,7 +247,7 @@ defmodule Anubis.Server.Session.ServerRequests do
       },
       roots: %{
         method: "roots/list",
-        capability: "roots",
+        capability: %{"roots" => %{}},
         callback: :handle_roots,
         timeout_message: :roots_request_timeout,
         track_id: true,
@@ -259,7 +261,7 @@ defmodule Anubis.Server.Session.ServerRequests do
       },
       elicitation: %{
         method: "elicitation/create",
-        capability: "elicitation",
+        capability: %{"elicitation" => %{"form" => %{}}},
         callback: :handle_elicitation,
         timeout_message: :elicitation_request_timeout,
         track_id: true,
@@ -277,13 +279,38 @@ defmodule Anubis.Server.Session.ServerRequests do
   defp maybe_put_id(request_info, true, request_id), do: Map.put(request_info, :id, request_id)
   defp maybe_put_id(request_info, false, _request_id), do: request_info
 
-  defp validate_client_capability(state, capability) do
-    if Map.has_key?(state.client_capabilities || %{}, capability) do
-      :ok
-    else
-      {:error, Error.missing_required_client_capability(%{capability => %{}})}
+  # A capability is declared when its key is present. A non-empty requirement
+  # additionally demands that each of its keys is declared, which is how
+  # elicitation modes are checked: a client declaring `elicitation: %{}` is the
+  # legacy form-only shorthand, so it satisfies a form ask but not a
+  # `%{"url" => %{}}` one, and a `url`-only client is the other way around.
+  defp validate_client_capability(state, required) when is_map(required) do
+    capabilities = state.client_capabilities || %{}
+
+    case Enum.find(Map.keys(required), &capability_missing?(capabilities, required, &1)) do
+      nil -> :ok
+      key -> {:error, Error.missing_required_client_capability(%{key => Map.get(required, key)})}
     end
   end
+
+  defp capability_missing?(capabilities, required, key) do
+    not capability_declared?(capabilities, key, Map.get(required, key))
+  end
+
+  defp capability_declared?(capabilities, key, required) do
+    case Map.fetch(capabilities, key) do
+      {:ok, _declared} when map_size(required) == 0 -> true
+      {:ok, declared} when is_map(declared) -> Enum.all?(Map.keys(required), &declared_mode?(declared, &1))
+      _ -> false
+    end
+  end
+
+  # Form is the default elicitation mode, so the legacy shorthand `elicitation: %{}`
+  # declares it; an explicit `url`-only map does not. Every other key is a plain
+  # presence check.
+  defp declared_mode?(declared, "form"), do: Map.has_key?(declared, "form") or map_size(declared) == 0
+
+  defp declared_mode?(declared, key), do: Map.has_key?(declared, key)
 
   defp encode_request(method, params, request_id, state) do
     request = %{
@@ -297,6 +324,18 @@ defmodule Anubis.Server.Session.ServerRequests do
 
   defp protocol_module(%{protocol_module: nil}), do: Anubis.Protocol.Registry.latest_module()
   defp protocol_module(%{protocol_module: protocol_module}), do: protocol_module
+
+  # A URL-mode accept carries no content: the interaction happened out of band,
+  # so an in-band payload would bypass every schema check. Clause sits before
+  # the form-mode one because `%{"action" => "accept"}` also matches a map that
+  # carries extra keys.
+  defp sanitize_elicitation_result(%{"action" => "accept", "content" => _}, %{mode: :url}) do
+    {:error, "url mode elicitation must not return content"}
+  end
+
+  defp sanitize_elicitation_result(%{"action" => "accept"} = result, %{mode: :url}) do
+    {:ok, result}
+  end
 
   defp sanitize_elicitation_result(%{"action" => "accept", "content" => content} = result, %{requested_schema: schema})
        when is_map(content) do

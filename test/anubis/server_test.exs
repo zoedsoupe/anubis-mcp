@@ -113,4 +113,19 @@ defmodule Anubis.ServerTest do
       end
     end
   end
+
+  describe "send_url_elicitation_request/4" do
+    test "rejects an invalid url before sending" do
+      assert {:error, reason} = Server.send_url_elicitation_request("not a url", "e-1", "Authorize")
+
+      assert reason =~ "URI"
+      refute_received {:send_url_elicitation_request, _, _}
+    end
+
+    test "sends a valid url elicitation" do
+      assert :ok = Server.send_url_elicitation_request("https://example.com/auth", "e-1", "Authorize")
+
+      assert_received {:send_url_elicitation_request, %{"url" => "https://example.com/auth"}, 30_000}
+    end
+  end
 end

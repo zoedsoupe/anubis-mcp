@@ -1,0 +1,35 @@
+[[security_model]]
+== Security model
+
+Cowboy's security model is based on the principle that the server
+delegates security responsibilities to the underlying Erlang/OTP
+platform, the operating system and to the application code.
+
+Cowboy and its main dependency Cowlib perform input validation and
+parsing according to the relevant protocol specifications. Cowlib's
+parsers are strict: invalid input typically results in a crash that
+Cowboy turns into a 4xx error response (for example a 400 Bad Request).
+Cowboy also provides numerous options to limit resource usage (timeouts,
+buffer sizes, header lengths, concurrent streams and so on) in order
+to mitigate denial of service attacks. These limits must be configured
+appropriately by the application.
+
+Output construction for protocol elements (status lines, headers,
+bodies in some cases) is performed by Cowlib, which is lax when
+building data: it will output largely what it is given, without
+performing validation or sanitization. Cowboy itself performs only
+limited sanitization in some cases. For example when using the
+HTTP/1.1 or HTTP/2 protocol it will reject response header values containing
+CRLF characters by default (via the `invalid_response_headers` option
+set to `error_terminate`). It is the responsibility of the application
+(and by extension Cowboy when it calls into Cowlib) to sanitize any
+data provided for use in responses. Response data must be valid
+according to the relevant specifications.
+
+Cowboy trusts the code it runs: handlers, middleware, stream
+handlers, router constraints and any other modules provided by the
+application. Any security decision (authentication, authorization,
+access control and so on) must be performed by this code. Cowboy does
+not implement any such mechanisms itself.
+
+All code runs with the privileges of the Erlang virtual machine.

@@ -71,6 +71,20 @@ defmodule Anubis.Server.SessionServerInfoTest do
       refute Map.has_key?(result["serverInfo"], "icons")
       refute Map.has_key?(result["serverInfo"], "websiteUrl")
     end
+
+    test "invalid icons in the use options raise at compile time" do
+      assert_raise ArgumentError, ~r/invalid icons for .*ServerWithInvalidIcons/, fn ->
+        defmodule ServerWithInvalidIcons do
+          @moduledoc false
+
+          use Anubis.Server,
+            name: "server-with-invalid-icons",
+            version: "1.0.0",
+            capabilities: [:tools],
+            icons: [%{mimeType: "image/png"}]
+        end
+      end
+    end
   end
 
   # Helpers
