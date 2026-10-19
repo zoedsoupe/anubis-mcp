@@ -805,7 +805,7 @@ defmodule Anubis.Server.Session do
 
   defp handle_notification(
          %{"method" => "notifications/initialized"},
-         _transport_context,
+         transport_context,
          %{server_module: module} = state
        ) do
     Logging.server_event("client_initialized", %{session_id: state.session_id})
@@ -819,7 +819,7 @@ defmodule Anubis.Server.Session do
       initialized: true
     })
 
-    frame = prepare_frame(state)
+    frame = prepare_frame(state, transport_context)
 
     {:ok, frame} =
       if Anubis.exported?(module, :init, 2),
@@ -833,7 +833,7 @@ defmodule Anubis.Server.Session do
     Scheduler.cancel(notification, state, scheduler_callbacks())
   end
 
-  defp handle_notification(notification, _transport_context, state) do
+  defp handle_notification(notification, transport_context, state) do
     method = notification["method"]
 
     Logging.server_event("handling_notification", %{method: method})
@@ -844,7 +844,7 @@ defmodule Anubis.Server.Session do
       %{method: method}
     )
 
-    frame = prepare_frame(state)
+    frame = prepare_frame(state, transport_context)
     server_notification(notification, %{state | frame: frame})
   end
 
