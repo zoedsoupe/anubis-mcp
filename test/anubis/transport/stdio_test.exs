@@ -118,6 +118,16 @@ defmodule Anubis.Transport.STDIOTest do
   end
 
   describe "port behavior" do
+    test "close_port on an already-closed port stops cleanly" do
+      # Regression: the child can exit before the :close_port cast is handled,
+      # so the port is already closed. Closing it again used to raise
+      # ArgumentError and crash the transport.
+      port = Port.open({:spawn, idle_command()}, [:binary])
+      Port.close(port)
+
+      assert {:stop, :normal, _state} = STDIO.handle_cast(:close_port, %{port: port})
+    end
+
     test "handles port restart on close" do
       transport_name = :restart_test_transport
 
@@ -159,6 +169,15 @@ defmodule Anubis.Transport.STDIOTest do
       refute Enum.empty?(messages)
 
       safe_stop(pid)
+    end
+  end
+
+  # A command that stays alive long enough to hold an open port in tests.
+  defp idle_command do
+    if :os.type() == {:win32, :nt} do
+      "cmd /c timeout /t 30 >nul"
+    else
+      "sh -c 'sleep 30'"
     end
   end
 

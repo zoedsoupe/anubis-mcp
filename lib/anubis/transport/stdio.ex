@@ -311,7 +311,18 @@ defmodule Anubis.Transport.STDIO do
       }
     )
 
-    Port.close(port)
+    # The child process may have exited before this cast is handled, closing the
+    # port out from under us, and it can also exit between the check and the
+    # close. Closing a closed port raises ArgumentError, so treat that as
+    # already closed.
+    if is_port(port) and Port.info(port) != nil do
+      try do
+        Port.close(port)
+      rescue
+        ArgumentError -> :ok
+      end
+    end
+
     {:stop, :normal, state}
   end
 
