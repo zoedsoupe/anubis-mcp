@@ -586,7 +586,9 @@ defmodule Anubis.Client do
   Returns `:ok` once the server capabilities have been received.
   If the server has already been initialized, returns immediately.
   Otherwise, the caller is parked until the initialization response arrives
-  or the GenServer call times out.
+  or the GenServer call times out. Initialization failures return `{:error, error}`.
+  An HTTP authorization challenge is preserved in `error.data.original_reason`
+  as `{:authorization_required, challenge}` for `Anubis.Client.Authorization.discover/2`.
 
   ## Options
 
@@ -598,7 +600,7 @@ defmodule Anubis.Client do
       :ok = Anubis.Client.await_ready(MyApp.MCPClient, timeout: 10_000)
       {:ok, tools} = Anubis.Client.list_tools(MyApp.MCPClient)
   """
-  @spec await_ready(t, keyword()) :: :ok
+  @spec await_ready(t, keyword()) :: :ok | {:error, Error.t()}
   def await_ready(client, opts \\ []) do
     timeout = opts[:timeout] || @default_operation_timeout
     GenServer.call(client, :await_ready, timeout)
@@ -1197,7 +1199,13 @@ defmodule Anubis.Client do
          :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
       {:noreply, updated_state}
     else
-      err -> {:stop, err, state}
+      {:error, %Error{data: %{original_reason: {:authorization_required, _challenge}}} = error} ->
+        {_request, state} = State.remove_request(updated_state, request_id)
+        Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
+        {:noreply, %{state | initialization_error: error, ready_waiters: []}}
+
+      err ->
+        {:stop, err, state}
     end
   rescue
     e ->
