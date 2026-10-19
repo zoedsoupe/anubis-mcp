@@ -22,6 +22,41 @@ defmodule Anubis.Server.Authorization.PlugIntegrationTest do
     def server_instructions, do: nil
   end
 
+  defmodule TelemetryOutcomeValidator do
+    @moduledoc """
+    Maps token strings to validator behaviors so each bounded telemetry
+    outcome can be driven through the real plug flow.
+    """
+
+    @behaviour Anubis.Server.Authorization.Validator
+
+    @impl true
+    def validate_token("invalid-token", _config), do: {:error, :invalid_token}
+    def validate_token("invalid-issuer-token", _config), do: {:error, :invalid_issuer}
+
+    def validate_token("mismatched-audience-token", _config) do
+      {:ok, OAuthTestHelper.claims(%{aud: "https://other.example.com"})}
+    end
+
+    def validate_token("expired-claims-token", _config) do
+      {:ok, OAuthTestHelper.claims(%{exp: System.os_time(:second) - 1})}
+    end
+
+    def validate_token("invalid-expiry-token", _config) do
+      {:ok, OAuthTestHelper.claims(%{exp: "not-a-timestamp"})}
+    end
+
+    def validate_token("validator-unavailable-token", _config) do
+      {:error, {:jwks_request_failed, :nxdomain}}
+    end
+
+    def validate_token("unknown-validator-error-token", _config), do: {:error, "unrecognized failure"}
+
+    def validate_token("crashing-token", _config), do: raise("jwks exploded")
+
+    def validate_token(_token, _config), do: {:ok, OAuthTestHelper.claims()}
+  end
+
   defp build_conn(method, path, headers \\ []) do
     conn =
       method
@@ -120,6 +155,183 @@ defmodule Anubis.Server.Authorization.PlugIntegrationTest do
       conn = SHTTPPlug.call(conn, opts)
 
       assert conn.status == 401
+    end
+  end
+
+  describe "authorization outcome telemetry" do
+    setup do
+      config =
+        Authorization.parse_config!(
+          authorization_servers: ["https://auth.example.com"],
+          resource: "https://api.example.com",
+          realm: "mcp",
+          scopes_supported: ["tools:read"],
+          validator: {TelemetryOutcomeValidator, []}
+        )
+
+      :persistent_term.put({Anubis.Server.Supervisor, FakeServer, :authorization_config}, config)
+
+      :persistent_term.put(
+        {Anubis.Server.Supervisor, FakeServer, :session_config},
+        %{
+          registry_mod: Local,
+          task_supervisor: nil
+        }
+      )
+
+      handler_id = "test-auth-outcome-telemetry-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach_many(
+        handler_id,
+        [
+          [:anubis_mcp, :server, :authorization, :start],
+          [:anubis_mcp, :server, :authorization, :stop],
+          [:anubis_mcp, :server, :authorization, :exception],
+          [:anubis_mcp, :server, :authorization, :validate]
+        ],
+        fn event, measurements, metadata, _ ->
+          send(self(), {:auth_telemetry, event, measurements, metadata})
+        end,
+        %{}
+      )
+
+      on_exit(fn ->
+        :telemetry.detach(handler_id)
+
+        :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :authorization_config})
+        :persistent_term.erase({Anubis.Server.Supervisor, FakeServer, :session_config})
+      end)
+
+      :ok
+    end
+
+    defp request_with_token(token) do
+      conn = build_conn("GET", "/mcp", [{"authorization", "Bearer " <> token}])
+      opts = SHTTPPlug.init(server: FakeServer)
+      SHTTPPlug.call(conn, opts)
+    end
+
+    defp assert_stop(outcome) do
+      assert_received {:auth_telemetry, [:anubis_mcp, :server, :authorization, :stop], measurements, metadata}
+
+      assert measurements.duration >= 0
+      assert metadata.outcome == outcome
+      metadata
+    end
+
+    test "emits :stop with outcome :ok when the token validates" do
+      conn = request_with_token("valid-token")
+
+      # Authorization passed and the request moved on to protocol handling.
+      assert conn.status == 406
+
+      assert_received {:auth_telemetry, [:anubis_mcp, :server, :authorization, :start], _,
+                       %{validator: TelemetryOutcomeValidator}}
+
+      assert_received {:auth_telemetry, [:anubis_mcp, :server, :authorization, :validate], _,
+                       %{
+                         validator: TelemetryOutcomeValidator
+                       }}
+
+      assert_stop(:ok)
+    end
+
+    test "emits :stop with outcome :missing_token when the bearer token is absent" do
+      conn = build_conn("GET", "/mcp")
+      opts = SHTTPPlug.init(server: FakeServer)
+      conn = SHTTPPlug.call(conn, opts)
+
+      assert conn.status == 401
+      assert_stop(:missing_token)
+    end
+
+    test "emits :stop with outcome :invalid_token when the validator rejects the token" do
+      conn = request_with_token("invalid-token")
+
+      assert conn.status == 401
+
+      # The deprecated single-shot event is still emitted during the window.
+      assert_received {:auth_telemetry, [:anubis_mcp, :server, :authorization, :validate], _,
+                       %{validator: TelemetryOutcomeValidator}}
+
+      assert_stop(:invalid_token)
+    end
+
+    test "emits :stop with outcome :invalid_issuer when the validator rejects the issuer" do
+      conn = request_with_token("invalid-issuer-token")
+
+      assert conn.status == 401
+      assert_stop(:invalid_issuer)
+    end
+
+    test "emits :stop with outcome :invalid_audience when the audience does not match" do
+      conn = request_with_token("mismatched-audience-token")
+
+      assert conn.status == 401
+      assert_stop(:invalid_audience)
+    end
+
+    test "emits :stop with outcome :token_expired when the token has expired" do
+      conn = request_with_token("expired-claims-token")
+
+      assert conn.status == 401
+      assert_stop(:token_expired)
+    end
+
+    test "emits :stop with outcome :invalid_expiry when the exp claim is malformed" do
+      conn = request_with_token("invalid-expiry-token")
+
+      assert conn.status == 401
+      assert_stop(:invalid_expiry)
+    end
+
+    test "emits :stop with outcome :validator_unavailable when the validator cannot run" do
+      conn = request_with_token("validator-unavailable-token")
+
+      assert conn.status == 401
+      assert_stop(:validator_unavailable)
+    end
+
+    test "emits :stop with outcome :other for unrecognized validator errors" do
+      conn = request_with_token("unknown-validator-error-token")
+
+      assert conn.status == 401
+      assert_stop(:other)
+    end
+
+    test "emits :exception and re-raises when the validator crashes" do
+      assert_raise RuntimeError, "jwks exploded", fn ->
+        request_with_token("crashing-token")
+      end
+
+      assert_received {:auth_telemetry, [:anubis_mcp, :server, :authorization, :exception], measurements, metadata}
+
+      assert measurements.duration >= 0
+      assert metadata.kind == :error
+      assert Map.has_key?(metadata, :reason)
+    end
+
+    test "telemetry metadata carries no tokens, claims or validator error details" do
+      request_with_token("validator-unavailable-token")
+      metadata = assert_stop(:validator_unavailable)
+
+      refute inspect(metadata) =~ "validator-unavailable-token"
+      refute inspect(metadata) =~ "jwks_request_failed"
+      refute inspect(metadata) =~ "nxdomain"
+
+      request_with_token("unknown-validator-error-token")
+      metadata = assert_stop(:other)
+
+      refute inspect(metadata) =~ "unknown-validator-error-token"
+      refute inspect(metadata) =~ "unrecognized failure"
+
+      request_with_token("claims-token")
+      metadata = assert_stop(:ok)
+
+      refute inspect(metadata) =~ "test-user"
+      refute inspect(metadata) =~ "test-client"
+      refute Map.has_key?(metadata, :claims)
+      refute Map.has_key?(metadata, :token)
     end
   end
 

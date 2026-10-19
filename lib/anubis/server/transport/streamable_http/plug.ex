@@ -786,21 +786,21 @@ if Code.ensure_loaded?(Plug) do
     defp authorize(conn, %{authorization: nil}), do: {:ok, conn, nil}
 
     defp authorize(conn, %{authorization: auth_config}) do
+      Telemetry.span_authorization(%{validator: validator_module(auth_config)}, fn ->
+        authorize_bearer(conn, auth_config)
+      end)
+    end
+
+    # Runs the bearer authorization flow, pairing the `authorize/2` result with
+    # the bounded outcome for the telemetry span. Expected failures halt the
+    # connection with a 401; they never raise.
+    defp authorize_bearer(conn, auth_config) do
       case extract_bearer_token(conn) do
         {:ok, token} ->
           validate_bearer_token(conn, token, auth_config)
 
-        {:error, :missing_token} ->
-          www_auth = Authorization.build_www_authenticate(auth_config, :unauthorized)
-
-          conn =
-            conn
-            |> put_resp_header("www-authenticate", www_auth)
-            |> put_resp_content_type("application/json")
-            |> send_resp(401, JSON.encode!(%{"error" => "unauthorized"}))
-            |> halt()
-
-          {:halt, conn}
+        {:error, reason} ->
+          {{:halt, unauthorized_response(conn, auth_config)}, Authorization.outcome(reason)}
       end
     end
 
@@ -808,8 +808,9 @@ if Code.ensure_loaded?(Plug) do
       {validator_mod, validator_opts} = auth_config.validator
       _ = validator_opts
 
+      # Deprecated single-shot event; superseded by the authorization span.
       Telemetry.execute(
-        [:server, :authorization, :validate],
+        Telemetry.event_server_authorization_validate(),
         %{system_time: System.system_time()},
         %{validator: validator_mod}
       )
@@ -820,31 +821,27 @@ if Code.ensure_loaded?(Plug) do
 
           with :ok <- Authorization.validate_expiry(claims),
                :ok <- Authorization.validate_audience(claims, auth_config) do
-            {:ok, conn, claims}
+            {{:ok, conn, claims}, :ok}
           else
-            {:error, :token_expired} ->
-              send_auth_error(conn, auth_config, 401, :unauthorized)
-
-            {:error, :invalid_audience} ->
-              send_auth_error(conn, auth_config, 401, :unauthorized)
+            {:error, reason} ->
+              {{:halt, unauthorized_response(conn, auth_config)}, Authorization.outcome(reason)}
           end
 
-        {:error, _reason} ->
-          send_auth_error(conn, auth_config, 401, :unauthorized)
+        {:error, reason} ->
+          {{:halt, unauthorized_response(conn, auth_config)}, Authorization.outcome(reason)}
       end
     end
 
-    defp send_auth_error(conn, auth_config, 401, :unauthorized) do
+    defp validator_module(%{validator: {validator_mod, _opts}}), do: validator_mod
+
+    defp unauthorized_response(conn, auth_config) do
       www_auth = Authorization.build_www_authenticate(auth_config, :unauthorized)
 
-      conn =
-        conn
-        |> put_resp_header("www-authenticate", www_auth)
-        |> put_resp_content_type("application/json")
-        |> send_resp(401, JSON.encode!(%{"error" => "unauthorized"}))
-        |> halt()
-
-      {:halt, conn}
+      conn
+      |> put_resp_header("www-authenticate", www_auth)
+      |> put_resp_content_type("application/json")
+      |> send_resp(401, JSON.encode!(%{"error" => "unauthorized"}))
+      |> halt()
     end
 
     defp extract_bearer_token(conn) do

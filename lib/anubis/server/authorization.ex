@@ -62,6 +62,18 @@ defmodule Anubis.Server.Authorization do
           raw_claims: map()
         }
 
+  @typedoc "Bounded authorization outcomes carried in telemetry `:stop` metadata."
+  @type outcome ::
+          :ok
+          | :missing_token
+          | :invalid_token
+          | :invalid_issuer
+          | :invalid_audience
+          | :token_expired
+          | :invalid_expiry
+          | :validator_unavailable
+          | :other
+
   defschema(:parse_config_schema, [
     {:authorization_servers, {:required, {:list, :string}}},
     {:resource, {:required, :string}},
@@ -179,6 +191,53 @@ defmodule Anubis.Server.Authorization do
   def validate_expiry(%{exp: _}), do: {:error, :invalid_expiry}
 
   def validate_expiry(_), do: :ok
+
+  @doc """
+  Maps an authorization or validator error reason to a bounded telemetry outcome.
+
+  The Streamable HTTP plug wraps bearer authorization in a telemetry span whose
+  `:stop` metadata carries an `outcome` drawn from the bounded set in
+  `t:outcome/0`. Validator error reasons are free-form (atoms, strings, tuples),
+  so they are normalized here; raw reasons, tokens, and claims never reach
+  telemetry metadata.
+
+  Validator failures to reach or parse the token source (JWKS and introspection
+  fetches) map to `:validator_unavailable`; token verification and issuer
+  failures map to their specific outcomes; anything unrecognized maps to
+  `:other`.
+
+  ## Examples
+
+      Authorization.outcome(:token_expired)
+      # => :token_expired
+
+      Authorization.outcome(:invalid_signature)
+      # => :invalid_token
+
+      Authorization.outcome({:jwks_request_failed, :nxdomain})
+      # => :validator_unavailable
+
+      Authorization.outcome("unrecognized")
+      # => :other
+  """
+  @spec outcome(term()) :: outcome()
+  def outcome(:missing_token), do: :missing_token
+  def outcome(:invalid_token), do: :invalid_token
+  def outcome(:invalid_issuer), do: :invalid_issuer
+  def outcome(:invalid_audience), do: :invalid_audience
+  def outcome(:token_expired), do: :token_expired
+  def outcome(:invalid_expiry), do: :invalid_expiry
+  def outcome(:invalid_signature), do: :invalid_token
+  def outcome(:jwt_verification_failed), do: :invalid_token
+  def outcome(:token_inactive), do: :invalid_token
+  def outcome(:invalid_jwks_response), do: :validator_unavailable
+  def outcome(:invalid_introspection_response), do: :validator_unavailable
+  def outcome({:jwks_fetch_failed, _status}), do: :validator_unavailable
+  def outcome({:jwks_request_failed, _reason}), do: :validator_unavailable
+  def outcome({:introspection_error, _status}), do: :validator_unavailable
+  def outcome({:introspection_failed, _reason}), do: :validator_unavailable
+
+  def outcome(_other), do: :other
 
   @doc """
   Validates that the claims contain all required scopes.
