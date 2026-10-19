@@ -175,7 +175,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @doc """
-  Unregisters the SSE handler for a session. Called when the SSE connection closes.
+  Unregisters the SSE handler for a session. Without an `expected_pid`, also
+  signals the handler to close. Connection cleanup supplies its own pid so a
+  stale callback cannot unregister a replacement handler.
   """
   @spec unregister_sse_handler(GenServer.server(), String.t(), pid() | nil) :: :ok
   def unregister_sse_handler(transport, session_id, expected_pid \\ nil) do
@@ -261,6 +263,16 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @doc """
+  Returns the idle keepalive interval in milliseconds, or `:infinity` when
+  keepalives are disabled. SSE loops use it to detect disconnected clients
+  even after their registration is superseded.
+  """
+  @spec keepalive_interval(GenServer.server()) :: pos_integer() | :infinity
+  def keepalive_interval(transport) do
+    GenServer.call(transport, :keepalive_interval)
+  end
+
+  @doc """
   Closes a session's resumable stream and drops its recorded events. Called on
   `DELETE` (explicit session termination). No-op when resumability is disabled.
 
@@ -319,15 +331,9 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
     sse_handlers =
       case Map.get(state.sse_handlers, session_id) do
         {old_pid, old_ref, _meta} ->
-          # A connection is (re)binding to this session. Stop monitoring the
-          # handler currently bound to it, but do NOT send :close_sse to a
-          # superseded handler. A server-initiated close prompts spec-compliant
-          # clients (e.g. the MCP SDK's standalone GET stream) to immediately
-          # reconnect, which races the next registration into an unbounded
-          # register/close flap. The superseded handler is reaped by its own
-          # connection lifecycle (the DOWN monitor below, or its on_close), and
-          # the expected_pid guard in unregister_sse_handler keeps its eventual
-          # close from dropping the handler that took over.
+          # Closing a superseded live stream can trigger a reconnect flap. Its
+          # streaming loop probes idle connections independently of registration;
+          # expected_pid guards keep its cleanup from removing the replacement.
           Process.demonitor(old_ref, [:flush])
           pg_leave(state.pg_scope, session_id, old_pid)
           state.sse_handlers
@@ -430,6 +436,12 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
   end
 
   @impl GenServer
+  def handle_call(:keepalive_interval, _from, state) do
+    interval = if state.keepalive_enabled, do: state.keepalive_interval, else: :infinity
+    {:reply, interval, state}
+  end
+
+  @impl GenServer
   def handle_call(:resumability_config, _from, state) do
     {:reply, {state.event_store, state.sse_retry}, state}
   end
@@ -465,6 +477,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP do
         {:noreply, state}
 
       {pid, ref, _meta} ->
+        if is_nil(expected_pid), do: send(pid, :close_sse)
         Process.demonitor(ref, [:flush])
         pg_leave(state.pg_scope, session_id, pid)
 
