@@ -40,6 +40,8 @@ defmodule StubClient do
 
   def handle_cast(msg, state), do: handle_info(msg, state)
 
+  def handle_info(:connect, state), do: {:noreply, state}
+
   def handle_info(:initialize, state), do: {:noreply, state}
 
   def handle_info({:response, data}, %{messages: messages, subscriber: sub} = state) do

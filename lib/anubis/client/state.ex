@@ -8,6 +8,8 @@ defmodule Anubis.Client.State do
   alias Anubis.MCP.ID
   alias Anubis.Telemetry
 
+  @type era :: :detecting | :connecting | :legacy | :stateless
+
   @type t :: %__MODULE__{
           client_info: map(),
           capabilities: map(),
@@ -16,6 +18,7 @@ defmodule Anubis.Client.State do
           protocol_version: String.t(),
           timeout: pos_integer(),
           transport: map(),
+          era: era(),
           pending_requests: %{String.t() => Request.t()},
           progress_callbacks: %{String.t() => Client.progress_callback()},
           log_callback: Client.log_callback() | nil,
@@ -42,6 +45,7 @@ defmodule Anubis.Client.State do
     :timeout,
     :protocol_version,
     :transport,
+    era: :detecting,
     pending_requests: %{},
     progress_callbacks: %{},
     log_callback: nil,
@@ -90,6 +94,41 @@ defmodule Anubis.Client.State do
     pending_requests = Map.put(state.pending_requests, request_id, request)
 
     {request_id, %{state | pending_requests: pending_requests}}
+  end
+
+  @doc """
+  Stores the connection era.
+
+  The lifecycle is `:detecting` (fresh, nothing sent), `:connecting` (a
+  `server/discover` probe or an `initialize` in flight), then `:legacy` or
+  `:stateless` once the server answers.
+  """
+  @spec update_era(t(), era()) :: t()
+  def update_era(state, era), do: %{state | era: era}
+
+  @doc """
+  Returns the connection era.
+  """
+  @spec get_era(t()) :: era()
+  def get_era(state), do: state.era
+
+  @doc """
+  Drops a pending `server/discover` probe, if any.
+
+  Cancels its timer too, so the probe's late answer is dropped by the existing
+  unknown-response path instead of flipping an already-initialized client into
+  the stateless era after the `initialize` exchange completed.
+  """
+  @spec remove_discover_probe(t()) :: t()
+  def remove_discover_probe(state) do
+    case Enum.find(state.pending_requests, fn {_id, request} -> request.method == "server/discover" end) do
+      nil ->
+        state
+
+      {request_id, _request} ->
+        {_request, state} = remove_request(state, request_id)
+        state
+    end
   end
 
   @doc """

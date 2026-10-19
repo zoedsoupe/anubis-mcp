@@ -215,7 +215,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   @impl GenServer
   def handle_continue(:connect, state) do
     emit_telemetry(:connect, state)
-    GenServer.cast(state.client, :initialize)
+    GenServer.cast(state.client, :connect)
     new_state = maybe_start_sse_connection(state)
     {:noreply, new_state}
   end

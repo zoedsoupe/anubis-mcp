@@ -41,6 +41,44 @@ defmodule Anubis.MCP.Setup do
     GenServer.cast(client, {:response, encoded})
   end
 
+  @doc """
+  Drives the stateless-era detection to completion: casts `:connect`, awaits
+  the `server/discover` probe, and answers it with a discover result.
+
+  Accepts `:supported_versions`, `:server_capabilities` and `:server_info`.
+  """
+  def discover_client(client, opts \\ []) do
+    supported_versions = opts[:supported_versions] || ["2026-07-28"]
+    server_capabilities = opts[:server_capabilities] || %{"tools" => %{}, "prompts" => %{}, "resources" => %{}}
+    server_info = opts[:server_info]
+
+    GenServer.cast(client, :connect)
+
+    request_id = get_request_id(client, "server/discover")
+    assert request_id
+
+    response = Builders.discover_response(request_id, supported_versions, server_capabilities, server_info)
+    send_response(client, response)
+
+    sync_client(client)
+    flush_mcp_sends()
+  end
+
+  @doc """
+  Casts `:connect` and answers the `server/discover` probe with `-32601`, for
+  tests that exercise the initialize fallback. The initialize request the
+  fallback sends is left in the mailbox for the test to await.
+  """
+  def reject_probe(client) do
+    GenServer.cast(client, :connect)
+
+    request_id = get_request_id(client, "server/discover")
+    assert request_id
+
+    send_error(client, Builders.build_error(-32_601, "Method not found", request_id))
+    client
+  end
+
   def send_error(client, error_response) do
     {:ok, encoded} = Message.encode_error(error_response, error_response["id"])
     GenServer.cast(client, {:response, encoded})
@@ -106,10 +144,14 @@ defmodule Anubis.MCP.Setup do
              transport: [layer: FakeTransport, name: transport],
              client_info: opts[:client_info] || %{"name" => "TestClient", "version" => "1.0.0"},
              capabilities: opts[:client_capabilities] || %{}
-           ]
+           ] ++ maybe_timeout(opts)
          ]},
       restart: :temporary
     })
+  end
+
+  defp maybe_timeout(opts) do
+    if opts[:timeout], do: [timeout: opts[:timeout]], else: []
   end
 
   @doc """

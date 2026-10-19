@@ -55,6 +55,27 @@ defmodule Anubis.MCP.Builders do
     %{"jsonrpc" => "2.0", "id" => request_id, "error" => error}
   end
 
+  @doc """
+  Builds a `server/discover` result for the stateless-era detection tests.
+  """
+  def discover_response(request_id, supported_versions, capabilities, server_info \\ nil) do
+    result =
+      %{
+        "supportedVersions" => supported_versions,
+        "capabilities" => capabilities,
+        "resultType" => "complete",
+        "ttlMs" => 0,
+        "cacheScope" => "private"
+      }
+
+    result =
+      if server_info,
+        do: Map.put(result, "_meta", %{"io.modelcontextprotocol/serverInfo" => server_info}),
+        else: result
+
+    build_response(result, request_id)
+  end
+
   def build_notification(method, params \\ %{}) do
     %{"jsonrpc" => "2.0", "method" => method, "params" => params}
   end
