@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.0](https://github.com/zoedsoupe/anubis-mcp/compare/v2.1.0...v2.2.0) (2026-10-19)
+
+
+### Features
+
+* **client:** discover OAuth authorization metadata ([#320](https://github.com/zoedsoupe/anubis-mcp/issues/320)) ([ebdbdb8](https://github.com/zoedsoupe/anubis-mcp/commit/ebdbdb8236c5ec8cb06b2423e8e1deb44e448f69))
+* **client:** stateless era support (spec 2026-07-28), client half ([#331](https://github.com/zoedsoupe/anubis-mcp/issues/331)) ([df07a42](https://github.com/zoedsoupe/anubis-mcp/commit/df07a422e11b98a2013ddb8f9af1cdf0682f062f))
+* **protocol:** model the 2026-07-28 result schemas ([#324](https://github.com/zoedsoupe/anubis-mcp/issues/324)) ([266c6aa](https://github.com/zoedsoupe/anubis-mcp/commit/266c6aa158e260c45c9b5c3e546061c758560522))
+* **server:** enable stateless protocol by default ([#318](https://github.com/zoedsoupe/anubis-mcp/issues/318)) ([aa78fb1](https://github.com/zoedsoupe/anubis-mcp/commit/aa78fb1ed1fddbcddc0503e31b24f148ba8b8c37))
+* **server:** support _meta on resources, resource contents and tool results ([#325](https://github.com/zoedsoupe/anubis-mcp/issues/325)) ([69823d3](https://github.com/zoedsoupe/anubis-mcp/commit/69823d355bae6d5792acdbf147feefdcd1331ca2))
+* **telemetry:** emit authorization validation outcome span ([#330](https://github.com/zoedsoupe/anubis-mcp/issues/330)) ([b818f2a](https://github.com/zoedsoupe/anubis-mcp/commit/b818f2a4119dc97141941b1b5cf75f269ced8eee)), closes [#290](https://github.com/zoedsoupe/anubis-mcp/issues/290)
+
+
+### Bug Fixes
+
+* **server:** conform prompts/get, completion/complete and subscriptions/listen results to the spec ([#329](https://github.com/zoedsoupe/anubis-mcp/issues/329)) ([b239d2c](https://github.com/zoedsoupe/anubis-mcp/commit/b239d2c8cbde9fd4876e1cc3aafab759fc8b984b)), closes [#323](https://github.com/zoedsoupe/anubis-mcp/issues/323)
+* **server:** pass transport context to notification callbacks ([#321](https://github.com/zoedsoupe/anubis-mcp/issues/321)) ([dc06878](https://github.com/zoedsoupe/anubis-mcp/commit/dc06878713a8040b4f36fbfa8cf88aa09bf71e8d))
+* **stdio:** don't crash closing an already-closed port ([#328](https://github.com/zoedsoupe/anubis-mcp/issues/328)) ([12a9c0e](https://github.com/zoedsoupe/anubis-mcp/commit/12a9c0e5e0537d2922aabb9676bd51e17e567611))
+* **stdio:** reply to JSON-RPC decode errors ([#319](https://github.com/zoedsoupe/anubis-mcp/issues/319)) ([a7bc04a](https://github.com/zoedsoupe/anubis-mcp/commit/a7bc04a9cbed7908b9b928f8bb13114bd24b25be))
+* **streamable-http:** release orphaned SSE handlers ([#317](https://github.com/zoedsoupe/anubis-mcp/issues/317)) ([09cc9aa](https://github.com/zoedsoupe/anubis-mcp/commit/09cc9aaae9d35712498a06632259ebfc7a8984b9))
+
+
+### Documentation
+
+* add a runnable Parallel Search MCP client example ([#322](https://github.com/zoedsoupe/anubis-mcp/issues/322)) ([80b1ddf](https://github.com/zoedsoupe/anubis-mcp/commit/80b1ddf6ce56751aa823cb635016ca875c5df31e))
+
 ## [2.1.0](https://github.com/zoedsoupe/anubis-mcp/compare/v2.0.0...v2.1.0) (2026-10-05)
 
 
