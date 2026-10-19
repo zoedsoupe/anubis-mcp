@@ -14,6 +14,7 @@ defmodule Anubis.Server.Transport.STDIO do
 
   import Peri
 
+  alias Anubis.MCP.Error
   alias Anubis.MCP.Message
   alias Anubis.Server.Registry
   alias Anubis.Server.Transport.Session
@@ -232,7 +233,30 @@ defmodule Anubis.Server.Transport.STDIO do
 
       {:error, reason} ->
         Logging.transport_event("parse_error", %{reason: reason}, level: :error)
+        reply_decode_error(data, reason, state)
     end
+  end
+
+  defp reply_decode_error(data, reason, state) do
+    case JSON.decode(data) do
+      {:ok, %{"jsonrpc" => "2.0", "method" => method} = message}
+      when is_binary(method) and not is_map_key(message, "id") ->
+        :ok
+
+      {:ok, message} when Message.is_response(message) or Message.is_error(message) ->
+        :ok
+
+      {:ok, %{"id" => id}} when is_binary(id) or is_integer(id) ->
+        write_decode_error(reason, id, state)
+
+      _ ->
+        write_decode_error(reason, nil, state)
+    end
+  end
+
+  defp write_decode_error(reason, id, state) do
+    response = reason |> Error.protocol() |> Error.build_json_rpc(id) |> JSON.encode!()
+    IO.write(state.io_device, response <> "\n")
   end
 
   defp process_message(message, %{server: server_module} = state) do

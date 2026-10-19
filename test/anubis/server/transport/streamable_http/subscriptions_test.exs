@@ -5,6 +5,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
   import Plug.Test
 
   alias Anubis.MCP.Error
+  alias Anubis.Protocol.V2026_07_28
   alias Anubis.Server.Frame
   alias Anubis.Server.Handlers
   alias Anubis.Server.Handlers.Subscriptions
@@ -137,7 +138,8 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
     test "ends with a completion result for the listen request", %{opts: opts} do
       {stream, _session} = open(opts, %{"toolsListChanged" => true})
 
-      assert %{"id" => 7, "result" => %{"resultType" => "complete"}} = List.last(close(stream))
+      assert %{"id" => 7, "result" => %{"resultType" => "complete"} = result} = List.last(close(stream))
+      assert Peri.validate(V2026_07_28.request_result_schema("subscriptions/listen"), result) == {:ok, result}
     end
 
     test "ends gracefully when the session stops", %{opts: opts} do

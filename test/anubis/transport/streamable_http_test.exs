@@ -197,6 +197,48 @@ defmodule Anubis.Transport.StreamableHTTPTest do
       StubClient.clear_messages()
     end
 
+    @tag capture_log: false
+    test "returns the original authorization challenge on 401", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      raw = ~s(Bearer resource_metadata="#{server_url}/metadata", scope="read write", error="invalid_token")
+
+      Bypass.expect_once(bypass, "POST", "/mcp", fn conn ->
+        conn |> Plug.Conn.put_resp_header("www-authenticate", raw) |> Plug.Conn.resp(401, "Unauthorized")
+      end)
+
+      client = start_supervised!(StubClient)
+      transport = start_supervised!({StreamableHTTP, client: client, base_url: server_url})
+
+      assert {:error, {:authorization_required, challenge}} =
+               StreamableHTTP.send_message(transport, "test", timeout: 5000)
+
+      assert challenge.status == 401
+      assert challenge.mcp_url == server_url <> "/mcp"
+      assert challenge.headers == [raw]
+      assert challenge.scope == "read write"
+      assert challenge.error == "invalid_token"
+    end
+
+    @tag capture_log: false
+    test "preserves an insufficient_scope challenge on 403", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+
+      Bypass.expect_once(bypass, "POST", "/mcp", fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("www-authenticate", ~s(Bearer error="insufficient_scope", scope="write"))
+        |> Plug.Conn.resp(403, "Forbidden")
+      end)
+
+      client = start_supervised!(StubClient)
+      transport = start_supervised!({StreamableHTTP, client: client, base_url: server_url})
+
+      assert {:error, {:authorization_required, challenge}} =
+               StreamableHTTP.send_message(transport, "test", timeout: 5000)
+
+      assert challenge.status == 403
+      assert challenge.scope == "write"
+    end
+
     test "handles unsupported content type", %{bypass: bypass} do
       server_url = "http://localhost:#{bypass.port}"
       {:ok, stub_client} = StubClient.start_link()
