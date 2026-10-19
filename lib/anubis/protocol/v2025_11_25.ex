@@ -48,7 +48,7 @@ defmodule Anubis.Protocol.V2025_11_25 do
     "mode" => {:required, {:literal, "url"}},
     "message" => {:required, :string},
     "elicitationId" => {:required, :string},
-    "url" => {:required, :string}
+    "url" => {:required, {:custom, {ElicitationSchema, :validate_url, []}}}
   }
 
   @elicitation_complete_params %{

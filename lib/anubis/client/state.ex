@@ -27,6 +27,7 @@ defmodule Anubis.Client.State do
             (String.t(), String.t(), String.t() -> :accept | :decline | :cancel | {:error, String.t()})
             | nil,
           elicitation_complete_callback: (String.t() -> any()) | nil,
+          url_elicitation_ids: MapSet.t(String.t()),
           roots: %{String.t() => Client.root()},
           ready_waiters: [GenServer.from()],
           initialization_error: Error.t() | nil,
@@ -48,6 +49,7 @@ defmodule Anubis.Client.State do
     elicitation_callback: nil,
     url_elicitation_callback: nil,
     elicitation_complete_callback: nil,
+    url_elicitation_ids: MapSet.new(),
     roots: %{},
     ready_waiters: [],
     initialization_error: nil,
@@ -56,14 +58,14 @@ defmodule Anubis.Client.State do
 
   @spec new(map()) :: t()
   def new(opts) do
-    %__MODULE__{
+    struct(__MODULE__, %{
       client_info: opts.client_info,
       capabilities: opts.capabilities,
       protocol_version: opts.protocol_version,
       transport: opts.transport,
       timeout: opts.timeout,
       transport_parse_state: opts[:transport_parse_state]
-    }
+    })
   end
 
   @spec add_request_from_operation(t(), Operation.t(), GenServer.from()) ::
@@ -742,6 +744,35 @@ defmodule Anubis.Client.State do
   def clear_elicitation_complete_callback(state) do
     %{state | elicitation_complete_callback: nil}
   end
+
+  @doc """
+  Records that this client dispatched the URL elicitation `id`.
+
+  Only tracked ids are acted on by a `notifications/elicitation/complete`, so an
+  unknown or already-completed id is ignored as the spec requires.
+  """
+  @spec track_url_elicitation(t(), String.t()) :: t()
+  def track_url_elicitation(state, id) when is_binary(id) do
+    %{state | url_elicitation_ids: MapSet.put(state.url_elicitation_ids, id)}
+  end
+
+  @doc """
+  Consumes a tracked URL elicitation `id`.
+
+  Returns `{:ok, state}` when the id was tracked and is now consumed, or
+  `:error` when it is unknown or was already consumed, in which case the caller
+  must ignore the notification.
+  """
+  @spec consume_url_elicitation(t(), term()) :: {:ok, t()} | :error
+  def consume_url_elicitation(state, id) when is_binary(id) do
+    if MapSet.member?(state.url_elicitation_ids, id) do
+      {:ok, %{state | url_elicitation_ids: MapSet.delete(state.url_elicitation_ids, id)}}
+    else
+      :error
+    end
+  end
+
+  def consume_url_elicitation(_state, _id), do: :error
 
   # Helper functions
 

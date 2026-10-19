@@ -232,6 +232,40 @@ defmodule Anubis.MCP.ElicitationSchemaTest do
       assert reason =~ "default"
     end
 
+    test "rejects a multi select default below minItems" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "minItems" => 2,
+            "items" => %{"type" => "string", "enum" => ["Red", "Green"]},
+            "default" => ["Red"]
+          }
+        }
+      }
+
+      assert {:error, reason} = ElicitationSchema.validate(schema)
+      assert reason =~ "at least 2"
+    end
+
+    test "rejects a multi select default above maxItems" do
+      schema = %{
+        "type" => "object",
+        "properties" => %{
+          "colors" => %{
+            "type" => "array",
+            "maxItems" => 1,
+            "items" => %{"type" => "string", "enum" => ["Red", "Green"]},
+            "default" => ["Red", "Green"]
+          }
+        }
+      }
+
+      assert {:error, reason} = ElicitationSchema.validate(schema)
+      assert reason =~ "at most 1"
+    end
+
     test "accepts defaults on string and number" do
       schema = %{
         "type" => "object",

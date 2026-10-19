@@ -261,7 +261,7 @@ defmodule Anubis.Server.Session.ServerRequests do
       },
       elicitation: %{
         method: "elicitation/create",
-        capability: %{"elicitation" => %{}},
+        capability: %{"elicitation" => %{"form" => %{}}},
         callback: :handle_elicitation,
         timeout_message: :elicitation_request_timeout,
         track_id: true,
@@ -281,8 +281,9 @@ defmodule Anubis.Server.Session.ServerRequests do
 
   # A capability is declared when its key is present. A non-empty requirement
   # additionally demands that each of its keys is declared, which is how
-  # elicitation modes are checked: a client declaring `elicitation: %{}` is
-  # form-only by definition, so it does not satisfy a `%{"url" => %{}}` ask.
+  # elicitation modes are checked: a client declaring `elicitation: %{}` is the
+  # legacy form-only shorthand, so it satisfies a form ask but not a
+  # `%{"url" => %{}}` one, and a `url`-only client is the other way around.
   defp validate_client_capability(state, required) when is_map(required) do
     capabilities = state.client_capabilities || %{}
 
@@ -299,10 +300,17 @@ defmodule Anubis.Server.Session.ServerRequests do
   defp capability_declared?(capabilities, key, required) do
     case Map.fetch(capabilities, key) do
       {:ok, _declared} when map_size(required) == 0 -> true
-      {:ok, declared} when is_map(declared) -> Enum.all?(Map.keys(required), &Map.has_key?(declared, &1))
+      {:ok, declared} when is_map(declared) -> Enum.all?(Map.keys(required), &declared_mode?(declared, &1))
       _ -> false
     end
   end
+
+  # Form is the default elicitation mode, so the legacy shorthand `elicitation: %{}`
+  # declares it; an explicit `url`-only map does not. Every other key is a plain
+  # presence check.
+  defp declared_mode?(declared, "form"), do: Map.has_key?(declared, "form") or map_size(declared) == 0
+
+  defp declared_mode?(declared, key), do: Map.has_key?(declared, key)
 
   defp encode_request(method, params, request_id, state) do
     request = %{

@@ -1,0 +1,55 @@
+Compiling 2 files (.ex)
+Generated peri app
+Operating System: macOS
+CPU Information: Apple M3 Pro
+Number of Available Cores: 11
+Available memory: 36 GB
+Elixir 1.18.2
+Erlang 27.1.2
+JIT enabled: true
+
+Benchmark suite executing with the following configuration:
+warmup: 2 s
+time: 10 s
+memory time: 2 s
+reduction time: 0 ns
+parallel: 1
+inputs: none specified
+Estimated total run time: 56 s
+
+Benchmarking complex ecto schema - invalid data ...
+Benchmarking complex ecto schema - valid data ...
+Benchmarking complex schema - invalid data ...
+Benchmarking complex schema - valid data ...
+Calculating statistics...
+Formatting results...
+
+Name                                         ips        average  deviation         median         99th %
+complex schema - valid data             102.70 K        9.74 μs    ±53.81%        9.25 μs       18.33 μs
+complex schema - invalid data            62.43 K       16.02 μs    ±20.00%       15.92 μs       23.75 μs
+complex ecto schema - invalid data       13.97 K       71.60 μs    ±13.65%       69.33 μs      118.33 μs
+complex ecto schema - valid data         13.42 K       74.54 μs    ±14.32%       74.38 μs      123.03 μs
+
+Comparison: 
+complex schema - valid data             102.70 K
+complex schema - invalid data            62.43 K - 1.65x slower +6.28 μs
+complex ecto schema - invalid data       13.97 K - 7.35x slower +61.87 μs
+complex ecto schema - valid data         13.42 K - 7.65x slower +64.80 μs
+
+Extended statistics: 
+
+Name                                       minimum        maximum    sample size                     mode
+complex schema - valid data                8.83 μs     2767.08 μs         1.01 M                  9.13 μs
+complex schema - invalid data             14.54 μs     1524.83 μs       618.43 K                 16.13 μs
+complex ecto schema - invalid data        61.04 μs      565.38 μs       139.30 K                 69.38 μs
+complex ecto schema - valid data          62.25 μs      678.25 μs       133.83 K                 75.50 μs
+
+Memory usage statistics:
+
+Name                                  Memory usage
+complex schema - valid data               36.10 KB
+complex schema - invalid data             52.70 KB - 1.46x memory usage +16.59 KB
+complex ecto schema - invalid data       283.64 KB - 7.86x memory usage +247.54 KB
+complex ecto schema - valid data         290.04 KB - 8.03x memory usage +253.94 KB
+
+**All measurements for memory usage were the same**

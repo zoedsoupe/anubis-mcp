@@ -191,6 +191,23 @@ defmodule Anubis.Protocol.DialectTest do
       end
     end
 
+    test "url mode elicitation rejects an invalid url" do
+      schema = V2025_11_25.request_message_schema()
+
+      message = fn url ->
+        %{
+          "jsonrpc" => "2.0",
+          "method" => "elicitation/create",
+          "id" => 1,
+          "params" => %{"mode" => "url", "message" => "go", "elicitationId" => "e-1", "url" => url}
+        }
+      end
+
+      assert {:error, _} = Peri.validate(schema, message.("not a url"))
+      assert {:error, _} = Peri.validate(schema, message.("/relative/path"))
+      assert {:ok, _} = Peri.validate(schema, message.("https://example.com/authorize"))
+    end
+
     test "elicitation completion is a 2025-11-25 notification" do
       message = %{
         "jsonrpc" => "2.0",

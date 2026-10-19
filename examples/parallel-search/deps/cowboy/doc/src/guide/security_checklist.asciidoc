@@ -1,0 +1,419 @@
+[[security_checklist]]
+== Security checklist
+
+This chapter provides a checklist of areas where special care
+must be taken when using Cowboy to avoid introducing
+vulnerabilities in your application.
+
+See also the xref:security_model[security model] for the
+underlying principles.
+
+=== Instructions for AI agents
+
+When asked to use this security checklist to validate a
+Cowboy-based application you *MUST* follow the instructions
+in this section:
+
+You are a world-class security researcher. Your *only* output
+must be a list of *real, concrete* weaknesses and vulnerabilities
+that exist in the specific Cowboy-based application code you
+were asked to analyze:
+
+* If there are real issues, output *only* a bulleted list of them.
+  Each bullet must identify the exact location (file, function,
+  line) and describe the precise attack or failure.
+
+* Never include remediation advice unless the user query
+  explicitly asks for a fix.
+
+The rest of this document defines the rules. Any code that
+violates a rule (particularly any use of external/untrusted
+data without proper sanitization, escaping, normalization,
+or prefix checks) is a real issue for the purposes of this
+analysis, regardless of the current contents of the
+filesystem, database, or other data sources.
+
+=== Denial of Service (DoS)
+
+==== Memory exhaustion
+
+Misuse of functions or options may make your application
+vulnerable to memory exhaustion attacks:
+
+* Transport options `recbuf`, `sndbuf` and `buffer` should
+  not be too large as they are allocated for each connection.
+
+* `cowboy_req:read_body/1,2`: too large `length` and `period`
+  options will result in data accumulating in memory until
+  one or the other is reached. Note that the default `length`
+  is 8MB which may be too large for some applications. Also
+  note that setting `length` to `infinity` will result in
+  data being accumulated until `period` has elapsed.
+
+* `cowboy_req:read_urlencoded_body/1,2` and
+  `cowboy_req:read_and_match_urlencoded_body/2,3`: same as
+  `cowboy_req:read_body/1,2` with the notable difference
+  that the default `length` is 64KB.
+
+* `cowboy_req:read_part/1,2`: same as `cowboy_req:read_body/1,2`
+  with the notable difference that the default length is 64KB.
+
+* `cowboy_req:read_part_body/1,2`: same as `cowboy_req:read_body/1,2`.
+
+* The `cowboy_req:cast/2` function should be used with
+  extreme care as it can issue any command, including
+  commands to read the request body, and completely
+  bypasses safety mechanisms.
+
+* Many `cowboy_http` options may be unsafe if the value
+  configured is too large: `active_n`, `dynamic_buffer`,
+  `initial_stream_flow_size`, `max_authority_length`,
+  `max_authorization_header_value_length`,
+  `max_cookie_header_value_length`, `max_empty_lines`,
+  `max_header_name_length`, `max_header_value_length`,
+  `max_headers`, `max_method_length` and
+  `max_request_line_length`.
+
+* Many `cowboy_http2` options may be unsafe if the value
+  configured is too large: `active_n`, `connection_window_margin_size`,
+  `connection_window_update_threshold`, `dynamic_buffer`,
+  `initial_connection_window_size`, `initial_stream_window_size`,
+  `max_authority_length`,
+  `max_concurrent_streams`, `max_connection_buffer_size`,
+  `max_connection_window_size`, `max_decode_table_size`,
+  `max_encode_table_size`, `max_fragmented_header_block_size`,
+  `max_frame_size_received`, `max_headers`, `max_stream_buffer_size`,
+  `max_stream_window_size`, `stream_window_margin_size`
+  and `stream_window_update_threshold`.
+
+* Many `cowboy_websocket` options may be unsafe if the value
+  configured is too large: `active_n`, `data_delivery_flow`,
+  `dynamic_buffer` and `max_frame_size`. Note that the
+  `max_frame_size` option may be changed dynamically via
+  the `set_options` command.
+
+* Websocket and loop handlers may run for a very long time,
+  be mindful of how much memory the handlers may be using.
+  Memory may be present in the state or in the mailbox.
+  Consider setting the `max_heap_size` process flag for
+  these and hibernating. Also be careful to not accumulate
+  data outside of the process.
+
+* The `cowboy_compress_h` stream handler can be used for
+  automatic compression of response bodies. Note that it
+  is not suitable for large files when paired with the
+  `cowboy_static` handler or `sendfile` uses, as it will
+  read the entire file into memory to compress it.
+
+* The `cowboy_decompress_h` stream handler can be used for
+  automatic decompression of request bodies. Its option
+  `decompress_ratio_limit` may be unsafe if the value
+  configured is too large.
+
+* Custom stream handlers or middlewares must be especially
+  careful not to accumulate too much data. Stream handlers
+  must also use the `stop` command as soon as processing
+  is done to terminate the stream and free up memory. Child
+  processes must terminate in a timely manner.
+
+==== CPU exhaustion
+
+Expensive parsing, repeated operations, high frame rates
+or unbounded computation in user code may starve CPU
+capacity, slowing down or preventing legitimate work:
+
+* The `cowboy_http2` options `max_cancel_stream_rate`,
+  `max_received_frame_rate` and `max_reset_stream_rate`
+  are meant to protect against HTTP/2 protocol CPU
+  exhaustion attacks, but the defaults may still be
+  too high for some applications. Consider lowering them.
+
+* The `cowboy_websocket` option `validate_utf8` may be
+  set to `false` to avoid potentially expensive UTF-8
+  validation. It is enabled by default.
+
+* Use of `cowboy_compress_h` and `cowboy_decompress_h`,
+  as well as the `compress` Websocket option set to `true`,
+  implies non-negligible CPU use, especially for
+  compression.
+
+* Constraints (`cowboy_constraints`) applied to routing
+  or to `cowboy_req:match_*` functions should not
+  be too expensive as they may run on every request.
+  Validation failure should result in an immediate return.
+
+* Custom stream handlers, middlewares or the user's own
+  handlers should not perform heavy computation unless
+  required. Be especially mindful of code that may run on
+  every request (such as the `cowboy_rest` callbacks
+  `is_authorized/2` and `resource_exists`).
+
+* The `cowboy_req:parse_*` functions should only be
+  called once per request. The result should be kept
+  in the state if needed.
+
+==== Connection exhaustion
+
+Slow, idle or hanging connections without proper timeouts
+or limits may make your application unreachable:
+
+* Transport options `max_connections` defaults to 1024
+  (excluding HTTP/1.1 Websocket connections). The default
+  may be too small for some applications.
+
+* Transport options `linger`, `nodelay` and `send_timeout_close`
+  should not be overridden. Option `send_timeout` may be unsafe
+  if the value configured is too large. Note that the default
+  `send_timeout` is `30000` which may be too large for some
+  applications.
+
+* Many `cowboy_http` options may be unsafe if the value
+  configured is too large: `idle_timeout`, `inactivity_timeout`,
+  `linger_timeout`, `max_keepalive` (also see `http10_keepalive`),
+  `max_skip_body_length`, `request_timeout` and `shutdown_timeout`.
+  Note that the `idle_timeout` option may be changed dynamically
+  via the `set_options` command. Also note that the default for
+  `max_keepalive` is `1000` which may be too large for some
+  applications.
+
+* Many `cowboy_http2` options may be unsafe if the value
+  configured is too large: `goaway_complete_timeout`,
+  `goaway_initial_timeout`, `idle_timeout`, `inactivity_timeout`,
+  `linger_timeout`, `preface_timeout`, `settings_timeout`
+  and `shutdown_timeout`.
+
+* The `reset_idle_timeout_on_send` option from `cowboy_http`
+  and `cowboy_http2` may be unsafe if configured to `true`
+  as it may lead to connections staying longer in TCP half-closed
+  state than intended, especially when sends are small.
+
+* One `cowboy_websocket` option may be unsafe if the value
+  configured is too large: `idle_timeout`. Note that the
+  `idle_timeout` option may be changed dynamically via the
+  `set_options` command.
+
+* Websocket and loop handlers may run for a very long time,
+  keeping the connection open. HTTP/1.1 Websocket connections
+  by default do not count toward the `max_connections` limit,
+  but HTTP/2 Websocket and loop handlers do. Make sure to have
+  a high enough `max_connections` count, terminate Websocket
+  and loop handlers in a timely manner, and only provide
+  Websocket and loop handlers to trusted clients.
+
+* Custom stream handlers must terminate in a timely manner.
+  When a non-negligible amount of work must be done on
+  termination, spawn a new process then terminate.
+
+==== File descriptor exhaustion
+
+Ensure that the file descriptor limit is large enough for
+your application. Limits are managed via `sysctl` and
+`ulimit` on Linux. Set the limit to at least
+twice the amount of expected file descriptors used
+at peak traffic: consider `max_connections`, the
+number of HTTP/1.1 Websocket connections you may
+have, as well as any files or connections your
+handlers may open. Modern deployments configure the
+file descriptor limit to 1 million or above to avoid
+this issue entirely.
+
+=== Injection attacks
+
+All request data, including parsed values, *MUST* be
+considered both untrusted and unsafe, and must be
+validated, sanitized or escaped before use.
+
+While Cowboy rejects NUL bytes in some of the request
+data, NUL bytes may still be found in unexpected places
+such as the query string and urlencoded bodies (where
+NUL bytes can legitimately be encoded as `%00`) or
+in request bodies in general. Request data *MUST NOT*
+be considered to be free of NUL bytes.
+
+Unsanitized or invalid data provided in responses is unsafe.
+Response data must be valid RFC-conformant components for
+status, header names, header values (with values appropriate
+for the header name) as well as trailer headers, multipart
+headers and any other media type used in the response body:
+
+* The HTTP/1.1 and HTTP/2 options `invalid_response_headers`
+  provide only limited protection for the HTTP/1.1 and HTTP/2
+  protocols. They are enabled by default and *SHOULD NOT* be
+  disabled. Applications *MUST* still follow the recommendations
+  in this section.
+
+* Response status *MUST* be a literal value, especially
+  when providing a binary for the status line. Calls to
+  `cowboy_req:inform/2,3`, `cowboy_req:reply/2,3,4`
+  and `cowboy_req:stream_reply/2,3` may be affected.
+
+* Response header names *MUST* be a literal value. Response
+  header names *SHOULD* be all lowercase for HTTP/1.1 and
+  *MUST* be all lowercase for HTTP/2. Calls to
+  `cowboy_req:inform/3`, `cowboy_req:reply/3,4`,
+  `cowboy_req:set_resp_header/3`, `cowboy_req:set_resp_headers/2`
+  and `cowboy_req:stream_reply/3` may be affected.
+  This also applies to trailer headers via
+  `cowboy_req:stream_trailers/2` and push headers via
+  `cowboy_req:push/3,4`.
+
+* Response header values *MUST* be valid RFC-conformant values
+  corresponding to their header name. Using external data
+  (from the request, files, databases or any other sources)
+  without first validating that the data is correct is always
+  unsafe. Calls to `cowboy_req:inform/3`, `cowboy_req:reply/3,4`,
+  `cowboy_req:set_resp_header/3`, `cowboy_req:set_resp_headers/2`
+  and `cowboy_req:stream_reply/3` may be affected.
+  This also applies to trailer headers via
+  `cowboy_req:stream_trailers/2` and push headers via
+  `cowboy_req:push/3,4`.
+
+* Response bodies *MUST NOT* include unvalidated or unescaped
+  external data. The exact method of producing safe response
+  bodies varies depending on the media type of the body and
+  on the application. Calls to `cowboy_req:reply/4`,
+  `cowboy_req:set_resp_body/2` and `cowboy_req:stream_body/3`
+  may be affected.
+
+* Cookies set through `cowboy_req:set_resp_cookie/3,4` *MUST*
+  have valid RFC-conformant name and value, as well as `domain`
+  and `path` fields when they are present. All cookie options
+  *MUST* be literals except for the cookie value. Cowboy does
+  not set `secure`, `http_only` or `same_site` by default;
+  session and other sensitive cookies *SHOULD* enable them
+  explicitly.
+
+* The path provided when pushing resources *MUST* be a valid
+  application resource path. It is strongly recommended
+  to only use literal values. Calls to
+  `cowboy_req:push/3,4` may be affected.
+
+* When the response body is of type `text/event-stream`
+  and `cowboy_req:stream_events/3` is used to send events:
+  event data *MUST* be valid values according to the HTML
+  standard (server-sent events section).
+
+* REST handler callbacks that return tuples that contain
+  status code, response headers or response body *MUST*
+  follow the same recommendations outlined for function
+  calls in this section.
+
+* Custom stream handlers that return commands that contain
+  status code, response headers or response body *MUST*
+  follow the same recommendations outlined for function
+  calls. This also applies when using `cowboy_req:cast/2`
+  to issue commands.
+
+=== Path traversal
+
+Untrusted paths can escape the configured root directory and
+access arbitrary files on the filesystem:
+
+* Request paths and file system paths are two completely
+  separate concepts. Users *MUST NOT* use the request
+  path or components of the path including bindings to
+  access local files without proper sanitization.
+
+* Paths constructed fully or partly from request data
+  *MUST* be normalized and *MUST* be prefix-checked
+  against the intended root before performing any file
+  operation.
+
+* When using `cowboy_static`, the configuration *MUST*
+  come from literal values or a trusted source. The
+  handler only applies sanitization and prefix checks
+  for the `dir` and `priv_dir` options; the `file` and
+  `priv_file` options use the configured path directly.
+
+* When using `cowboy_static`, do not create symlinks
+  in directories configured with `dir` or `priv_dir`
+  options using information from untrusted sources
+  as the static handler will follow them.
+
+* The path given in `sendfile` tuples when sending
+  response bodies *MUST* be normalized and prefix-checked.
+  Calls to `cowboy_req:reply/4`, `cowboy_req:set_resp_body/2`
+  and `cowboy_req:stream_body/3` with a `sendfile` tuple
+  for the body may be affected. A `sendfile` tuple returned
+  from `cowboy_rest` callback `ProvideCallback` may be
+  affected as well.
+
+* Multipart form filenames obtained via
+  `cowboy_req:read_part/1,2` (and the corresponding values
+  from `read_part_body`) *MUST* be treated as untrusted.
+  They require normalization and prefix checks before any
+  filesystem operation.
+
+* The `Path` argument (and related fields from `push_opts`)
+  given to `cowboy_req:push/3,4` *MUST* be a valid
+  application resource path when it may be derived from
+  request data. It is strongly recommended to only use
+  literal values.
+
+=== Cryptographic and TLS considerations
+
+Applications *MUST* follow general TLS and cryptographic
+hardening best practices. This section only covers areas
+where Cowboy provides limited or no automatic protection:
+
+* In mTLS scenarios: TLS client certificates obtained
+  from the `Req` object or by calling `cowboy_req:cert/1`
+  *MUST* be validated before they can be used, including
+  against a configured CA certificate chain.
+
+* HTTP Strict Transport Security (HSTS) *SHOULD*
+  be enabled for TLS listeners by setting the
+  `strict-transport-security` response header.
+  This mitigates downgrade attacks. This header
+  is not sent by default.
+
+=== Spoofing
+
+The PROXY protocol, configured via the `proxy_header`
+option, *MUST* only be enabled for listeners reachable
+exclusively via trusted proxies or load balancers.
+
+=== Cross-site and browser concerns
+
+Cowboy does not implement browser-specific protections
+automatically; applications that serve browsers *MUST*
+apply them where relevant:
+
+* State-changing requests authenticated with cookies
+  (or other ambient browser credentials) *MUST* implement
+  CSRF protection. `same_site` cookie options alone are
+  not sufficient.
+
+* Framing controls (`x-frame-options` or CSP
+  `frame-ancestors`) *SHOULD* be set on HTML
+  responses to mitigate clickjacking.
+
+* Websocket upgrades do not validate the `origin` header.
+  Handlers that authenticate via cookies (or other ambient
+  browser credentials) *MUST* check `origin` in `init/2`
+  before upgrading, or only expose Websocket to non-browser
+  clients.
+
+=== Information disclosure
+
+Sensitive information mistakenly disclosed to clients
+or third parties may be used by attackers to craft
+more effective or targeted attacks:
+
+* Error responses do not include a response body by
+  default. Custom error responses *MUST NOT* include
+  sensitive information such as stack traces, file
+  paths or any other internal details.
+
+* The `server: Cowboy` response header is sent with
+  all responses by default. You may set a custom
+  `server` header to override it.
+
+=== Experimental features
+
+All features marked as experimental are considered
+unsafe for production use. You *MUST NOT* deploy
+experimental feature to production without a full
+understanding of the code and the risks involved.
+
+The same applies to undocumented features.

@@ -1,0 +1,63 @@
+Operating System: macOS
+CPU Information: Apple M3 Pro
+Number of Available Cores: 11
+Available memory: 36 GB
+Elixir 1.18.2
+Erlang 27.1.2
+JIT enabled: true
+
+Benchmark suite executing with the following configuration:
+warmup: 2 s
+time: 10 s
+memory time: 2 s
+reduction time: 0 ns
+parallel: 1
+inputs: none specified
+Estimated total run time: 1 min 24 s
+
+Benchmarking complex schema - changeset ...
+Benchmarking complex schema - invalid data ...
+Benchmarking complex schema - valid data ...
+Benchmarking simple schema - changeset ...
+Benchmarking simple schema - invalid data ...
+Benchmarking simple schema - valid data ...
+Calculating statistics...
+Formatting results...
+
+Name                                    ips        average  deviation         median         99th %
+simple schema - valid data        2189.61 K        0.46 μs  ±5273.96%        0.42 μs        1.21 μs
+complex schema - valid data        742.46 K        1.35 μs  ±1123.87%        1.29 μs        1.71 μs
+simple schema - changeset          720.14 K        1.39 μs  ±1076.69%        1.33 μs        1.75 μs
+simple schema - invalid data       330.37 K        3.03 μs   ±363.82%        2.88 μs        4.29 μs
+complex schema - changeset         150.01 K        6.67 μs    ±88.42%        6.42 μs       14.33 μs
+complex schema - invalid data       94.31 K       10.60 μs   ±180.56%       10.21 μs       17.04 μs
+
+Comparison: 
+simple schema - valid data        2189.61 K
+complex schema - valid data        742.46 K - 2.95x slower +0.89 μs
+simple schema - changeset          720.14 K - 3.04x slower +0.93 μs
+simple schema - invalid data       330.37 K - 6.63x slower +2.57 μs
+complex schema - changeset         150.01 K - 14.60x slower +6.21 μs
+complex schema - invalid data       94.31 K - 23.22x slower +10.15 μs
+
+Extended statistics: 
+
+Name                                  minimum        maximum    sample size                     mode
+simple schema - valid data            0.29 μs    61969.29 μs        16.51 M                  0.38 μs
+complex schema - valid data           1.13 μs    21916.08 μs         6.80 M                  1.29 μs
+simple schema - changeset             1.13 μs    19327.38 μs         6.59 M                  1.33 μs
+simple schema - invalid data          2.63 μs    11403.67 μs         3.16 M                  2.75 μs
+complex schema - changeset               6 μs     4020.88 μs         1.47 M                  6.38 μs
+complex schema - invalid data         9.25 μs    10115.67 μs       930.47 K                  9.75 μs
+
+Memory usage statistics:
+
+Name                             Memory usage
+simple schema - valid data            1.65 KB
+complex schema - valid data           5.05 KB - 3.07x memory usage +3.41 KB
+simple schema - changeset             6.14 KB - 3.73x memory usage +4.49 KB
+simple schema - invalid data          6.42 KB - 3.90x memory usage +4.77 KB
+complex schema - changeset           29.95 KB - 18.17x memory usage +28.30 KB
+complex schema - invalid data        23.77 KB - 14.42x memory usage +22.13 KB
+
+**All measurements for memory usage were the same**

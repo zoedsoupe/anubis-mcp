@@ -246,12 +246,13 @@ defmodule Anubis.MCP.ElicitationSchema do
     validate_default_in(default, Enum.map(options, & &1["const"]))
   end
 
-  defp validate_default_in_enum(%{"default" => default, "items" => %{"enum" => values}}) do
-    validate_default_in_list(default, values)
+  defp validate_default_in_enum(%{"default" => default, "items" => %{"enum" => values}} = schema) do
+    validate_default_in_list(default, values, schema)
   end
 
-  defp validate_default_in_enum(%{"default" => default, "items" => %{"anyOf" => options}}) when is_list(options) do
-    validate_default_in_list(default, Enum.map(options, & &1["const"]))
+  defp validate_default_in_enum(%{"default" => default, "items" => %{"anyOf" => options}} = schema)
+       when is_list(options) do
+    validate_default_in_list(default, Enum.map(options, & &1["const"]), schema)
   end
 
   defp validate_default_in_enum(_), do: :ok
@@ -264,18 +265,36 @@ defmodule Anubis.MCP.ElicitationSchema do
     end
   end
 
-  defp validate_default_in_list(default, values) when is_list(default) do
+  defp validate_default_in_list(default, values, schema) when is_list(default) do
     case Enum.reject(default, &(&1 in values)) do
       [] ->
-        :ok
+        validate_default_length(default, schema)
 
       invalid ->
         {:error, "default values #{inspect(invalid)} are not among the enum values"}
     end
   end
 
-  defp validate_default_in_list(default, _values) do
+  defp validate_default_in_list(default, _values, _schema) do
     {:error, "default must be a list for a multi-select, got #{inspect(default)}"}
+  end
+
+  # The multi-select bounds are applied to the value by `property_to_peri/1`, so a
+  # default outside them would pre-fill a value the schema then rejects.
+  defp validate_default_length(default, schema) do
+    min_items = Map.get(schema, "minItems")
+    max_items = Map.get(schema, "maxItems")
+
+    cond do
+      is_integer(min_items) and length(default) < min_items ->
+        {:error, "default must contain at least #{min_items} items"}
+
+      is_integer(max_items) and length(default) > max_items ->
+        {:error, "default must contain at most #{max_items} items"}
+
+      true ->
+        :ok
+    end
   end
 
   defp validate_required_declared(%{"required" => required, "properties" => properties})
@@ -412,6 +431,17 @@ defmodule Anubis.MCP.ElicitationSchema do
     []
     |> add_constraint(schema, "minimum", :gte)
     |> add_constraint(schema, "maximum", :lte)
+  end
+
+  # Peri custom validator for the URL-mode `url` parameter: the spec requires a
+  # valid URL, which is a URI carrying a scheme.
+  @doc false
+  @spec validate_url(term()) :: :ok | {:error, String.t(), keyword()}
+  def validate_url(value) do
+    case check_format(value, "uri") do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason, []}
+    end
   end
 
   @doc false

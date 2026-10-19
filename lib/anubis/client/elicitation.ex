@@ -13,37 +13,41 @@ defmodule Anubis.Client.Elicitation do
   @spec handle_request(msg :: map(), State.t()) :: State.t()
   def handle_request(%{"id" => id} = msg, state) do
     params = Map.get(msg, "params", %{})
-
-    case validate_elicitation_capability(state) do
-      :ok ->
-        dispatch_mode(id, params, state)
-
-      {:error, reason} ->
-        send_elicitation_error(id, reason, "capability_disabled", %{}, state)
-    end
+    dispatch_mode(id, params, state)
   end
 
   # `mode` is optional for form requests upstream, so only an explicit `"url"`
-  # selects URL mode; everything else is form mode.
+  # selects URL mode; everything else is form mode. The client must have declared
+  # the mode it is being asked for.
   defp dispatch_mode(id, %{"mode" => "url"} = params, state) do
     case validate_url_elicitation_capability(state) do
-      :ok ->
-        URL.handle_request(%{"id" => id, "params" => params}, state)
-
-      {:error, reason} ->
-        send_elicitation_error(id, reason, "capability_disabled", %{}, state)
+      :ok -> URL.handle_request(%{"id" => id, "params" => params}, state)
+      {:error, reason} -> send_elicitation_error(id, reason, "capability_disabled", %{}, state)
     end
   end
 
   defp dispatch_mode(id, params, state) do
-    handle_elicitation_with_callback(id, params, state)
+    case validate_form_elicitation_capability(state) do
+      :ok -> handle_elicitation_with_callback(id, params, state)
+      {:error, reason} -> send_elicitation_error(id, reason, "capability_disabled", %{}, state)
+    end
   end
 
-  defp validate_elicitation_capability(state) do
-    if Map.has_key?(state.capabilities, "elicitation") do
-      :ok
-    else
-      {:error, "Client does not have elicitation capability enabled"}
+  # Form is the default mode, so the legacy `elicitation: %{}` shorthand declares
+  # it. A client advertising only `url` must never be handed a form request.
+  defp validate_form_elicitation_capability(state) do
+    case Map.get(state.capabilities, "elicitation") do
+      %{"form" => _} ->
+        :ok
+
+      declared when is_map(declared) and map_size(declared) == 0 ->
+        :ok
+
+      declared when is_map(declared) ->
+        {:error, "Client does not have elicitation form capability enabled"}
+
+      _ ->
+        {:error, "Client does not have elicitation capability enabled"}
     end
   end
 

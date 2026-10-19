@@ -21,9 +21,17 @@ defmodule Anubis.Client.Elicitation.URL do
         error(id, "No URL elicitation callback registered", "elicitation_not_configured", state)
 
       callback when is_function(callback, 3) ->
-        execute_callback(id, params, callback, state)
+        execute_callback(id, params, callback, track_elicitation(state, params))
     end
   end
+
+  # Only a URL elicitation this client dispatched may be completed, so the id is
+  # recorded as soon as the request is handled. An unknown id is ignored later.
+  defp track_elicitation(state, %{"elicitationId" => id}) when is_binary(id) do
+    State.track_url_elicitation(state, id)
+  end
+
+  defp track_elicitation(state, _params), do: state
 
   defp execute_callback(id, params, callback, state) do
     url = Map.get(params, "url", "")

@@ -632,16 +632,16 @@ defmodule Anubis.Server do
 
   defp component_icons(mod) do
     if Anubis.exported?(mod, :icons, 0) do
-      validate_component_icons(mod, mod.icons())
+      validate_icons(mod, mod.icons())
     end
   end
 
-  defp validate_component_icons(_mod, nil), do: nil
+  defp validate_icons(_owner, nil), do: nil
 
-  defp validate_component_icons(mod, icons) do
+  defp validate_icons(owner, icons) do
     case Icons.icons(icons) do
       {:ok, icons} -> icons
-      {:error, reason} -> raise ArgumentError, "invalid icons for #{inspect(mod)}: #{inspect(reason)}"
+      {:error, reason} -> raise ArgumentError, "invalid icons for #{inspect(owner)}: #{inspect(reason)}"
     end
   end
 
@@ -662,6 +662,8 @@ defmodule Anubis.Server do
   end
 
   defp maybe_define_server_info(module, name, version, icons, website_url) do
+    icons = validate_icons(module, icons)
+
     if not Module.defines?(module, {:server_info, 0}) or is_nil(name) or
          is_nil(version) do
       info =
@@ -1071,17 +1073,19 @@ defmodule Anubis.Server do
         when configuration: list({:timeout, non_neg_integer() | nil})
   def send_url_elicitation_request(url, elicitation_id, message, opts \\ [])
       when is_binary(url) and is_binary(elicitation_id) and is_binary(message) do
-    timeout = Keyword.get(opts, :timeout, 30_000)
+    with :ok <- validate_url(url) do
+      timeout = Keyword.get(opts, :timeout, 30_000)
 
-    params = %{
-      "mode" => "url",
-      "url" => url,
-      "elicitationId" => elicitation_id,
-      "message" => message
-    }
+      params = %{
+        "mode" => "url",
+        "url" => url,
+        "elicitationId" => elicitation_id,
+        "message" => message
+      }
 
-    send(self(), {:send_url_elicitation_request, params, timeout})
-    :ok
+      send(self(), {:send_url_elicitation_request, params, timeout})
+      :ok
+    end
   end
 
   @doc """
@@ -1095,5 +1099,12 @@ defmodule Anubis.Server do
   def notify_elicitation_complete(elicitation_id) when is_binary(elicitation_id) do
     send(self(), {:send_notification, "notifications/elicitation/complete", %{"elicitationId" => elicitation_id}})
     :ok
+  end
+
+  defp validate_url(url) do
+    case ElicitationSchema.validate_url(url) do
+      :ok -> :ok
+      {:error, reason, _info} -> {:error, reason}
+    end
   end
 end

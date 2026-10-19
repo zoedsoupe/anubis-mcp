@@ -1794,6 +1794,35 @@ defmodule Anubis.ClientTest do
       Process.sleep(100)
     end
 
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "rejects form mode when the client declared url only", %{client: client} do
+      test_pid = self()
+      request_id = "elicit_req_url_only_form"
+      params = %{"message" => "Name?", "requestedSchema" => @schema}
+
+      :ok =
+        Anubis.Client.register_elicitation_callback(client, fn _msg, _schema ->
+          flunk("form callback must not run for a url-only client")
+        end)
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:mcp_send, message})
+
+        decoded = JSON.decode!(message)
+        assert decoded["error"]["message"] =~ "elicitation form capability"
+        :ok
+      end)
+
+      assert {:ok, encoded} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => params},
+                 request_id
+               )
+
+      GenServer.cast(client, {:response, encoded})
+      Process.sleep(100)
+    end
+
     @tag client_capabilities: %{"elicitation" => %{}}
     test "handles elicitation callback exception", %{client: client} do
       test_pid = self()
@@ -1972,14 +2001,28 @@ defmodule Anubis.ClientTest do
       Process.sleep(100)
     end
 
-    @tag client_capabilities: %{"elicitation" => %{}}
-    test "handles notifications/elicitation/complete", %{client: client} do
+    @tag client_capabilities: %{"elicitation" => %{"url" => %{}}}
+    test "handles notifications/elicitation/complete for a tracked url elicitation", %{client: client} do
       test_pid = self()
+
+      :ok = Anubis.Client.register_url_elicitation_callback(client, fn _u, _i, _m -> :cancel end)
 
       :ok =
         Anubis.Client.register_elicitation_complete_callback(client, fn elicitation_id ->
           send(test_pid, {:elicitation_complete, elicitation_id})
         end)
+
+      FakeTransport.expect_send(FakeTransport, fn _message -> :ok end)
+
+      # dispatching a url elicitation tracks its id, so its completion is acted on
+      assert {:ok, request} =
+               Message.encode_request(
+                 %{"method" => "elicitation/create", "params" => @url_params},
+                 "url_elicit_complete_req"
+               )
+
+      GenServer.cast(client, {:response, request})
+      Process.sleep(50)
 
       assert {:ok, encoded} =
                Message.encode_notification(
@@ -1991,6 +2034,10 @@ defmodule Anubis.ClientTest do
 
       GenServer.cast(client, {:response, encoded})
       assert_receive {:elicitation_complete, "550e8400"}
+
+      # a repeated notification is ignored: the id is consumed on the first
+      GenServer.cast(client, {:response, encoded})
+      refute_receive {:elicitation_complete, "550e8400"}, 50
     end
 
     @tag client_capabilities: %{"elicitation" => %{}}
@@ -2016,7 +2063,7 @@ defmodule Anubis.ClientTest do
 
       refute_received {:elicitation_complete, :called}
 
-      # the client survived and still handles the next message
+      # the client survived and ignores a completion for an id it never dispatched
       assert Process.alive?(client)
 
       assert {:ok, encoded} =
@@ -2028,7 +2075,7 @@ defmodule Anubis.ClientTest do
                )
 
       GenServer.cast(client, {:response, encoded})
-      assert_receive {:elicitation_complete, :called}
+      refute_receive {:elicitation_complete, :called}, 50
     end
 
     @tag client_capabilities: %{"elicitation" => %{}}
