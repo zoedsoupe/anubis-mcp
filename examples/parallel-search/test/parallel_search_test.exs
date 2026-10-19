@@ -65,9 +65,13 @@ defmodule ParallelSearchTest do
       assert {:ok, %{is_error: false, result: %{"content" => [%{"text" => ^text}]}}} =
                ParallelSearch.run(tool, arguments, "http://localhost:#{bypass.port}")
 
-      for method <- ["initialize", "notifications/initialized", "tools/list", "tools/call"] do
-        assert_received {:method, ^method}
-      end
+      methods =
+        for _ <- 1..4 do
+          assert_receive {:method, method}, 1000
+          method
+        end
+
+      assert methods == ["initialize", "notifications/initialized", "tools/list", "tools/call"]
 
       refute Process.whereis(ParallelSearch.Client)
       refute Process.whereis(ParallelSearch.Finch)

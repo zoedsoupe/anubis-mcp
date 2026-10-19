@@ -25,7 +25,8 @@ an error rather than printing a successful result.
 
 The client connects to `https://search.parallel.ai/mcp` with a project User-Agent
 and sends no authentication header. It does not read API keys or saved credentials.
-The example is independent of the other clients and library defaults.
+It needs network access to `search.parallel.ai`, so an offline run fails with a
+transport error. The example is independent of the other clients and library defaults.
 
 ## Test
 
