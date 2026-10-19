@@ -1336,6 +1336,8 @@ defmodule Anubis.Client do
   # while `:connecting` it is already in flight, and a ready era ignores it.
 
   def handle_cast(:connect, %{era: :detecting} = state) do
+    state = %{state | discover_probe_retries: 0}
+
     case Stateless.probe_version(state.protocol_version) do
       nil -> fallback_to_initialize(state)
       version -> send_discover_probe(state, version)
@@ -1639,15 +1641,18 @@ defmodule Anubis.Client do
     end
   end
 
-  defp process_discover_error(json_error, state) do
+  # A server can answer -32022 while advertising a version it then keeps
+  # rejecting; without a bound that would re-probe forever. One re-probe is
+  # enough to honour the advertised list, then it falls back to initialize.
+  defp process_discover_error(json_error, %{discover_probe_retries: retries} = state) do
     case Stateless.classify_probe_error(json_error) do
-      {:retry, supported} ->
+      {:retry, supported} when retries < 1 ->
         case Stateless.negotiate(Stateless.probe_version(state.protocol_version), supported) do
-          {:ok, version} -> send_discover_probe(state, version)
+          {:ok, version} -> send_discover_probe(%{state | discover_probe_retries: retries + 1}, version)
           :error -> fallback_to_initialize(state)
         end
 
-      :fallback ->
+      _ ->
         fallback_to_initialize(state)
     end
   end

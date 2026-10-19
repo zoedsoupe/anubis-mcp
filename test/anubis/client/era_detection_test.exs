@@ -90,6 +90,32 @@ defmodule Anubis.Client.EraDetectionTest do
       assert :ok = Anubis.Client.await_ready(client)
     end
 
+    test "bounds the -32022 re-probe to a single attempt" do
+      client = setup_client(%{})
+
+      GenServer.cast(client, :connect)
+
+      probe_id = get_request_id(client, "server/discover")
+
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", probe_id, %{"supported" => ["2026-07-28"]})
+      )
+
+      assert_receive {:mcp_send, raw}, 500
+      decoded = JSON.decode!(raw)
+      assert decoded["method"] == "server/discover"
+
+      # the server rejects the negotiated version too: the client must fall back
+      # to initialize instead of re-probing forever
+      send_error(
+        client,
+        Builders.build_error(-32_022, "Unsupported protocol version", decoded["id"], %{"supported" => ["2026-07-28"]})
+      )
+
+      assert get_request_id(client, "initialize")
+    end
+
     test "falls back to initialize on -32022 with an empty intersection" do
       client = setup_client(%{})
 
