@@ -20,6 +20,10 @@ defmodule Anubis.Protocol.V2026_07_28 do
     `sampling/createMessage` and `elicitation/create` are no longer
     JSON-RPC methods; they are carried inside an `InputRequiredResult`
     under the multi round-trip requests pattern.
+  - Gives every result a `resultType`: `complete`, or `input_required` when
+    `tools/call`, `prompts/get` or `resources/read` returns an
+    `InputRequiredResult`. Complete results of cacheable methods carry
+    `ttlMs` and `cacheScope`.
   - Moves tasks out of the core protocol into the
     `io.modelcontextprotocol/tasks` extension, advertised under the new
     `extensions` capability.
@@ -80,14 +84,77 @@ defmodule Anubis.Protocol.V2026_07_28 do
     "requestState" => :string
   }
 
-  @discover_result_schema %{
-    "resultType" => {:required, {:literal, "complete"}},
-    "supportedVersions" => {:required, {:list, :string}},
-    "capabilities" => {:required, :map},
-    "instructions" => :string,
-    "ttlMs" => {:required, {:integer, {:gte, 0}}},
-    "cacheScope" => {:required, {:enum, ~w(public private)}}
+  @result %{"resultType" => {:required, {:literal, "complete"}}, "_meta" => :map}
+
+  @cacheable_result Map.merge(@result, %{
+                      "ttlMs" => {:required, {:integer, {:gte, 0}}},
+                      "cacheScope" => {:required, {:enum, ~w(public private)}}
+                    })
+
+  @list_result Map.put(@cacheable_result, "nextCursor", :string)
+
+  @input_request_params %{
+    "elicitation/create" => {:required, :map},
+    "sampling/createMessage" => {:required, :map},
+    "roots/list" => :map
   }
+
+  @input_request {:multi, :method,
+                  Map.new(@input_request_params, fn {method, params} ->
+                    {method, %{"method" => {:required, {:literal, method}}, "params" => params}}
+                  end)}
+
+  @input_required_fields %{
+    "resultType" => {:required, {:literal, "input_required"}},
+    "_meta" => :map,
+    "inputRequests" => {:map, :string, @input_request},
+    "requestState" => :string
+  }
+
+  # The spec requires at least one of inputRequests and requestState.
+  @input_required_result {:either,
+                          {%{@input_required_fields | "inputRequests" => {:required, {:map, :string, @input_request}}},
+                           %{@input_required_fields | "requestState" => {:required, :string}}}}
+
+  @discover_result_schema Map.merge(@cacheable_result, %{
+                            "supportedVersions" => {:required, {:list, :string}},
+                            "capabilities" => {:required, :map},
+                            "instructions" => :string
+                          })
+
+  @listen_result_schema Map.merge(@result, Schema.subscription_meta())
+
+  @list_tools_result_schema Map.put(@list_result, "tools", {:required, {:list, :map}})
+  @list_prompts_result_schema Map.put(@list_result, "prompts", {:required, {:list, :map}})
+  @list_resources_result_schema Map.put(@list_result, "resources", {:required, {:list, :map}})
+  @list_resource_templates_result_schema Map.put(@list_result, "resourceTemplates", {:required, {:list, :map}})
+
+  @read_resource_result_schema {:multi, :resultType,
+                                %{
+                                  "complete" => Map.put(@cacheable_result, "contents", {:required, {:list, :map}}),
+                                  "input_required" => @input_required_result
+                                }}
+
+  @call_tool_result_schema {:multi, :resultType,
+                            %{
+                              "complete" =>
+                                Map.merge(@result, %{
+                                  "content" => {:required, {:list, :map}},
+                                  "structuredContent" => :any,
+                                  "isError" => :boolean
+                                }),
+                              "input_required" => @input_required_result
+                            }}
+
+  @get_prompt_result_schema {:multi, :resultType,
+                             %{
+                               "complete" =>
+                                 Map.merge(@result, %{
+                                   "description" => :string,
+                                   "messages" => {:required, {:list, :map}}
+                                 }),
+                               "input_required" => @input_required_result
+                             }}
 
   @impl true
   def era, do: @era
@@ -120,7 +187,16 @@ defmodule Anubis.Protocol.V2026_07_28 do
 
   @impl true
   def request_result_schema("server/discover"), do: @discover_result_schema
+  def request_result_schema("subscriptions/listen"), do: @listen_result_schema
+  def request_result_schema("tools/list"), do: @list_tools_result_schema
+  def request_result_schema("prompts/list"), do: @list_prompts_result_schema
+  def request_result_schema("resources/list"), do: @list_resources_result_schema
+  def request_result_schema("resources/templates/list"), do: @list_resource_templates_result_schema
+  def request_result_schema("resources/read"), do: @read_resource_result_schema
+  def request_result_schema("tools/call"), do: @call_tool_result_schema
+  def request_result_schema("prompts/get"), do: @get_prompt_result_schema
 
+  # completion/complete stays unmodeled until its values go out as strings, as the spec requires.
   def request_result_schema(_method), do: nil
 
   @impl true
