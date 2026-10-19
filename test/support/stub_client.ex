@@ -3,7 +3,7 @@ defmodule StubClient do
   use GenServer
 
   def start_link(_opts \\ []) do
-    GenServer.start_link(__MODULE__, %{messages: [], subscriber: nil}, name: __MODULE__)
+    GenServer.start_link(__MODULE__, %{messages: [], subscriber: nil, connects: 0}, name: __MODULE__)
   end
 
   def init(state) do
@@ -12,6 +12,13 @@ defmodule StubClient do
 
   def get_messages do
     GenServer.call(__MODULE__, :get_messages)
+  end
+
+  @doc """
+  How many `:connect` casts the stub has received (the transports cast it on start).
+  """
+  def connect_count do
+    GenServer.call(__MODULE__, :connect_count)
   end
 
   def clear_messages do
@@ -30,6 +37,10 @@ defmodule StubClient do
     {:reply, Enum.reverse(messages), state}
   end
 
+  def handle_call(:connect_count, _from, state) do
+    {:reply, state.connects, state}
+  end
+
   def handle_call(:clear_messages, _from, state) do
     {:reply, :ok, %{state | messages: [], subscriber: nil}}
   end
@@ -40,7 +51,7 @@ defmodule StubClient do
 
   def handle_cast(msg, state), do: handle_info(msg, state)
 
-  def handle_info(:connect, state), do: {:noreply, state}
+  def handle_info(:connect, state), do: {:noreply, %{state | connects: state.connects + 1}}
 
   def handle_info(:initialize, state), do: {:noreply, state}
 
