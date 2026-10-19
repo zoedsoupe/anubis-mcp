@@ -51,6 +51,23 @@ defmodule Anubis.Telemetry do
   `[:anubis_mcp, :server, :tool_call]` is a `:telemetry.span/3`, so it emits
   `:start`, `:stop` and `:exception` events. See `span_tool_call/3`.
 
+  ### Authorization
+
+  `[:anubis_mcp, :server, :authorization]` is a `:telemetry.span/3` wrapping
+  the Streamable HTTP bearer authorization flow, so it emits `:start`, `:stop`
+  and `:exception` events. See `span_authorization/2`. The `:stop` metadata
+  carries `outcome`, one of `:ok`, `:missing_token`, `:invalid_token`,
+  `:invalid_issuer`, `:invalid_audience`, `:token_expired`, `:invalid_expiry`,
+  `:validator_unavailable`, `:other`. Authorization metadata never includes
+  tokens, claims, or raw validator error reasons.
+
+  | Event | Metadata |
+  | --- | --- |
+  | `[:anubis_mcp, :server, :authorization, :start]` | `validator` |
+  | `[:anubis_mcp, :server, :authorization, :stop]` | `validator`, `outcome` |
+  | `[:anubis_mcp, :server, :authorization, :exception]` | `validator`, `kind`, `reason`, `stacktrace` |
+  | `[:anubis_mcp, :server, :authorization, :validate]` (deprecated) | `validator` |
+
   ### Transport
 
   Transport events always carry `transport` (the layer, e.g. `:stdio` or
@@ -141,6 +158,39 @@ defmodule Anubis.Telemetry do
   defp tool_call_error?({:reply, %{"isError" => true}, _frame}), do: true
   defp tool_call_error?(_result), do: false
 
+  @doc """
+  Wraps a bearer authorization flow in the `[:server, :authorization]`
+  telemetry span.
+
+  Emits `:start`, `:stop` and `:exception` events under
+  `[:anubis_mcp, :server, :authorization]`. The `start_metadata` map (typically
+  `%{validator: module}`) is used for the `:start` event and, with `outcome`
+  added, for the `:stop` event. The `:stop` measurements carry `duration`.
+
+  The fun returns `{result, outcome}` where `outcome` must be drawn from the
+  bounded set in `Anubis.Server.Authorization.outcome/1`. Tokens, claims, and
+  raw validator error reasons must not be added to the metadata.
+
+  ## Examples
+
+      Telemetry.span_authorization(%{validator: MyValidator}, fn ->
+        {{:ok, conn, claims}, :ok}
+      end)
+  """
+  @spec span_authorization(map(), (-> {result, Anubis.Server.Authorization.outcome()})) ::
+          result
+        when result: var
+  def span_authorization(start_metadata, fun) do
+    :telemetry.span(
+      [:anubis_mcp | event_server_authorization()],
+      start_metadata,
+      fn ->
+        {result, outcome} = fun.()
+        {result, Map.put(start_metadata, :outcome, outcome)}
+      end
+    )
+  end
+
   # Define event name constants to ensure consistency
 
   # Client events
@@ -159,6 +209,16 @@ defmodule Anubis.Telemetry do
   def event_server_error, do: [:server, :error]
   def event_server_terminate, do: [:server, :terminate]
   def event_server_tool_call, do: [:server, :tool_call]
+  def event_server_authorization, do: [:server, :authorization]
+
+  @doc """
+  Deprecated single-shot event emitted before the validator runs.
+
+  Superseded by the `[:server, :authorization]` span: the `:stop` event's
+  bounded `outcome` reports whether validation succeeded and why it failed.
+  Kept during a deprecation window; attach handlers to the span instead.
+  """
+  def event_server_authorization_validate, do: [:server, :authorization, :validate]
 
   # Transport events
   def event_transport_init, do: [:transport, :init]
