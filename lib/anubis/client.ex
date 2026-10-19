@@ -357,7 +357,8 @@ defmodule Anubis.Client do
         {:error, error}
 
       :error ->
-        {:error, Error.protocol(:invalid_params, %{version: protocol_version, supported: Protocol.supported_versions()})}
+        data = %{version: protocol_version, supported: Protocol.supported_versions()}
+        {:error, Error.protocol(:invalid_params, data)}
     end
   end
 
