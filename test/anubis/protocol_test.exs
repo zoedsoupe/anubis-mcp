@@ -108,17 +108,16 @@ defmodule Anubis.ProtocolTest do
     end
   end
 
-  describe "registering a stateless version leaves the legacy era untouched" do
+  describe "default server versions and legacy negotiation" do
     defmodule DefaultVersionsServer do
       @moduledoc false
       use Anubis.Server, name: "test", version: "1.0.0", capabilities: [:tools]
     end
 
-    test "a server built with the DSL advertises no stateless version" do
+    test "a server built with the DSL advertises both eras" do
       versions = DefaultVersionsServer.supported_protocol_versions()
 
-      assert versions == Protocol.supported_versions(:legacy)
-      refute "2026-07-28" in versions
+      assert versions == ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]
     end
 
     test "the client default protocol version stays in the legacy era" do

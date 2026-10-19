@@ -91,8 +91,21 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
       do: {:ok, Frame.assign(frame, :initialized_for, client_info["name"])}
   end
 
-  setup do
-    server = DualEraServer
+  defmodule DefaultVersionServer do
+    @moduledoc false
+    use Anubis.Server, name: "default-versions", version: "1.0.0"
+  end
+
+  defmodule LegacyOnlyServer do
+    @moduledoc false
+    use Anubis.Server,
+      name: "legacy-only",
+      version: "1.0.0",
+      protocol_versions: ["2025-11-25"]
+  end
+
+  setup context do
+    server = Map.get(context, :server, DualEraServer)
 
     task_sup = Registry.task_supervisor_name(server)
     start_supervised!({Task.Supervisor, name: task_sup})
@@ -125,6 +138,26 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
   end
 
   describe "server/discover" do
+    @tag server: DefaultVersionServer, capture_log: false
+    test "is available without configuring protocol_versions", %{opts: opts} do
+      conn = post_stateless(opts, "server/discover")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "mcp-session-id") == []
+      assert JSON.decode!(conn.resp_body)["result"]["supportedVersions"] == [@version]
+    end
+
+    @tag server: LegacyOnlyServer, capture_log: false
+    test "an explicit legacy-only configuration still rejects stateless requests", %{opts: opts} do
+      {conn, log} = ExUnit.CaptureLog.with_log(fn -> post_stateless(opts, "server/discover") end)
+      assert conn.status == 400
+      body = JSON.decode!(conn.resp_body)
+      assert body["jsonrpc"] == "2.0"
+      assert body["error"]["code"] == -32_603
+      assert body["error"]["data"]["data"]["message"] =~ @version
+      assert log =~ "unsupported_protocol_version"
+    end
+
     test "is answered without a session", %{opts: opts} do
       conn = post_stateless(opts, "server/discover")
 
@@ -578,6 +611,35 @@ defmodule Anubis.Server.Transport.StreamableHTTP.StatelessBindingTest do
   end
 
   describe "the legacy era on the same endpoint" do
+    @tag server: DefaultVersionServer, capture_log: false
+    test "default versions preserve legacy negotiation and fallback", %{opts: opts} do
+      for {requested, expected} <- [
+            {"2025-03-26", "2025-03-26"},
+            {"2025-06-18", "2025-06-18"},
+            {"2025-11-25", "2025-11-25"},
+            {"2026-07-28", "2025-11-25"}
+          ] do
+        body =
+          JSON.encode!(%{
+            "jsonrpc" => "2.0",
+            "id" => 1,
+            "method" => "initialize",
+            "params" => %{"protocolVersion" => requested, "clientInfo" => @client_info, "capabilities" => %{}}
+          })
+
+        response =
+          :post
+          |> conn("/", body)
+          |> put_req_header("content-type", "application/json")
+          |> put_req_header("accept", "application/json")
+          |> StreamableHTTPPlug.call(opts)
+
+        assert response.status == 200
+        assert [_session_id] = get_resp_header(response, "mcp-session-id")
+        assert JSON.decode!(response.resp_body)["result"]["protocolVersion"] == expected
+      end
+    end
+
     test "rejects stateless bodies on a legacy session before merging request assigns", %{opts: opts} do
       body =
         JSON.encode!(%{

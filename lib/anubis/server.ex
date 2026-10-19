@@ -109,7 +109,7 @@ defmodule Anubis.Server do
   alias Anubis.Server.Response
 
   @server_capabilities ~w(prompts tools resources logging completion)a
-  @protocol_versions Anubis.Protocol.Registry.legacy_versions()
+  @protocol_versions Anubis.Protocol.Registry.supported_versions()
 
   @type request :: map()
   @type response :: map()
@@ -191,6 +191,13 @@ defmodule Anubis.Server do
 
   @callback server_info :: server_info()
   @callback server_capabilities :: server_capabilities()
+  @doc """
+  Returns the protocol versions served by this server.
+
+  Defaults to all registered versions, including the stateless era. Set the
+  `:protocol_versions` use option or implement this callback to restrict them.
+  The `initialize` handshake only negotiates legacy versions.
+  """
   @callback supported_protocol_versions() :: [String.t()]
 
   @doc """

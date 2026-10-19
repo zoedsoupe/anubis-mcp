@@ -340,32 +340,6 @@ defmodule Anubis.Server.Transport.StreamableHTTP.PlugTest do
       assert conn.resp_body =~ "1999-01-01"
     end
 
-    test "a legacy-only server answers a stateless-era MCP-Protocol-Version as a legacy server", %{
-      opts: opts,
-      test_session_id: session_id
-    } do
-      request = build_request("ping", %{})
-      {:ok, body} = Message.encode_request(request, 1)
-      [stateless | _] = Anubis.Protocol.Registry.stateless_versions()
-
-      conn =
-        :post
-        |> conn("/", body)
-        |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json")
-        |> put_req_header("mcp-session-id", session_id)
-        |> put_req_header("mcp-protocol-version", stateless)
-        |> StreamableHTTPPlug.call(opts)
-
-      assert conn.status == 400
-      {:ok, body} = JSON.decode(conn.resp_body)
-      assert body["jsonrpc"] == "2.0"
-      # a server serving no stateless version answers as a legacy server does, so a
-      # dual-era client falls back to initialize instead of retrying with -32022's list
-      assert body["error"]["code"] == -32_603
-      assert body["error"]["data"]["data"]["message"] =~ stateless
-    end
-
     test "POST request with supported MCP-Protocol-Version succeeds", %{
       opts: opts,
       test_session_id: session_id
