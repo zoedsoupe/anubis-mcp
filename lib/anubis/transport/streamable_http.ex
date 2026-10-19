@@ -50,6 +50,7 @@ defmodule Anubis.Transport.StreamableHTTP do
 
   alias Anubis.Client.Authorization.Challenge
   alias Anubis.HTTP
+  alias Anubis.Server.McpParam
   alias Anubis.SSE
   alias Anubis.SSE.Event
   alias Anubis.Telemetry
@@ -189,7 +190,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   end
 
   @impl Transport
-  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18", "2025-11-25"]
+  def supported_protocol_versions, do: ["2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]
 
   @impl GenServer
   def init(opts) do
@@ -215,7 +216,7 @@ defmodule Anubis.Transport.StreamableHTTP do
   @impl GenServer
   def handle_continue(:connect, state) do
     emit_telemetry(:connect, state)
-    GenServer.cast(state.client, :initialize)
+    GenServer.cast(state.client, :connect)
     new_state = maybe_start_sse_connection(state)
     {:noreply, new_state}
   end
@@ -317,12 +318,15 @@ defmodule Anubis.Transport.StreamableHTTP do
     # a single JSON response or an SSE stream. This includes the initialize
     # request, which is sent before a session exists. The session id is still
     # only attached once established via put_session_header/2 below.
+    stateless = stateless_headers(message)
+
     headers =
       state.headers
       |> Map.put("accept", "application/json, text/event-stream")
       |> Map.put("content-type", "application/json")
       |> put_session_header(state.session_id)
       |> put_protocol_version_header(state.protocol_version)
+      |> Map.merge(stateless)
 
     # Set receive_timeout, ensuring it takes precedence over any default in http_options
     # Only pass valid Finch.request options (receive_timeout, pool_timeout, request_timeout)
@@ -456,6 +460,45 @@ defmodule Anubis.Transport.StreamableHTTP do
   defp put_session_header(headers, nil), do: headers
 
   defp put_session_header(headers, session_id), do: Map.put(headers, "mcp-session-id", session_id)
+
+  # Mirrors the body into the headers the stateless binding requires: the
+  # headers must agree with the body by specification, so the body is the only
+  # source of truth and is decoded here per outbound request. This side of the
+  # mirror is `Anubis.Server.Transport.StreamableHTTP.StatelessBinding.validate_headers/3`
+  # (which compares these headers against the decoded body) - keep them in sync.
+  # A message without the stateless _meta version is legacy and gets nothing
+  # here, so the learned MCP-Protocol-Version (from initialize) still applies.
+  @protocol_version_key Anubis.Protocol.Schema.protocol_version_key()
+
+  defp stateless_headers(message) do
+    case JSON.decode(message) do
+      {:ok, %{"method" => method, "params" => %{"_meta" => %{@protocol_version_key => version}} = params}}
+      when is_binary(method) and is_binary(version) ->
+        maybe_put_mcp_name(%{"mcp-protocol-version" => version, "mcp-method" => method}, method, params)
+
+      _legacy_or_invalid ->
+        %{}
+    end
+  end
+
+  # The server compares Mcp-Name against params.name for tools/call and
+  # prompts/get, and params.uri for resources/read.
+  defp maybe_put_mcp_name(headers, method, params) when method in ~w(tools/call prompts/get) do
+    Map.put(headers, "mcp-name", encode_header_value(params["name"]))
+  end
+
+  defp maybe_put_mcp_name(headers, "resources/read", params) do
+    Map.put(headers, "mcp-name", encode_header_value(params["uri"]))
+  end
+
+  defp maybe_put_mcp_name(headers, _method, _params), do: headers
+
+  # One codec with the server side (open question 1): the same module the
+  # server decodes with is aliased here, so the sentinel stays symmetric.
+  defp encode_header_value(value) when is_binary(value), do: McpParam.encode_header_value(value)
+
+  # unreachable: the schema requires name/uri on the mirror methods
+  defp encode_header_value(_), do: nil
 
   defp put_protocol_version_header(headers, nil), do: headers
 

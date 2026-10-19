@@ -90,6 +90,7 @@ defmodule Anubis.Client do
   alias Anubis.Client.Request
   alias Anubis.Client.Sampling
   alias Anubis.Client.State
+  alias Anubis.Client.Stateless
   alias Anubis.MCP.Error
   alias Anubis.MCP.Message
   alias Anubis.MCP.Response
@@ -103,7 +104,19 @@ defmodule Anubis.Client do
   @default_protocol_version Protocol.latest_version()
   @default_operation_timeout to_timeout(second: 30)
 
+  @protocol_version_key Anubis.Protocol.Schema.protocol_version_key()
+
   @type t :: GenServer.server()
+
+  @typedoc """
+  The connection era the client is in.
+
+  * `:detecting` - started, nothing sent yet
+  * `:connecting` - a `server/discover` probe or an `initialize` is in flight
+  * `:legacy` - the `initialize` handshake completed
+  * `:stateless` - the probe answered in the stateless era
+  """
+  @type era :: :detecting | :connecting | :legacy | :stateless
 
   @type capability :: :roots | :sampling | :elicitation
   @type capability_opts :: [list_changed?: boolean()]
@@ -333,9 +346,19 @@ defmodule Anubis.Client do
     protocol_version = opts[:protocol_version]
     layer = opts[:transport][:layer]
 
-    with :ok <- Protocol.validate_version(protocol_version),
+    # the version must be registered and served by the transport's era, not
+    # necessarily handshake-negotiable: a stateless version connects through
+    # the server/discover probe instead of initialize
+    with {:ok, _module} <- Protocol.get_module(protocol_version),
          :ok <- Protocol.validate_transport(protocol_version, layer) do
       GenServer.start_link(__MODULE__, Map.new(opts), name: opts[:name])
+    else
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      :error ->
+        data = %{version: protocol_version, supported: Protocol.supported_versions()}
+        {:error, Error.protocol(:invalid_params, data)}
     end
   end
 
@@ -388,6 +411,10 @@ defmodule Anubis.Client do
   Unlike the other operations, a successful ping returns the bare atom
   `:pong` rather than `{:ok, %Anubis.MCP.Response{}}`: the MCP `ping`
   result is empty, so there is no payload to carry.
+
+  The stateless era (2026-07-28) removed `ping`; against a server detected
+  as stateless this returns `{:error, %Anubis.MCP.Error{}}` with reason
+  `:method_not_found` and `era: :stateless` in the error data.
 
   ## Options
 
@@ -456,6 +483,10 @@ defmodule Anubis.Client do
   notifications for this URI. The server must declare the `resources.subscribe`
   capability for this method to succeed.
 
+  The stateless era (2026-07-28) removed `resources/subscribe`; against a
+  server detected as stateless this returns `{:error, %Anubis.MCP.Error{}}`
+  with reason `:method_not_found` and `era: :stateless` in the error data.
+
   ## Options
 
     * `:timeout` - Request timeout in milliseconds
@@ -468,6 +499,10 @@ defmodule Anubis.Client do
 
   @doc """
   Unsubscribes from updates for a previously-subscribed resource URI.
+
+  The stateless era (2026-07-28) removed `resources/unsubscribe`; against a
+  server detected as stateless this returns `{:error, %Anubis.MCP.Error{}}`
+  with reason `:method_not_found` and `era: :stateless` in the error data.
 
   ## Options
 
@@ -581,6 +616,25 @@ defmodule Anubis.Client do
   end
 
   @doc """
+  Returns the connection era the client is in.
+
+  * `:detecting` - the client started and has sent nothing yet
+  * `:connecting` - a `server/discover` probe or an `initialize` handshake is in flight
+  * `:legacy` - the client talks to the server through the `initialize` handshake
+  * `:stateless` - the server answered the probe in the stateless era: no
+    session exists, and every request carries its `_meta`
+
+  ## Options
+
+    * `:timeout` - Call timeout in milliseconds (default: 5s)
+  """
+  @spec get_era(t(), opts :: Keyword.t()) :: era()
+  def get_era(client, opts \\ []) do
+    timeout = opts[:timeout] || to_timeout(second: 5)
+    GenServer.call(client, :get_era, timeout)
+  end
+
+  @doc """
   Blocks until the client has completed the MCP initialization handshake.
 
   Returns `:ok` once the server capabilities have been received.
@@ -615,6 +669,10 @@ defmodule Anubis.Client do
     * `level` - The minimum log level (debug, info, notice, warning, error, critical, alert, emergency)
 
   Returns {:ok, result} if successful, {:error, reason} otherwise.
+
+  The stateless era (2026-07-28) removed `logging/setLevel`; against a server
+  detected as stateless this returns `{:error, %Anubis.MCP.Error{}}` with
+  reason `:method_not_found` and `era: :stateless` in the error data.
   """
   @spec set_log_level(t, String.t()) :: {:ok, Response.t()} | {:error, Error.t()}
   def set_log_level(client, level) when level in ~w(debug info notice warning error critical alert emergency) do
@@ -1078,13 +1136,14 @@ defmodule Anubis.Client do
   def handle_call({:operation, %Operation{} = operation}, from, state) do
     method = operation.method
 
-    params_with_token =
-      State.add_progress_token_to_params(operation.params, operation.progress_opts)
+    params = build_operation_params(state, operation)
+    operation = %{operation | params: params}
 
-    with :ok <- State.validate_capability(state, method),
+    with :ok <- Stateless.validate_method(state.era, method),
+         :ok <- State.validate_capability(state, method),
          {request_id, updated_state} =
            State.add_request_from_operation(state, operation, from),
-         {:ok, request_data} <- encode_request(state, method, params_with_token, request_id),
+         {:ok, request_data} <- encode_request(state, method, params, request_id),
          :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
       Telemetry.execute(
         Telemetry.event_client_request(),
@@ -1109,6 +1168,10 @@ defmodule Anubis.Client do
 
   def handle_call(:get_server_info, _from, state) do
     {:reply, State.get_server_info(state), state}
+  end
+
+  def handle_call(:get_era, _from, state) do
+    {:reply, State.get_era(state), state}
   end
 
   def handle_call(:await_ready, _from, %{initialization_error: %Error{} = error} = state) do
@@ -1244,6 +1307,13 @@ defmodule Anubis.Client do
   end
 
   @impl true
+  def handle_continue(:roots_list_changed, %{era: :stateless} = state) do
+    # notifications/roots/list_changed is gone from the stateless dialect: the
+    # roots live on local state, but there is no way to announce them
+    Logging.client_event("roots_list_changed_skipped", %{era: :stateless}, level: :debug)
+    {:noreply, state}
+  end
+
   def handle_continue(:roots_list_changed, state) do
     Task.start(fn -> send_roots_list_changed_notification(state) end)
     {:noreply, state}
@@ -1259,37 +1329,43 @@ defmodule Anubis.Client do
     {:noreply, state}
   end
 
-  def handle_cast(:initialize, state) do
-    Logging.client_event("handshake", "Making initial client <> server handshake")
+  # Era detection. A `:connect` cast (sent by the transports on start) probes
+  # `server/discover` first; a server that answers in the stateless era is used
+  # statelessly from then on, and every other probe outcome falls back to the
+  # legacy `initialize` handshake below. Detection acts only while `:detecting`:
+  # while `:connecting` it is already in flight, and a ready era ignores it.
 
-    params = %{
-      "protocolVersion" => state.protocol_version,
-      "capabilities" => state.capabilities,
-      "clientInfo" => state.client_info
-    }
+  def handle_cast(:connect, %{era: :detecting} = state) do
+    state = %{state | discover_probe_retries: 0}
 
-    operation =
-      Operation.new(%{
-        method: "initialize",
-        params: params,
-        timeout: state.timeout
-      })
-
-    {request_id, updated_state} =
-      State.add_request_from_operation(state, operation, {self(), make_ref()})
-
-    with {:ok, request_data} <- encode_request(state, "initialize", params, request_id),
-         :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
-      {:noreply, updated_state}
-    else
-      {:error, %Error{data: %{original_reason: {:authorization_required, _challenge}}} = error} ->
-        {_request, state} = State.remove_request(updated_state, request_id)
-        Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
-        {:noreply, %{state | initialization_error: error, ready_waiters: []}}
-
-      err ->
-        {:stop, err, state}
+    case Stateless.probe_version(state.protocol_version) do
+      nil -> fallback_to_initialize(state)
+      version -> send_discover_probe(state, version)
     end
+  rescue
+    e ->
+      err = Exception.format(:error, e, __STACKTRACE__)
+      Logging.client_event("initialization_failed", %{error: err})
+      {:stop, :unexpected, state}
+  end
+
+  def handle_cast(:connect, state) do
+    Logging.client_event("connect_ignored", %{era: state.era}, level: :warning)
+    {:noreply, state}
+  end
+
+  # `:initialize` keeps its documented meaning of "force the legacy handshake":
+  # it drops any pending discover probe first, so a late probe answer cannot
+  # flip an already-initialized client into the stateless era.
+  def handle_cast(:initialize, %{era: :stateless} = state) do
+    Logging.client_event("initialize_ignored", %{era: :stateless}, level: :warning)
+    {:noreply, state}
+  end
+
+  def handle_cast(:initialize, state) do
+    state
+    |> State.remove_discover_probe()
+    |> fallback_to_initialize()
   rescue
     e ->
       err = Exception.format(:error, e, __STACKTRACE__)
@@ -1301,12 +1377,7 @@ defmodule Anubis.Client do
   def handle_cast({:response, response_data}, state) do
     case parse_response(response_data, state) do
       {:ok, messages, state} ->
-        state =
-          Enum.reduce(messages, state, fn message, acc ->
-            handle_message(message, acc)
-          end)
-
-        {:noreply, state}
+        handle_response_messages(messages, state)
 
       {:error, error} ->
         Logging.client_event("decode_failed", %{error: error}, level: :warning)
@@ -1318,6 +1389,24 @@ defmodule Anubis.Client do
       Logging.client_event("response_handling_failed", %{error: err}, level: :error)
 
       {:noreply, state}
+  end
+
+  # Most response handlers return the updated state; the era-detection ones may
+  # also stop the client (a fallback whose initialize send failed), so the
+  # reduce is stop-aware.
+  defp handle_response_messages(messages, state) do
+    messages
+    |> Enum.reduce_while(state, fn message, acc ->
+      case handle_message(message, acc) do
+        {:noreply, state} -> {:cont, state}
+        {:stop, reason, state} -> {:halt, {:stopped, reason, state}}
+        state -> {:cont, state}
+      end
+    end)
+    |> case do
+      {:stopped, reason, state} -> {:stop, reason, state}
+      state -> {:noreply, state}
+    end
   end
 
   defp parse_response(data, %{transport_parse_state: nil} = state) do
@@ -1402,6 +1491,11 @@ defmodule Anubis.Client do
       {nil, state} ->
         {:noreply, state}
 
+      {%{method: "server/discover"}, updated_state} ->
+        # a probe that never completed is an initialize fallback; the popped
+        # request already got its reply to the fake `from`, as initialize does
+        fallback_to_initialize(updated_state)
+
       {request, updated_state} ->
         elapsed_ms = Request.elapsed_time(request)
 
@@ -1416,6 +1510,14 @@ defmodule Anubis.Client do
 
         {:noreply, updated_state}
     end
+  end
+
+  # A reply to a handshake request's fake `from` (`{self(), make_ref()}`): the
+  # initialize and probe flows own their outcomes through ready waiters and
+  # fallbacks, so nobody awaits the reply and it is dropped here.
+  @impl true
+  def handle_info({ref, _reply}, state) when is_reference(ref) do
+    {:noreply, state}
   end
 
   @impl true
@@ -1468,6 +1570,139 @@ defmodule Anubis.Client do
     state.transport.layer.shutdown(state.transport.name)
   end
 
+  # Era detection helpers
+
+  # The probe runs as a tracked request like `initialize`, with a fake `from`:
+  # its outcome is owned by the detection flow, not by a caller.
+  defp send_discover_probe(state, version) do
+    meta = Stateless.request_meta(version, state.capabilities, state.client_info)
+    # the probe carries no progress token
+    params = Stateless.build_params(meta, %{}, nil)
+
+    operation = Operation.new(%{method: "server/discover", params: params, timeout: state.timeout})
+
+    {request_id, updated_state} = State.add_request_from_operation(state, operation, {self(), make_ref()})
+
+    with {:ok, request_data} <- encode_request(updated_state, "server/discover", params, request_id),
+         :ok <- send_to_transport(updated_state.transport, request_data, timeout: operation.timeout) do
+      {:noreply, State.update_era(updated_state, :connecting)}
+    else
+      {:error, %Error{data: %{original_reason: {:authorization_required, _challenge}}} = error} ->
+        {_request, state} = State.remove_request(updated_state, request_id)
+        Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
+        {:noreply, %{state | initialization_error: error, ready_waiters: []}}
+
+      {:error, %Error{data: %{original_reason: reason}}} ->
+        handle_probe_send_failure(state, request_id, reason)
+    end
+  end
+
+  # Every probe send failure is an initialize fallback (D6), except when the
+  # server did answer with a JSON-RPC error body over HTTP: the anubis
+  # stateless binding answers -32022 with HTTP 400 and -32601 with 404, so the
+  # body is classified exactly like a 2xx error response.
+  defp handle_probe_send_failure(state, request_id, {:http_error, _status, body}) do
+    {_request, state} = State.remove_request(state, request_id)
+
+    case JSON.decode(body) do
+      {:ok, %{"error" => json_error}} -> process_discover_error(json_error, state)
+      _other -> fallback_to_initialize(state)
+    end
+  end
+
+  defp handle_probe_send_failure(state, request_id, _reason) do
+    {_request, state} = State.remove_request(state, request_id)
+    fallback_to_initialize(state)
+  end
+
+  defp process_discover_result(result, state) do
+    case Stateless.classify_probe_result(result) do
+      {:stateless, supported, capabilities, server_info} ->
+        case Stateless.negotiate(Stateless.probe_version(state.protocol_version), supported) do
+          {:ok, version} ->
+            state =
+              state
+              |> State.update_era(:stateless)
+              |> State.update_protocol_version(version)
+              |> State.update_server_info(capabilities, server_info)
+
+            Logging.client_event("era_detected", %{era: :stateless, protocol_version: version})
+
+            Enum.each(state.ready_waiters, &GenServer.reply(&1, :ok))
+            %{state | initialization_error: nil, ready_waiters: []}
+
+          :error ->
+            # the server answered discover but lists no version we know: uniform fallback
+            fallback_to_initialize(state)
+        end
+
+      :fallback ->
+        fallback_to_initialize(state)
+    end
+  end
+
+  # A server can answer -32022 while advertising a version it then keeps
+  # rejecting; without a bound that would re-probe forever. One re-probe is
+  # enough to honour the advertised list, then it falls back to initialize.
+  defp process_discover_error(json_error, %{discover_probe_retries: retries} = state) do
+    case Stateless.classify_probe_error(json_error) do
+      {:retry, supported} when retries < 1 ->
+        case Stateless.negotiate(Stateless.probe_version(state.protocol_version), supported) do
+          {:ok, version} -> send_discover_probe(%{state | discover_probe_retries: retries + 1}, version)
+          :error -> fallback_to_initialize(state)
+        end
+
+      _ ->
+        fallback_to_initialize(state)
+    end
+  end
+
+  # Runs the legacy `initialize` handshake, whatever brought us here: a forced
+  # `:initialize` cast, a probe the server did not answer statelessly, or a
+  # probe that never completed. The proposal is the configured version when it
+  # is legacy; a stateless version is not a legal initialize proposal, so the
+  # newest legacy version is proposed instead, with a warning.
+  defp fallback_to_initialize(state) do
+    proposal = Stateless.legacy_proposal(state.protocol_version)
+
+    if proposal != state.protocol_version do
+      Logging.client_event("legacy_proposal_substituted", %{configured: state.protocol_version, proposal: proposal},
+        level: :warning
+      )
+    end
+
+    Logging.client_event("handshake", "Making initial client <> server handshake")
+
+    params = %{
+      "protocolVersion" => proposal,
+      "capabilities" => state.capabilities,
+      "clientInfo" => state.client_info
+    }
+
+    operation =
+      Operation.new(%{
+        method: "initialize",
+        params: params,
+        timeout: state.timeout
+      })
+
+    {request_id, updated_state} =
+      State.add_request_from_operation(state, operation, {self(), make_ref()})
+
+    with {:ok, request_data} <- encode_request(state, "initialize", params, request_id),
+         :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
+      {:noreply, State.update_era(updated_state, :connecting)}
+    else
+      {:error, %Error{data: %{original_reason: {:authorization_required, _challenge}}} = error} ->
+        {_request, state} = State.remove_request(updated_state, request_id)
+        Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
+        {:noreply, %{state | initialization_error: error, ready_waiters: []}}
+
+      err ->
+        {:stop, err, state}
+    end
+  end
+
   # Message handling
 
   defp handle_message(message, state) do
@@ -1502,6 +1737,9 @@ defmodule Anubis.Client do
         log_unknown_error_response(id, json_error)
         state
 
+      {%{method: "server/discover"}, updated_state} ->
+        process_discover_error(json_error, updated_state)
+
       {%{method: "initialize"} = request, updated_state} ->
         process_initialization_error(request, json_error, updated_state)
 
@@ -1518,11 +1756,52 @@ defmodule Anubis.Client do
     })
   end
 
-  defp process_error_response(request, json_error, id, state) do
+  # An UnsupportedProtocolVersion error on a stateless request is an admission
+  # rejection: the server never executed the request, so re-sending it with a
+  # version the error lists cannot double a side effect. The cached version is
+  # updated and the original request is re-sent once, on the same id and timer.
+  defp process_error_response(
+         %{negotiation_retries: 0} = request,
+         %{"code" => -32_022} = json_error,
+         id,
+         %{era: :stateless} = state
+       ) do
+    supported = List.wrap(get_in(json_error, ["data", "supported"]))
+
+    case Stateless.negotiate(nil, supported) do
+      {:ok, version} when version != state.protocol_version ->
+        state = State.update_protocol_version(state, version)
+
+        params = put_in(request.params, ["_meta", @protocol_version_key], version)
+        request = %{request | params: params, negotiation_retries: 1}
+
+        updated = %{state | pending_requests: Map.put(state.pending_requests, id, request)}
+
+        with {:ok, data} <- encode_request(updated, request.method, params, id),
+             :ok <- send_to_transport(updated.transport, data, timeout: state.timeout) do
+          {:noreply, updated}
+        else
+          err ->
+            GenServer.reply(request.from, err)
+            {:noreply, state}
+        end
+
+      _other ->
+        # the same version rejected again, an empty intersection, or malformed
+        # data: surface the error, no retry
+        surface_request_error(request, json_error, state)
+    end
+  end
+
+  defp process_error_response(request, json_error, _id, state) do
+    surface_request_error(request, json_error, state)
+  end
+
+  defp surface_request_error(request, json_error, state) do
     error = Error.from_json_rpc(json_error)
     elapsed_ms = Request.elapsed_time(request)
 
-    log_error_response(request, id, elapsed_ms, json_error)
+    log_error_response(request, request.id, elapsed_ms, json_error)
     GenServer.reply(request.from, {:error, error})
 
     state
@@ -1536,7 +1815,11 @@ defmodule Anubis.Client do
 
     Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
 
-    %{state | initialization_error: error, ready_waiters: []}
+    # a failed initialize leaves detection open again: a later `:connect` cast
+    # (transport restart, user retry) re-runs it
+    state
+    |> State.update_era(:detecting)
+    |> then(&%{&1 | initialization_error: error, ready_waiters: []})
   end
 
   defp log_error_response(request, id, elapsed_ms, error) do
@@ -1563,8 +1846,11 @@ defmodule Anubis.Client do
         Logging.client_event("unknown_response", %{id: id})
         state
 
-      {%{method: "initialize"}, state} ->
-        process_initialization_response(result, state)
+      {%{method: "server/discover"}, updated_state} ->
+        process_discover_result(result, updated_state)
+
+      {%{method: "initialize"}, updated_state} ->
+        process_initialization_response(result, updated_state)
 
       {request, state} ->
         process_successful_response(request, result, id, state)
@@ -1576,6 +1862,7 @@ defmodule Anubis.Client do
       {:ok, protocol_version, server_info, capabilities} ->
         state =
           state
+          |> State.update_era(:legacy)
           |> State.update_server_info(capabilities, server_info)
           |> State.update_protocol_version(protocol_version)
 
@@ -1594,7 +1881,10 @@ defmodule Anubis.Client do
         Logging.client_event("initialization_failed", %{error: error}, level: :warning)
 
         Enum.each(state.ready_waiters, &GenServer.reply(&1, {:error, error}))
-        %{state | initialization_error: error, ready_waiters: []}
+
+        state
+        |> State.update_era(:detecting)
+        |> then(&%{&1 | initialization_error: error, ready_waiters: []})
     end
   end
 
@@ -1701,8 +1991,32 @@ defmodule Anubis.Client do
   defp encode_request(state, method, params, request_id) do
     request = %{"method" => method, "params" => params}
     Logging.message("outgoing", "request", request_id, request)
-    Message.encode_request(request, request_id, Message.request_schema(State.protocol_module(state)))
+    schema = Message.request_schema(protocol_module_for(state, params))
+    Message.encode_request(request, request_id, schema)
   end
+
+  # The stateless era carries the era _meta (negotiated version, capabilities
+  # and, when complete, the client identity) on every request, with the
+  # progress token sharing that _meta. The params are stored built on the
+  # request so a mid-operation version renegotiation can rewrite _meta without
+  # rebuilding progress options. The legacy era sends today's params.
+  defp build_operation_params(%{era: :stateless} = state, %Operation{} = operation) do
+    meta = Stateless.request_meta(state.protocol_version, state.capabilities, state.client_info)
+    Stateless.build_params(meta, operation.params, operation.progress_opts)
+  end
+
+  defp build_operation_params(_state, %Operation{} = operation) do
+    State.add_progress_token_to_params(operation.params, operation.progress_opts)
+  end
+
+  defp protocol_module_for(state, %{"_meta" => %{@protocol_version_key => version}}) when is_binary(version) do
+    case Protocol.get_module(version) do
+      {:ok, module} -> module
+      :error -> State.protocol_module(state)
+    end
+  end
+
+  defp protocol_module_for(state, _params), do: State.protocol_module(state)
 
   defp encode_notification(state, method, params) do
     notification = %{"method" => method, "params" => params}

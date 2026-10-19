@@ -2,6 +2,7 @@ defmodule Anubis.Transport.StreamableHTTPTest do
   use ExUnit.Case, async: false
 
   alias Anubis.MCP.Message
+  alias Anubis.Protocol.V2026_07_28
   alias Anubis.Transport.StreamableHTTP
 
   @moduletag capture_log: true
@@ -891,6 +892,162 @@ defmodule Anubis.Transport.StreamableHTTPTest do
 
       refute Process.alive?(transport)
 
+      StubClient.clear_messages()
+    end
+  end
+
+  describe "stateless request path" do
+    test "supported_protocol_versions/0 includes the stateless era" do
+      assert "2026-07-28" in StreamableHTTP.supported_protocol_versions()
+    end
+
+    test "casts :connect to the client after start", %{bypass: bypass} do
+      {:ok, stub_client} = StubClient.start_link()
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: "http://localhost:#{bypass.port}",
+          mcp_path: "/mcp",
+          transport_opts: @test_http_opts
+        )
+
+      assert StubClient.connect_count() >= 1
+
+      shutdown_transport(transport)
+      StubClient.clear_messages()
+    end
+
+    test "mirrors the stateless _meta of the body into headers, with no session id", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+
+      encoded_name = "=?base64?" <> Base.encode64("Héllo") <> "?="
+
+      Bypass.expect(bypass, "POST", "/mcp", fn conn ->
+        {:ok, _body, conn} = Plug.Conn.read_body(conn)
+        headers = Map.new(conn.req_headers)
+
+        assert headers["mcp-protocol-version"] == "2026-07-28"
+        assert headers["mcp-method"] == "tools/call"
+        assert headers["mcp-name"] == encoded_name
+        refute Map.has_key?(headers, "mcp-session-id")
+
+        conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          transport_opts: @test_http_opts
+        )
+
+      stateless_schema = Message.request_schema(V2026_07_28)
+
+      meta = %{
+        "io.modelcontextprotocol/protocolVersion" => "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities" => %{}
+      }
+
+      {:ok, message} =
+        Message.encode_request(
+          %{"method" => "tools/call", "params" => %{"name" => "Héllo", "_meta" => meta}},
+          "1",
+          stateless_schema
+        )
+
+      assert :ok = StreamableHTTP.send_message(transport, message, timeout: 5000)
+
+      shutdown_transport(transport)
+      StubClient.clear_messages()
+    end
+
+    test "mirrors Mcp-Name from params.uri on resources/read", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+
+      Bypass.expect(bypass, "POST", "/mcp", fn conn ->
+        {:ok, _body, conn} = Plug.Conn.read_body(conn)
+        headers = Map.new(conn.req_headers)
+
+        assert headers["mcp-method"] == "resources/read"
+        assert headers["mcp-name"] == "config://test"
+
+        conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+        Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{}}|)
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          transport_opts: @test_http_opts
+        )
+
+      meta = %{
+        "io.modelcontextprotocol/protocolVersion" => "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities" => %{}
+      }
+
+      {:ok, message} =
+        Message.encode_request(
+          %{
+            "method" => "resources/read",
+            "params" => %{"uri" => "config://test", "_meta" => meta}
+          },
+          "1",
+          Message.request_schema(V2026_07_28)
+        )
+
+      assert :ok = StreamableHTTP.send_message(transport, message, timeout: 5000)
+
+      shutdown_transport(transport)
+      StubClient.clear_messages()
+    end
+
+    test "a legacy request sends no stateless headers and keeps the learned protocol version", %{bypass: bypass} do
+      server_url = "http://localhost:#{bypass.port}"
+      {:ok, stub_client} = StubClient.start_link()
+
+      Bypass.expect(bypass, "POST", "/mcp", fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        headers = Map.new(conn.req_headers)
+
+        if String.contains?(body, "initialize") do
+          refute Map.has_key?(headers, "mcp-protocol-version")
+          refute Map.has_key?(headers, "mcp-method")
+
+          conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+          Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"1","result":{"protocolVersion":"2025-06-18"}}|)
+        else
+          assert headers["mcp-protocol-version"] == "2025-06-18"
+          refute Map.has_key?(headers, "mcp-method")
+          refute Map.has_key?(headers, "mcp-name")
+
+          conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+          Plug.Conn.resp(conn, 200, ~s|{"jsonrpc":"2.0","id":"2","result":{}}|)
+        end
+      end)
+
+      {:ok, transport} =
+        StreamableHTTP.start_link(
+          client: stub_client,
+          base_url: server_url,
+          mcp_path: "/mcp",
+          transport_opts: @test_http_opts
+        )
+
+      legacy_initialize = ~s|{"jsonrpc":"2.0","id":"1","method":"initialize","params":{}}\n|
+      assert :ok = StreamableHTTP.send_message(transport, legacy_initialize, timeout: 5000)
+
+      legacy_ping = ~s|{"jsonrpc":"2.0","id":"2","method":"ping","params":{}}\n|
+      assert :ok = StreamableHTTP.send_message(transport, legacy_ping, timeout: 5000)
+
+      shutdown_transport(transport)
       StubClient.clear_messages()
     end
   end

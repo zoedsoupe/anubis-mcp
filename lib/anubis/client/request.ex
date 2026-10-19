@@ -7,10 +7,11 @@ defmodule Anubis.Client.Request do
           from: GenServer.from(),
           timer_ref: reference(),
           start_time: integer(),
-          params: map()
+          params: map(),
+          negotiation_retries: non_neg_integer()
         }
 
-  defstruct [:id, :method, :from, :timer_ref, :start_time, :params]
+  defstruct [:id, :method, :from, :timer_ref, :start_time, :params, negotiation_retries: 0]
 
   @doc """
   Creates a new request struct.

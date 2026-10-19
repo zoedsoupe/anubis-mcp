@@ -33,6 +33,41 @@ The handshake runs asynchronously after startup. If you need to block until the 
 :ok = Anubis.Client.await_ready(MyApp.WeatherClient)
 ```
 
+## Connection eras
+
+The MCP specification now has two eras. Legacy versions (up to 2025-11-25) open a connection with the `initialize` handshake and hold a session. The 2026-07-28 revision is stateless: there is no handshake and no session, and every request carries its protocol version, capabilities and client identity in `params._meta`.
+
+Anubis clients detect the era themselves. On start the client probes the server with `server/discover`:
+
+- a server that answers in the stateless era is used statelessly from then on: no `initialize` is sent, no session exists, and every request carries the era `_meta` with your configured capabilities and client info;
+- every other probe outcome - a legacy-only server answering `-32601`, a plain HTTP 400/404 body, a timeout - falls back to today's `initialize` handshake, byte for byte.
+
+`await_ready/2` returns `:ok` in both eras once detection or the handshake completes. Ask which era the client settled on with `get_era/2`:
+
+```elixir
+Anubis.Client.get_era(MyApp.WeatherClient)
+#=> :stateless
+```
+
+The values are `:detecting` (nothing sent yet), `:connecting` (a probe or an `initialize` is in flight), `:legacy`, and `:stateless`. One client process is one connection to one server, so the era is cached in the client process itself.
+
+A few things change when the era is `:stateless`:
+
+- `ping/2`, `set_log_level/2`, `subscribe_resource/3` and `unsubscribe_resource/3` are refused with a `method_not_found` error naming the era: the 2026-07-28 dialect removed them. `register_log_callback/3` keeps working (`notifications/message` still exists), and roots keep working on local state.
+- The server's identity and capabilities come from the discover result, so `get_server_info/2` and `get_server_capabilities/2` behave as in the legacy era.
+- A cached stateless version can be rejected later by a server config change or mixed pods behind a load balancer. The client re-negotiates from the error's version list and re-sends the request once on the same id; the request was never executed, so this is safe. A second rejection surfaces the error.
+
+The `:protocol_version` option keeps its shape and changes its meaning by era:
+
+- a legacy version (the default) stays the `initialize` proposal, as before;
+- a registered stateless version (now accepted at start) becomes the preferred probe version, and the fallback handshake proposes the newest legacy version instead, with a warning.
+
+Most applications can ignore all of this: detection is automatic and the fallback keeps legacy servers working unchanged.
+
+> #### Casting by hand {: .info}
+>
+> If you start a transport process yourself, without `Anubis.Client.Supervisor`, cast `:connect` to the client to trigger detection. A raw `:initialize` cast still works - it forces the legacy handshake - but the client then always runs in the legacy era.
+
 ## Discovering capabilities
 
 Once connected you can ask the server what it offers:
