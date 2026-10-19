@@ -506,12 +506,7 @@ defmodule Anubis.Server.ResponseTest do
         |> Response.completion_value("option2")
         |> Response.to_protocol()
 
-      assert result == %{
-               "values" => [
-                 %{"value" => "option1"},
-                 %{"value" => "option2"}
-               ]
-             }
+      assert result == %{"values" => ["option1", "option2"]}
     end
 
     test "builds completion with descriptions" do
@@ -521,12 +516,8 @@ defmodule Anubis.Server.ResponseTest do
         |> Response.completion_value("tool:search", description: "Search tool", label: "Search")
         |> Response.to_protocol()
 
-      assert result == %{
-               "values" => [
-                 %{"value" => "tool:calc", "description" => "Calculator tool"},
-                 %{"value" => "tool:search", "description" => "Search tool", "label" => "Search"}
-               ]
-             }
+      # The spec types values as string[], so description and label stay off the wire.
+      assert result == %{"values" => ["tool:calc", "tool:search"]}
     end
 
     test "builds completion with pagination" do
@@ -537,11 +528,7 @@ defmodule Anubis.Server.ResponseTest do
         |> Response.to_protocol()
 
       assert result == %{
-               "values" => [
-                 %{"value" => "a"},
-                 %{"value" => "b"},
-                 %{"value" => "c"}
-               ],
+               "values" => ["a", "b", "c"],
                "total" => 100,
                "hasMore" => true
              }
@@ -557,13 +544,7 @@ defmodule Anubis.Server.ResponseTest do
         ])
         |> Response.to_protocol()
 
-      assert result == %{
-               "values" => [
-                 %{"value" => "simple"},
-                 %{"value" => "complex", "description" => "Complex option"},
-                 %{"value" => "direct", "description" => "Direct map"}
-               ]
-             }
+      assert result == %{"values" => ["simple", "complex", "direct"]}
     end
   end
 end

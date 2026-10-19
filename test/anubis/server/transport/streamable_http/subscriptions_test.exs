@@ -18,6 +18,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
 
   @version "2026-07-28"
   @subscription_id_key "io.modelcontextprotocol/subscriptionId"
+  @server_info_key "io.modelcontextprotocol/serverInfo"
   @watched "notes:///1"
   @unwatched "notes:///2"
 
@@ -139,6 +140,7 @@ defmodule Anubis.Server.Transport.StreamableHTTP.SubscriptionsTest do
       {stream, _session} = open(opts, %{"toolsListChanged" => true})
 
       assert %{"id" => 7, "result" => %{"resultType" => "complete"} = result} = List.last(close(stream))
+      assert result["_meta"][@server_info_key] == %{"name" => "listening-server", "version" => "1.0.0"}
       assert Peri.validate(V2026_07_28.request_result_schema("subscriptions/listen"), result) == {:ok, result}
     end
 

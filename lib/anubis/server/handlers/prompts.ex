@@ -86,6 +86,8 @@ defmodule Anubis.Server.Handlers.Prompts do
     end
   end
 
+  # A prompt callback that declines to produce messages still owes the client a
+  # GetPromptResult, not a tool result.
   defp forward_to(server, %Prompt{handler: nil} = prompt, params, frame) do
     case server.handle_prompt_get(prompt.name, params, frame) do
       {:reply, %Response{} = response, frame} ->
@@ -95,7 +97,7 @@ defmodule Anubis.Server.Handlers.Prompts do
         InputRequests.respond(input, frame, {server, "prompts/get", prompt.name})
 
       {:noreply, frame} ->
-        {:reply, %{"content" => [], "isError" => false}, frame}
+        {:reply, %{"messages" => []}, frame}
 
       {:error, %Error{} = error, frame} ->
         {:error, error, frame}
@@ -111,7 +113,7 @@ defmodule Anubis.Server.Handlers.Prompts do
         InputRequests.respond(input, frame, {server, "prompts/get", prompt.name})
 
       {:noreply, frame} ->
-        {:reply, %{"content" => [], "isError" => false}, frame}
+        {:reply, %{"messages" => []}, frame}
 
       {:error, %Error{} = error, frame} ->
         {:error, error, frame}

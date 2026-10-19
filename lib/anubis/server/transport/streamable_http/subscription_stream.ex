@@ -27,6 +27,7 @@ if Code.ensure_loaded?(Plug) do
 
     alias Anubis.MCP.Message
     alias Anubis.Protocol.Schema
+    alias Anubis.Server.Stateless
     alias Anubis.SSE.Streaming
 
     @subscription_id_key Schema.subscription_id_key()
@@ -42,16 +43,19 @@ if Code.ensure_loaded?(Plug) do
 
     `session` is the process whose notifications the transport routes to the
     calling process; its exit ends the stream gracefully. `honored` is the
-    filter the session agreed to, and `protocol_module` the dialect the
-    notifications are validated against.
+    filter the session agreed to, `server_info` the identity the session
+    advertised on the listen result itself, and `protocol_module` the dialect
+    the notifications are validated against.
     """
-    @spec serve(Plug.Conn.t(), pid(), String.t() | integer(), map(), module()) :: Plug.Conn.t()
-    def serve(conn, session, subscription_id, honored, protocol_module) do
+    @spec serve(Plug.Conn.t(), pid(), String.t() | integer(), map(), map() | nil, module()) ::
+            Plug.Conn.t()
+    def serve(conn, session, subscription_id, honored, server_info, protocol_module) do
       state = %{
         conn: Streaming.prepare_connection(conn),
         session_ref: Process.monitor(session),
         id: subscription_id,
         honored: honored,
+        server_info: server_info,
         uris: MapSet.new(Map.get(honored, "resourceSubscriptions", [])),
         schema: Message.notification_schema(protocol_module)
       }
@@ -134,14 +138,22 @@ if Code.ensure_loaded?(Plug) do
       {:ok, state}
     end
 
-    defp close(state) do
-      result = %{"resultType" => "complete", "_meta" => %{@subscription_id_key => state.id}}
+    # The completion result is the final answer of the listen request, so it
+    # advertises the same server identity every other result's _meta carries.
+    defp close(%{server_info: server_info} = state) do
+      meta = maybe_put_server_info(%{@subscription_id_key => state.id}, server_info)
+
+      result = %{"resultType" => "complete", "_meta" => meta}
 
       case Message.encode_response(%{"result" => result}, state.id) do
         {:ok, encoded} -> elem(write(state, encoded), 1).conn
         {:error, _reason} -> state.conn
       end
     end
+
+    defp maybe_put_server_info(meta, nil), do: meta
+
+    defp maybe_put_server_info(meta, server_info), do: Map.put(meta, Stateless.server_info_key(), server_info)
 
     defp write(state, encoded) do
       case Streaming.send_event(state.conn, String.trim_trailing(encoded), nil) do

@@ -388,9 +388,11 @@ if Code.ensure_loaded?(Plug) do
 
     defp open_stream(conn, session, message, version, response) do
       case JSON.decode(response) do
-        {:ok, %{"result" => %{"notifications" => honored}}} ->
+        {:ok, %{"result" => %{"notifications" => honored} = result}} ->
           {:ok, protocol_module} = ProtocolRegistry.get(version)
-          SubscriptionStream.serve(conn, session, message["id"], honored, protocol_module)
+          server_info = get_in(result, ["_meta", Stateless.server_info_key()])
+
+          SubscriptionStream.serve(conn, session, message["id"], honored, server_info, protocol_module)
 
         _error ->
           json_reply(conn, {:ok, response}, message)

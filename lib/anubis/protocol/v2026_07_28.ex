@@ -156,6 +156,17 @@ defmodule Anubis.Protocol.V2026_07_28 do
                                "input_required" => @input_required_result
                              }}
 
+  @complete_completion_result_schema Map.put(
+                                       @result,
+                                       "completion",
+                                       {:required,
+                                        %{
+                                          "values" => {:required, {:list, :string}},
+                                          "total" => :integer,
+                                          "hasMore" => :boolean
+                                        }}
+                                     )
+
   @impl true
   def era, do: @era
 
@@ -195,8 +206,8 @@ defmodule Anubis.Protocol.V2026_07_28 do
   def request_result_schema("resources/read"), do: @read_resource_result_schema
   def request_result_schema("tools/call"), do: @call_tool_result_schema
   def request_result_schema("prompts/get"), do: @get_prompt_result_schema
+  def request_result_schema("completion/complete"), do: @complete_completion_result_schema
 
-  # completion/complete stays unmodeled until its values go out as strings, as the spec requires.
   def request_result_schema(_method), do: nil
 
   @impl true
