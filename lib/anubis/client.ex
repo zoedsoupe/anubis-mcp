@@ -104,6 +104,8 @@ defmodule Anubis.Client do
   @default_protocol_version Protocol.latest_version()
   @default_operation_timeout to_timeout(second: 30)
 
+  @protocol_version_key Anubis.Protocol.Schema.protocol_version_key()
+
   @type t :: GenServer.server()
 
   @typedoc """
@@ -409,6 +411,10 @@ defmodule Anubis.Client do
   `:pong` rather than `{:ok, %Anubis.MCP.Response{}}`: the MCP `ping`
   result is empty, so there is no payload to carry.
 
+  The stateless era (2026-07-28) removed `ping`; against a server detected
+  as stateless this returns `{:error, %Anubis.MCP.Error{}}` with reason
+  `:method_not_found` and `era: :stateless` in the error data.
+
   ## Options
 
     * `:timeout` - Request timeout in milliseconds (default: 30s)
@@ -476,6 +482,10 @@ defmodule Anubis.Client do
   notifications for this URI. The server must declare the `resources.subscribe`
   capability for this method to succeed.
 
+  The stateless era (2026-07-28) removed `resources/subscribe`; against a
+  server detected as stateless this returns `{:error, %Anubis.MCP.Error{}}`
+  with reason `:method_not_found` and `era: :stateless` in the error data.
+
   ## Options
 
     * `:timeout` - Request timeout in milliseconds
@@ -488,6 +498,10 @@ defmodule Anubis.Client do
 
   @doc """
   Unsubscribes from updates for a previously-subscribed resource URI.
+
+  The stateless era (2026-07-28) removed `resources/unsubscribe`; against a
+  server detected as stateless this returns `{:error, %Anubis.MCP.Error{}}`
+  with reason `:method_not_found` and `era: :stateless` in the error data.
 
   ## Options
 
@@ -654,6 +668,10 @@ defmodule Anubis.Client do
     * `level` - The minimum log level (debug, info, notice, warning, error, critical, alert, emergency)
 
   Returns {:ok, result} if successful, {:error, reason} otherwise.
+
+  The stateless era (2026-07-28) removed `logging/setLevel`; against a server
+  detected as stateless this returns `{:error, %Anubis.MCP.Error{}}` with
+  reason `:method_not_found` and `era: :stateless` in the error data.
   """
   @spec set_log_level(t, String.t()) :: {:ok, Response.t()} | {:error, Error.t()}
   def set_log_level(client, level) when level in ~w(debug info notice warning error critical alert emergency) do
@@ -1732,11 +1750,52 @@ defmodule Anubis.Client do
     })
   end
 
-  defp process_error_response(request, json_error, id, state) do
+  # An UnsupportedProtocolVersion error on a stateless request is an admission
+  # rejection: the server never executed the request, so re-sending it with a
+  # version the error lists cannot double a side effect. The cached version is
+  # updated and the original request is re-sent once, on the same id and timer.
+  defp process_error_response(
+         %{negotiation_retries: 0} = request,
+         %{"code" => -32_022} = json_error,
+         id,
+         %{era: :stateless} = state
+       ) do
+    supported = List.wrap(get_in(json_error, ["data", "supported"]))
+
+    case Stateless.negotiate(nil, supported) do
+      {:ok, version} when version != state.protocol_version ->
+        state = State.update_protocol_version(state, version)
+
+        params = put_in(request.params, ["_meta", @protocol_version_key], version)
+        request = %{request | params: params, negotiation_retries: 1}
+
+        updated = %{state | pending_requests: Map.put(state.pending_requests, id, request)}
+
+        with {:ok, data} <- encode_request(updated, request.method, params, id),
+             :ok <- send_to_transport(updated.transport, data, timeout: state.timeout) do
+          {:noreply, updated}
+        else
+          err ->
+            GenServer.reply(request.from, err)
+            {:noreply, state}
+        end
+
+      _other ->
+        # the same version rejected again, an empty intersection, or malformed
+        # data: surface the error, no retry
+        surface_request_error(request, json_error, state)
+    end
+  end
+
+  defp process_error_response(request, json_error, _id, state) do
+    surface_request_error(request, json_error, state)
+  end
+
+  defp surface_request_error(request, json_error, state) do
     error = Error.from_json_rpc(json_error)
     elapsed_ms = Request.elapsed_time(request)
 
-    log_error_response(request, id, elapsed_ms, json_error)
+    log_error_response(request, request.id, elapsed_ms, json_error)
     GenServer.reply(request.from, {:error, error})
 
     state
@@ -1929,13 +1988,6 @@ defmodule Anubis.Client do
     schema = Message.request_schema(protocol_module_for(state, params))
     Message.encode_request(request, request_id, schema)
   end
-
-  # A request carrying the stateless `_meta` version encodes against that
-  # version's module, mirroring `Anubis.MCP.Message`'s inbound `schema_module/1`.
-  # Without this, the `server/discover` probe - sent while the configured
-  # version is still the legacy default - would encode against a schema that
-  # has no such method.
-  @protocol_version_key Anubis.Protocol.Schema.protocol_version_key()
 
   # The stateless era carries the era _meta (negotiated version, capabilities
   # and, when complete, the client identity) on every request, with the

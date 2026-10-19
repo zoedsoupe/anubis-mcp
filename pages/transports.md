@@ -218,6 +218,12 @@ transport: {:streamable_http,
   headers: %{"authorization" => "Bearer #{token}"}}
 ```
 
+The client transport takes part in era detection: it casts `:connect` to the client on start, and the client probes `server/discover` before trying the handshake (see [Building a Client](building-a-client.md#connection-eras)).
+
+In the stateless era the transport derives the era headers from each outbound request body: the headers must agree with the body by specification, so the body is the source of truth. A request whose `_meta` declares 2026-07-28 is sent with `MCP-Protocol-Version` set to that version, plus `Mcp-Method` (always) and `Mcp-Name` for `tools/call`, `prompts/get` and `resources/read`, encoded so any header-safe value passes through unchanged and everything else travels as base64. A legacy request gets none of these headers and keeps the learned `MCP-Protocol-Version` behavior.
+
+No session exists in this era: no `mcp-session-id` is ever sent or learned, and there is nothing to expire. `enable_sse: true` opens its GET stream only in the legacy era - a stateless server has no session to attach the stream to, so the option does nothing against one. Server-initiated traffic of this era flows through `subscriptions/listen`, which the client does not consume yet.
+
 ## Removed transports
 
 The WebSocket client transport was removed in Anubis 2.1. It was never part of the MCP spec; use Streamable HTTP instead.

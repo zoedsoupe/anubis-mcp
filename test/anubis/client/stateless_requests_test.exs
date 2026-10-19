@@ -211,4 +211,133 @@ defmodule Anubis.Client.StatelessRequestsTest do
 
     refute_receive {:mcp_send, _}, 200
   end
+
+  describe "mid-operation -32022" do
+    test "re-sends the request once with the negotiated version, on the same id" do
+      client = setup_client(%{})
+      discover_client(client, server_capabilities: @server_capabilities)
+
+      # D5: a cached version can be rejected later by a server config change or
+      # mixed pods. With a single registered stateless version the retry only
+      # diverges when the client's cached version is behind, so the cached
+      # version is rewound to a legacy one to simulate the rejection.
+      state = :sys.get_state(client)
+      :sys.replace_state(client, fn state -> %{state | protocol_version: "2025-06-18"} end)
+
+      test_pid = self()
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:first, JSON.decode!(message)})
+        :ok
+      end)
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:retry, JSON.decode!(message)})
+        :ok
+      end)
+
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
+
+      assert_receive {:first, first}, 500
+      refute Map.has_key?(first["params"]["_meta"] || %{}, @version_key)
+
+      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", first["id"], %{"supported" => ["2026-07-28"]}))
+
+      assert_receive {:retry, retry}, 500
+      assert retry["id"] == first["id"]
+      assert retry["params"]["_meta"][@version_key] == "2026-07-28"
+
+      send_response(client, Builders.tools_list_response(first["id"], []))
+      assert {:ok, _} = Task.await(task)
+
+      assert Anubis.Client.get_era(client) == :stateless
+    end
+
+    test "a second -32022 surfaces the error" do
+      client = setup_client(%{})
+      discover_client(client, server_capabilities: @server_capabilities)
+
+      state = :sys.get_state(client)
+      :sys.replace_state(client, fn state -> %{state | protocol_version: "2025-06-18"} end)
+
+      test_pid = self()
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:first, JSON.decode!(message)})
+        :ok
+      end)
+
+      FakeTransport.expect_send(FakeTransport, fn message ->
+        send(test_pid, {:retry, JSON.decode!(message)})
+        :ok
+      end)
+
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
+
+      assert_receive {:first, first}, 500
+      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", first["id"], %{"supported" => ["2026-07-28"]}))
+
+      assert_receive {:retry, retry}, 500
+      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", retry["id"], %{"supported" => ["2026-07-28"]}))
+
+      assert {:error, error} = Task.await(task)
+      assert error.code == -32_022
+
+      flush_mcp_sends()
+      refute_receive {:mcp_send, _}, 200
+    end
+
+    test "a -32022 listing only the current version surfaces the error with no retry" do
+      client = setup_client(%{})
+      discover_client(client, server_capabilities: @server_capabilities)
+
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
+
+      request_id = get_request_id(client, "tools/list")
+      assert request_id
+
+      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["2026-07-28"]}))
+
+      assert {:error, error} = Task.await(task)
+      assert error.code == -32_022
+
+      flush_mcp_sends()
+      refute_receive {:mcp_send, _}, 200
+    end
+
+    test "a -32022 with no intersection surfaces the error with no retry" do
+      client = setup_client(%{})
+      discover_client(client, server_capabilities: @server_capabilities)
+
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
+
+      request_id = get_request_id(client, "tools/list")
+      assert request_id
+
+      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["9999-01-01"]}))
+
+      assert {:error, _} = Task.await(task)
+
+      flush_mcp_sends()
+      refute_receive {:mcp_send, _}, 200
+    end
+
+    test "a -32022 in the legacy era is not retried" do
+      client = setup_client(%{})
+      initialize_client(client, server_capabilities: @server_capabilities)
+
+      task = Task.async(fn -> Anubis.Client.list_tools(client) end)
+
+      request_id = get_request_id(client, "tools/list")
+      assert request_id
+
+      send_error(client, Builders.build_error(-32_022, "Unsupported protocol version", request_id, %{"supported" => ["2026-07-28"]}))
+
+      assert {:error, error} = Task.await(task)
+      assert error.code == -32_022
+
+      flush_mcp_sends()
+      refute_receive {:mcp_send, _}, 200
+    end
+  end
 end
