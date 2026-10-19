@@ -660,12 +660,29 @@ defmodule Anubis.Protocol.V2026_07_28Test do
       assert {:error, _} = Peri.validate(schema, Map.put(@discover_result, "cacheScope", "shared"))
     end
 
-    test "models the result of every request method except completion/complete" do
-      for method <- V2026_07_28.request_methods(), method != "completion/complete" do
+    test "models the result of every request method" do
+      for method <- V2026_07_28.request_methods() do
         assert V2026_07_28.request_result_schema(method), "#{method} has no result schema"
       end
+    end
 
-      assert is_nil(V2026_07_28.request_result_schema("completion/complete"))
+    test "the completion result carries string values" do
+      schema = V2026_07_28.request_result_schema("completion/complete")
+
+      result = %{"resultType" => "complete", "completion" => %{"values" => ["a", "b"]}}
+
+      assert {:ok, ^result} = Peri.validate(schema, result)
+      assert {:ok, _} = Peri.validate(schema, put_in(result, ["completion", "total"], 10))
+      assert {:ok, _} = Peri.validate(schema, put_in(result, ["completion", "hasMore"], true))
+
+      assert {:error, _} =
+               Peri.validate(schema, %{
+                 "resultType" => "complete",
+                 "completion" => %{"values" => [%{"value" => "a"}]}
+               })
+
+      assert {:error, _} = Peri.validate(schema, Map.delete(result, "completion"))
+      assert {:error, _} = Peri.validate(schema, Map.delete(result, "resultType"))
     end
 
     test "the spec's published examples validate unchanged" do

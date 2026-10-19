@@ -17,19 +17,11 @@ defmodule Anubis.Server.Handlers.Completion do
           result = Response.to_protocol(response)
           {:reply, %{"completion" => result}, frame}
 
-        {:reply, %{"values" => values}, frame} when is_list(values) ->
-          {:reply, %{"completion" => %{"values" => values}}, frame}
-
-        {:reply, %{"values" => values, "total" => total, "hasMore" => has_more}, frame} ->
-          result = %{
-            "completion" => %{
-              "values" => values,
-              "total" => total,
-              "hasMore" => has_more
-            }
-          }
-
-          {:reply, result, frame}
+        # Map patterns match subsets, so total and hasMore are optional here
+        # and travel only when the callback set them.
+        {:reply, %{"values" => values} = result, frame} when is_list(values) ->
+          completion = Map.put(Map.take(result, ["total", "hasMore"]), "values", values)
+          {:reply, %{"completion" => completion}, frame}
 
         {:error, %Error{} = error, frame} ->
           {:error, error, frame}

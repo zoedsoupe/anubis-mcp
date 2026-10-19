@@ -920,4 +920,69 @@ defmodule Anubis.Server.HandlersTest do
       assert Frame.resource_subscribed?(frame, "res://public")
     end
   end
+
+  describe "prompts/get with a no-reply callback" do
+    defmodule NoreplyPromptServer do
+      @moduledoc false
+      def __components__(:prompt), do: [%Prompt{name: "noreply_prompt"}]
+
+      def handle_prompt_get(_name, _params, frame), do: {:noreply, frame}
+    end
+
+    defmodule NoreplyPromptHandler do
+      @moduledoc false
+      def get_messages(_params, frame), do: {:noreply, frame}
+    end
+
+    defmodule NoreplyComponentPromptServer do
+      @moduledoc false
+      def __components__(:prompt), do: [%Prompt{name: "noreply_prompt", handler: NoreplyPromptHandler}]
+    end
+
+    test "a server callback's no-reply answers with an empty prompt result" do
+      request = %{"method" => "prompts/get", "params" => %{"name" => "noreply_prompt"}}
+
+      assert {:reply, %{"messages" => []}, _frame} = Handlers.handle(request, NoreplyPromptServer, Frame.new())
+    end
+
+    test "a component handler's no-reply answers with an empty prompt result" do
+      request = %{"method" => "prompts/get", "params" => %{"name" => "noreply_prompt"}}
+
+      assert {:reply, %{"messages" => []}, _frame} =
+               Handlers.handle(request, NoreplyComponentPromptServer, Frame.new())
+    end
+  end
+
+  describe "completion/complete" do
+    defmodule CompletionServer do
+      @moduledoc false
+      def handle_completion(_ref, _argument, frame), do: {:reply, %{"values" => ["a", "b"]}, frame}
+    end
+
+    defmodule PaginatedCompletionServer do
+      @moduledoc false
+
+      def handle_completion(_ref, _argument, frame) do
+        {:reply, %{"values" => ["a", "b"], "total" => 100, "hasMore" => true}, frame}
+      end
+    end
+
+    defp complete_request do
+      %{"method" => "completion/complete", "params" => %{"ref" => %{"type" => "ref/prompt", "name" => "p"}}}
+    end
+
+    test "keeps total and hasMore the callback set" do
+      assert {:reply, %{"completion" => completion}, _frame} =
+               Handlers.handle(complete_request(), PaginatedCompletionServer, Frame.new())
+
+      assert completion == %{"values" => ["a", "b"], "total" => 100, "hasMore" => true}
+    end
+
+    test "leaves total and hasMore out when the callback does not set them" do
+      assert {:reply, %{"completion" => completion}, _frame} =
+               Handlers.handle(complete_request(), CompletionServer, Frame.new())
+
+      assert completion == %{"values" => ["a", "b"]}
+    end
+  end
 end

@@ -591,6 +591,10 @@ defmodule Anubis.Server.Response do
       * `:description` - Description of the completion value
       * `:label` - Optional label for the value
 
+  Only `value` is transmitted on the wire: the MCP spec types completion
+  values as `string[]`. `:description` and `:label` are kept on the struct
+  but are not serialized by `to_protocol/1`.
+
   ## Examples
 
       iex> Response.completion() |> Response.completion_value("tool:calculator", description: "Math calculator tool")
@@ -617,6 +621,10 @@ defmodule Anubis.Server.Response do
 
     * `response` - A completion response struct
     * `values` - List of values (strings or maps with value/description/label)
+
+  Only each value's `value` is transmitted on the wire: the MCP spec types
+  completion values as `string[]`. `:description` and `:label` are kept on
+  the struct but are not serialized by `to_protocol/1`.
 
   ## Examples
 
@@ -721,12 +729,17 @@ defmodule Anubis.Server.Response do
   end
 
   def to_protocol(%{type: :completion} = r) do
-    base = %{"values" => r.values}
+    base = %{"values" => Enum.map(r.values, &completion_wire_value/1)}
 
     base
     |> maybe_put("total", r.total)
     |> then(fn map -> if r.hasMore, do: Map.put(map, "hasMore", true), else: map end)
   end
+
+  # The spec types completion values as string[], so only the value itself is
+  # transmitted; a description or label stays on the struct for the server's own use.
+  defp completion_wire_value(%{"value" => value}), do: value
+  defp completion_wire_value(value) when is_binary(value), do: value
 
   def to_protocol(%{type: :resource} = r, uri, mime_type) do
     string_metadata =
