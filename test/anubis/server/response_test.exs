@@ -180,6 +180,22 @@ defmodule Anubis.Server.ResponseTest do
       assert decoded == %{"temperature" => 22.5, "conditions" => "Partly cloudy"}
     end
 
+    test "builds a response with _meta next to structured content" do
+      result =
+        Response.tool()
+        |> Response.structured(%{temperature: 72})
+        |> Response.meta(%{"source" => "weather-api"})
+        |> Response.meta(%{"timestamp" => "2025-11-10T15:30:00Z"})
+        |> Response.to_protocol()
+
+      assert result["structuredContent"] == %{temperature: 72}
+      assert result["_meta"] == %{"source" => "weather-api", "timestamp" => "2025-11-10T15:30:00Z"}
+    end
+
+    test "omits _meta when none is set" do
+      refute Response.tool() |> Response.text("ok") |> Response.to_protocol() |> Map.has_key?("_meta")
+    end
+
     test "builds content with annotations" do
       result =
         Response.tool()

@@ -5,6 +5,7 @@ defmodule Anubis.Server.StatelessTest do
 
   alias Anubis.Protocol.Registry, as: ProtocolRegistry
   alias Anubis.Protocol.Schema
+  alias Anubis.Protocol.V2025_11_25
   alias Anubis.Protocol.V2026_07_28
   alias Anubis.Server.Component
   alias Anubis.Server.Registry
@@ -75,6 +76,16 @@ defmodule Anubis.Server.StatelessTest do
       protocol_versions: ["2026-07-28"]
   end
 
+  defmodule ExtensionServer do
+    @moduledoc false
+
+    use Anubis.Server,
+      name: "extension-server",
+      version: "1.0.0",
+      capabilities: [:tools, extensions: %{"io.modelcontextprotocol/ui" => %{}}],
+      protocol_versions: ["2026-07-28", "2025-11-25"]
+  end
+
   describe "server/discover" do
     test "advertises the stateless versions, filtered capabilities and identity" do
       session = start_session(DualEraServer)
@@ -120,6 +131,15 @@ defmodule Anubis.Server.StatelessTest do
 
       assert Map.has_key?(capabilities, "tools")
       assert capabilities == V2026_07_28.server_capabilities(DualEraServer.server_capabilities())
+    end
+
+    test "advertises declared extensions only to the dialect that defines them" do
+      session = start_session(ExtensionServer)
+
+      result = request!(session, "server/discover")
+
+      assert result["capabilities"]["extensions"] == %{"io.modelcontextprotocol/ui" => %{}}
+      refute Map.has_key?(V2025_11_25.server_capabilities(ExtensionServer.server_capabilities()), "extensions")
     end
   end
 

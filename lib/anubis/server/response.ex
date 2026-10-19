@@ -34,6 +34,7 @@ defmodule Anubis.Server.Response do
           hasMore: boolean,
           isError: boolean,
           structured_content: map | nil,
+          meta: map | nil,
           metadata: map
         }
 
@@ -54,6 +55,7 @@ defmodule Anubis.Server.Response do
     hasMore: false,
     isError: false,
     structured_content: nil,
+    meta: nil,
     metadata: %{}
   ]
 
@@ -555,6 +557,30 @@ defmodule Anubis.Server.Response do
   end
 
   @doc """
+  Set `_meta` on a tool result or on resource contents.
+
+  Repeated calls merge into the existing `_meta`.
+
+  ## Parameters
+
+    * `response` - A tool or resource response struct
+    * `meta` - A map of metadata
+
+  ## Examples
+
+      iex> Response.tool() |> Response.text("72°F") |> Response.meta(%{"source" => "weather-api"}) |> Response.to_protocol()
+      %{
+        "content" => [%{"type" => "text", "text" => "72°F"}],
+        "isError" => false,
+        "_meta" => %{"source" => "weather-api"}
+      }
+  """
+  @spec meta(t, map) :: t
+  def meta(%{type: type} = r, meta) when type in ~w(tool resource)a and is_map(meta) do
+    %{r | meta: Map.merge(r.meta || %{}, meta)}
+  end
+
+  @doc """
   Add a completion value to a completion response.
 
   ## Parameters
@@ -681,11 +707,9 @@ defmodule Anubis.Server.Response do
   """
   @spec to_protocol(t) :: map
   def to_protocol(%{type: :tool} = r) do
-    base = %{"content" => r.content, "isError" => r.isError}
-
-    if r.structured_content,
-      do: Map.put(base, "structuredContent", r.structured_content),
-      else: base
+    %{"content" => r.content, "isError" => r.isError}
+    |> maybe_put("structuredContent", r.structured_content)
+    |> maybe_put("_meta", r.meta)
   end
 
   def to_protocol(%{type: :prompt} = r) do
@@ -712,6 +736,7 @@ defmodule Anubis.Server.Response do
     |> Map.merge(string_metadata)
     |> Map.put("uri", uri)
     |> Map.put("mimeType", mime_type)
+    |> maybe_put("_meta", r.meta)
   end
 
   defp add_content(r, content), do: %{r | content: r.content ++ [content]}
