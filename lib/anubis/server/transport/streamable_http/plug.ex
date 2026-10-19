@@ -201,6 +201,8 @@ if Code.ensure_loaded?(Plug) do
         session_id = get_or_create_session_id(conn, session_header)
         metadata = resolve_subscriber_metadata(opts, conn)
         resume_from = parse_last_event_id(conn)
+        {event_store, retry} = StreamableHTTP.resumability_config(transport)
+        keepalive_interval = StreamableHTTP.keepalive_interval(transport)
 
         case StreamableHTTP.register_sse_handler(transport, session_id, metadata) do
           :ok ->
@@ -208,6 +210,9 @@ if Code.ensure_loaded?(Plug) do
               opts
               |> Map.put(:session_id, session_id)
               |> Map.put(:resume_from, resume_from)
+              |> Map.put(:event_store, event_store)
+              |> Map.put(:retry, retry)
+              |> Map.put(:keepalive_interval, keepalive_interval)
 
             start_sse_streaming(conn, params)
 
@@ -875,15 +880,15 @@ if Code.ensure_loaded?(Plug) do
     defp start_sse_streaming(conn, params) do
       %{transport: transport, session_id: session_id, session_header: session_header} = params
       handler_pid = self()
-      {event_store, retry} = StreamableHTTP.resumability_config(transport)
 
       conn
       |> put_resp_header(session_header, session_id)
       |> Streaming.prepare_connection()
       |> Streaming.start(transport, session_id,
-        event_store: event_store,
+        event_store: params.event_store,
+        keepalive_interval: params.keepalive_interval,
         resume_from: Map.get(params, :resume_from),
-        retry: retry,
+        retry: params.retry,
         on_close: fn ->
           StreamableHTTP.unregister_sse_handler(transport, session_id, handler_pid)
         end
