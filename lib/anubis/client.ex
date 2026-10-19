@@ -344,9 +344,18 @@ defmodule Anubis.Client do
     protocol_version = opts[:protocol_version]
     layer = opts[:transport][:layer]
 
-    with :ok <- Protocol.validate_version(protocol_version),
+    # the version must be registered and served by the transport's era, not
+    # necessarily handshake-negotiable: a stateless version connects through
+    # the server/discover probe instead of initialize
+    with {:ok, _module} <- Protocol.get_module(protocol_version),
          :ok <- Protocol.validate_transport(protocol_version, layer) do
       GenServer.start_link(__MODULE__, Map.new(opts), name: opts[:name])
+    else
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      :error ->
+        {:error, Error.protocol(:invalid_params, %{version: protocol_version, supported: Protocol.supported_versions()})}
     end
   end
 
@@ -1108,13 +1117,14 @@ defmodule Anubis.Client do
   def handle_call({:operation, %Operation{} = operation}, from, state) do
     method = operation.method
 
-    params_with_token =
-      State.add_progress_token_to_params(operation.params, operation.progress_opts)
+    params = build_operation_params(state, operation)
+    operation = %{operation | params: params}
 
-    with :ok <- State.validate_capability(state, method),
+    with :ok <- Stateless.validate_method(state.era, method),
+         :ok <- State.validate_capability(state, method),
          {request_id, updated_state} =
            State.add_request_from_operation(state, operation, from),
-         {:ok, request_data} <- encode_request(state, method, params_with_token, request_id),
+         {:ok, request_data} <- encode_request(state, method, params, request_id),
          :ok <- send_to_transport(state.transport, request_data, timeout: operation.timeout) do
       Telemetry.execute(
         Telemetry.event_client_request(),
@@ -1278,6 +1288,13 @@ defmodule Anubis.Client do
   end
 
   @impl true
+  def handle_continue(:roots_list_changed, %{era: :stateless} = state) do
+    # notifications/roots/list_changed is gone from the stateless dialect: the
+    # roots live on local state, but there is no way to announce them
+    Logging.client_event("roots_list_changed_skipped", %{era: :stateless}, level: :debug)
+    {:noreply, state}
+  end
+
   def handle_continue(:roots_list_changed, state) do
     Task.start(fn -> send_roots_list_changed_notification(state) end)
     {:noreply, state}
@@ -1919,6 +1936,20 @@ defmodule Anubis.Client do
   # version is still the legacy default - would encode against a schema that
   # has no such method.
   @protocol_version_key Anubis.Protocol.Schema.protocol_version_key()
+
+  # The stateless era carries the era _meta (negotiated version, capabilities
+  # and, when complete, the client identity) on every request, with the
+  # progress token sharing that _meta. The params are stored built on the
+  # request so a mid-operation version renegotiation can rewrite _meta without
+  # rebuilding progress options. The legacy era sends today's params.
+  defp build_operation_params(%{era: :stateless} = state, %Operation{} = operation) do
+    meta = Stateless.request_meta(state.protocol_version, state.capabilities, state.client_info)
+    Stateless.build_params(meta, operation.params, operation.progress_opts)
+  end
+
+  defp build_operation_params(_state, %Operation{} = operation) do
+    State.add_progress_token_to_params(operation.params, operation.progress_opts)
+  end
 
   defp protocol_module_for(state, %{"_meta" => %{@protocol_version_key => version}}) when is_binary(version) do
     case Protocol.get_module(version) do
