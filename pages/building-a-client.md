@@ -33,6 +33,27 @@ The handshake runs asynchronously after startup. If you need to block until the 
 :ok = Anubis.Client.await_ready(MyApp.WeatherClient)
 ```
 
+## Local code lookup over stdio
+
+For a local stdio example, install [Sem](https://github.com/Ataraxy-Labs/sem)
+on `PATH` (`sem --version`; tested with 0.27.0). From the Anubis repository root:
+
+```sh
+mix deps.get
+mix run examples/sem_lookup.exs /absolute/path/to/checkout parse_config
+```
+
+Choose a trusted checkout and replace `parse_config` with a symbol in it.
+The script starts a supervised client with an explicit working directory and
+`SEM_REPO`, waits for readiness, calls `sem_find`, prints its MCP result, and
+stops the supervisor. It needs no LLM or API key and handles both transport
+failures and tool errors.
+
+Sem may write its local repository index. `SEM_REPO` selects a checkout, not a
+sandbox. This script invokes only `sem_find`; the full server also exposes
+validation tools that can execute commands. Select tools deliberately when
+connecting an agent, whose configured model will receive returned source text.
+
 ## Connection eras
 
 The MCP specification now has two eras. Legacy versions (up to 2025-11-25) open a connection with the `initialize` handshake and hold a session. The 2026-07-28 revision is stateless: there is no handshake and no session, and every request carries its protocol version, capabilities and client identity in `params._meta`.
