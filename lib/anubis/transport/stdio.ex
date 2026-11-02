@@ -348,16 +348,19 @@ defmodule Anubis.Transport.STDIO do
 
     env = normalize_env_for_erlang(env)
 
-    # As per erlang docs, :hide only affects Windows and gets ignored anywhere else.
-    # https://www.erlang.org/doc/apps/erts/erlang#open_port/2
-    opts =
-      [:hide, :binary]
-      |> then(&if is_nil(state.args), do: &1, else: Enum.concat(&1, args: state.args))
-      |> then(&if is_nil(state.env), do: &1, else: Enum.concat(&1, env: env))
-      |> then(&if is_nil(state.cwd), do: &1, else: Enum.concat(&1, cd: state.cwd))
-      |> then(&if :os.type() == {:win32, :nt}, do: [{:hide, true} | &1], else: &1)
+    Port.open({:spawn_executable, cmd}, port_options(state, env))
+  end
 
-    Port.open({:spawn_executable, cmd}, opts)
+  # As per erlang docs, :hide only affects Windows and gets ignored anywhere else.
+  # https://www.erlang.org/doc/apps/erts/erlang#open_port/2
+  # `:hide` is an atom option; `{:hide, true}` is not one, and on Windows
+  # open_port/2 rejected it with :badarg, so no stdio server could start there.
+  @doc false
+  def port_options(state, env) do
+    [:hide, :binary]
+    |> then(&if is_nil(state.args), do: &1, else: Enum.concat(&1, args: state.args))
+    |> then(&if is_nil(state.env), do: &1, else: Enum.concat(&1, env: env))
+    |> then(&if is_nil(state.cwd), do: &1, else: Enum.concat(&1, cd: state.cwd))
   end
 
   defp get_default_env do

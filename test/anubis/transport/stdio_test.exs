@@ -11,6 +11,24 @@ defmodule Anubis.Transport.STDIOTest do
     %{command: cmd[:command], args: cmd[:args]}
   end
 
+  describe "port_options/2" do
+    # open_port/2 takes `:hide` as an atom; `{:hide, true}` made it raise
+    # :badarg on Windows, so no stdio server could start there.
+    test "carries only options open_port accepts" do
+      state = %{args: ["mcp"], env: nil, cwd: "/tmp"}
+      opts = STDIO.port_options(state, [])
+
+      assert :hide in opts
+      assert :binary in opts
+      refute Enum.any?(opts, &match?({:hide, _}, &1))
+      assert {:args, ["mcp"]} in opts
+      assert {:cd, "/tmp"} in opts
+
+      port = Port.open({:spawn_executable, System.find_executable("true")}, opts)
+      assert is_port(port)
+    end
+  end
+
   describe "start_link/1" do
     test "successfully starts transport", %{command: command, args: args} do
       opts = [
