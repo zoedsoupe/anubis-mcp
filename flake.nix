@@ -3,13 +3,13 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05-small";
-    elixir-overlay.url = "github:zoedsoupe/elixir-overlay";
+    beam-overlay.url = "github:zeeetech/beam-overlay";
   };
 
   outputs = {
     self,
     nixpkgs,
-    elixir-overlay,
+    beam-overlay,
   }: let
     inherit (nixpkgs.lib) genAttrs;
     inherit (nixpkgs.lib.systems) flakeExposed;
@@ -17,7 +17,7 @@
     forAllSystems = f:
       genAttrs flakeExposed (
         system: let
-          overlays = [elixir-overlay.overlays.default];
+          overlays = [beam-overlay.overlays.default];
           pkgs = import nixpkgs {inherit system overlays;};
         in
           f pkgs
@@ -27,7 +27,9 @@
       default = pkgs.mkShell {
         name = "anubis-mcp-dev";
         packages = with pkgs; [
-          (elixir-with-otp erlang_28).latest
+          (pkgs.beam-overlay.mkToolchain {
+            elixir.version = "1.20.2";
+          })
           erlang_28
           redis
           uv

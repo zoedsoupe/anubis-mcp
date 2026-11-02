@@ -1,54 +1,35 @@
 {
   "nodes": {
-    "elixir-overlay": {
+    "beam-overlay": {
       "inputs": {
-        "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1784137398,
-        "narHash": "sha256-vv49AOMPmlua58rEi3WEI68PCxjO8c6ARs4wPPsxXDw=",
-        "owner": "zoedsoupe",
-        "repo": "elixir-overlay",
-        "rev": "8ca08229f255a774e2266782cc92694b8ceb7f93",
+        "lastModified": 1793647007,
+        "narHash": "sha256-x2n8BHSmhd/5dgfrL5dtp6U/ZVot5RJQakBUxinpytY=",
+        "owner": "zeeetech",
+        "repo": "beam-overlay",
+        "rev": "8eb676782915b99a11eca08c5a43a336b71e19f1",
         "type": "github"
       },
       "original": {
-        "owner": "zoedsoupe",
-        "repo": "elixir-overlay",
-        "type": "github"
-      }
-    },
-    "flake-utils": {
-      "inputs": {
-        "systems": "systems"
-      },
-      "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
+        "owner": "zeeetech",
+        "repo": "beam-overlay",
         "type": "github"
       }
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1761516808,
-        "narHash": "sha256-4ZdXt+vhA+qyE/TNCp16v2sBJyr0pteKqgiLTXxM4eU=",
+        "lastModified": 1793544621,
+        "narHash": "sha256-HrtPRNy9Bp31/XYAhFftysvqZY4wjRzPhEULjO/Ge3s=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "2ab7841f414ccdefea889707b2d5e4b32cda9729",
+        "rev": "b2b11c1ec65a208b0fa280ef015469ff9dd76643",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixos-25.05-small",
+        "ref": "nixos-26.05-small",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -71,23 +52,8 @@
     },
     "root": {
       "inputs": {
-        "elixir-overlay": "elixir-overlay",
+        "beam-overlay": "beam-overlay",
         "nixpkgs": "nixpkgs_2"
-      }
-    },
-    "systems": {
-      "locked": {
-        "lastModified": 1681028828,
-        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
-        "owner": "nix-systems",
-        "repo": "default",
-        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-systems",
-        "repo": "default",
-        "type": "github"
       }
     }
   },
