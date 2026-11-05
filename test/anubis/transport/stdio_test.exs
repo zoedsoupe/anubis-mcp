@@ -24,7 +24,8 @@ defmodule Anubis.Transport.STDIOTest do
       assert {:args, ["mcp"]} in opts
       assert {:cd, "/tmp"} in opts
 
-      port = Port.open({:spawn_executable, System.find_executable("true")}, opts)
+      executable = System.find_executable(cmd()[:command])
+      port = Port.open({:spawn_executable, executable}, opts)
       assert is_port(port)
     end
   end
