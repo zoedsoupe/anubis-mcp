@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.1](https://github.com/zoedsoupe/anubis-mcp/compare/v2.2.0...v2.2.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **stdio:** drop the invalid {:hide, true} port option on Windows ([#337](https://github.com/zoedsoupe/anubis-mcp/issues/337)) ([9fc16d9](https://github.com/zoedsoupe/anubis-mcp/commit/9fc16d9a22a4c55fe260793d92617052245ff68c))
+
+
+### Miscellaneous Chores
+
+* **nix:** migrate dev shell to beam-overlay ([a7a2462](https://github.com/zoedsoupe/anubis-mcp/commit/a7a2462db2bea48b45ee45a7b9295011c70e28fb))
+
 ## [2.2.0](https://github.com/zoedsoupe/anubis-mcp/compare/v2.1.0...v2.2.0) (2026-10-19)
 
 
