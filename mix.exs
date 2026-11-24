@@ -86,6 +86,7 @@ defmodule Anubis.MixProject do
       extras: [
         "README.md",
         "pages/introduction.md",
+        "pages/protocol-support.md",
         "pages/building-a-server.md",
         "pages/building-a-client.md",
         "pages/transports.md",
@@ -112,6 +113,7 @@ defmodule Anubis.MixProject do
           "pages/extending.md"
         ],
         "Patterns & Reference": [
+          "pages/protocol-support.md",
           "pages/recipes.md",
           "pages/cheatsheet.cheatmd"
         ],

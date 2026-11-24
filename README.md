@@ -9,7 +9,7 @@ A high-performance Model Context Protocol (MCP) implementation in Elixir.
 
 ## Overview
 
-Anubis MCP is a comprehensive Elixir SDK for the [Model Context Protocol](https://spec.modelcontextprotocol.io/), providing complete client and server implementations with Elixir's exceptional concurrency model and fault tolerance.
+Anubis MCP is an Elixir SDK for the [Model Context Protocol](https://modelcontextprotocol.io/), with client and server implementations built on OTP supervision and fault tolerance.
 
 ## Installation
 
@@ -21,12 +21,14 @@ def deps do
 end
 ```
 
-## Supported MCP versions
+## Recognized MCP versions
 
-| anubis_mcp | MCP spec versions |
-|------------|-------------------|
-| 1.x        | 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25 |
-| 2.x        | 2025-03-26, 2025-06-18, 2025-11-25, 2026-07-28 |
+| anubis_mcp | Release status | MCP spec versions |
+|------------|----------------|-------------------|
+| 1.x        | Maintenance    | 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25 |
+| 2.x        | Active         | 2025-03-26, 2025-06-18, 2025-11-25, 2026-07-28 |
+
+Recognizing and negotiating a protocol revision does not mean that every optional client and server capability is implemented. See [Protocol support](pages/protocol-support.md) for behavioral coverage, known gaps, and conformance-test status.
 
 Breaking changes in 2.0:
 
