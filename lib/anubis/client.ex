@@ -94,6 +94,7 @@ defmodule Anubis.Client do
   alias Anubis.MCP.Error
   alias Anubis.MCP.Message
   alias Anubis.MCP.Response
+  alias Anubis.Logging
   alias Anubis.Protocol
   alias Anubis.Telemetry
 
@@ -1926,19 +1927,16 @@ defmodule Anubis.Client do
           GenServer.reply(request.from, {:ok, response})
 
         {:error, errors} ->
-          log_error_response(request, id, elapsed_ms, errors)
-
-          GenServer.reply(
-            request.from,
-            {:error,
-             Error.protocol(:parse_error, %{
-               errors: errors,
-               tool: tool,
-               request_id: request.id,
-               request_params: request.params,
-               request_method: request.method
-             })}
+          # The MCP spec makes outputSchema validation optional for clients, and
+          # the server is the source of truth for its own tool results. A strict
+          # validator can reject well-formed results (e.g. Peri cannot validate
+          # JSON `format: "date-time"` strings), so log the mismatch and deliver
+          # the response instead of failing the call.
+          Logging.client_event("output_schema_mismatch", %{tool: tool, errors: errors},
+            level: :warning
           )
+
+          GenServer.reply(request.from, {:ok, response})
       end
     else
       log_success_response(request, id, elapsed_ms)

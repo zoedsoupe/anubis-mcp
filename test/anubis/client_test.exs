@@ -2357,11 +2357,11 @@ defmodule Anubis.ClientTest do
 
       send_response(client, invalid_response)
 
-      assert {:error, error} = Task.await(invalid_task)
-      assert error.reason == :parse_error
-      assert error.data[:tool] == "get_weather"
-      assert is_list(error.data[:errors])
-      refute Enum.empty?(error.data[:errors])
+      # A validation mismatch must not fail the call: the server is the source
+      # of truth for its own tool results (MCP spec leaves outputSchema
+      # validation optional for clients).
+      assert {:ok, response} = Task.await(invalid_task)
+      assert response.result["structuredContent"] == invalid_structured
     end
 
     test "handles tools with complex outputSchema", %{client: client} do
