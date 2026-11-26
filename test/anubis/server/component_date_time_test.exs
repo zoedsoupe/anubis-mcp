@@ -183,8 +183,8 @@ defmodule Anubis.Server.ComponentDateTimeTest do
                  important_dates: ["2024-01-01", "not-a-date", "2024-12-25"]
                })
 
-      # Peri reports the error at the list level, not the individual item
-      assert %{path: [:important_dates]} = error
+      # Peri reports the error at the invalid list element
+      assert %{path: [:important_dates, 1], content: %{index: 1}} = error
       assert error.message =~ "invalid ISO 8601 date format"
     end
   end
