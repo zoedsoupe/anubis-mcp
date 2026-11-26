@@ -2,6 +2,7 @@ defmodule Anubis.Transport.STDIOTest do
   use ExUnit.Case, async: false
 
   alias Anubis.Transport.STDIO
+  import ExUnit.CaptureIO
 
   @moduletag capture_log: true
 
@@ -150,22 +151,24 @@ defmodule Anubis.Transport.STDIOTest do
     test "handles port restart on close" do
       transport_name = :restart_test_transport
 
-      {:ok, pid} =
-        STDIO.start_link(
-          [
-            client: StubClient,
-            name: transport_name
-          ] ++ cmd()
-        )
+      capture_io([:stderr], fn ->
+        {:ok, pid} =
+          STDIO.start_link(
+            [
+              client: StubClient,
+              name: transport_name
+            ] ++ cmd()
+          )
 
-      original_pid = Process.whereis(transport_name)
-      assert original_pid
+        original_pid = Process.whereis(transport_name)
+        assert original_pid
 
-      ref = Process.monitor(original_pid)
+        ref = Process.monitor(original_pid)
 
-      safe_stop(pid)
+        safe_stop(pid)
 
-      assert_receive {:DOWN, ^ref, :process, ^original_pid, _}, 1000
+        assert_receive {:DOWN, ^ref, :process, ^original_pid, _}, 1000
+      end)
     end
   end
 

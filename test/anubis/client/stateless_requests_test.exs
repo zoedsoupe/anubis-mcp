@@ -221,7 +221,6 @@ defmodule Anubis.Client.StatelessRequestsTest do
       # mixed pods. With a single registered stateless version the retry only
       # diverges when the client's cached version is behind, so the cached
       # version is rewound to a legacy one to simulate the rejection.
-      state = :sys.get_state(client)
       :sys.replace_state(client, fn state -> %{state | protocol_version: "2025-06-18"} end)
 
       test_pid = self()
@@ -260,7 +259,6 @@ defmodule Anubis.Client.StatelessRequestsTest do
       client = setup_client(%{})
       discover_client(client, server_capabilities: @server_capabilities)
 
-      state = :sys.get_state(client)
       :sys.replace_state(client, fn state -> %{state | protocol_version: "2025-06-18"} end)
 
       test_pid = self()
