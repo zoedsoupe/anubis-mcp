@@ -1,8 +1,9 @@
 defmodule Anubis.Transport.STDIOTest do
   use ExUnit.Case, async: false
 
-  alias Anubis.Transport.STDIO
   import ExUnit.CaptureIO
+
+  alias Anubis.Transport.STDIO
 
   @moduletag capture_log: true
 
