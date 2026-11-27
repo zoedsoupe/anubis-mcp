@@ -91,10 +91,10 @@ defmodule Anubis.Client do
   alias Anubis.Client.Sampling
   alias Anubis.Client.State
   alias Anubis.Client.Stateless
+  alias Anubis.Logging
   alias Anubis.MCP.Error
   alias Anubis.MCP.Message
   alias Anubis.MCP.Response
-  alias Anubis.Logging
   alias Anubis.Protocol
   alias Anubis.Telemetry
 
@@ -1932,9 +1932,7 @@ defmodule Anubis.Client do
           # validator can reject well-formed results (e.g. Peri cannot validate
           # JSON `format: "date-time"` strings), so log the mismatch and deliver
           # the response instead of failing the call.
-          Logging.client_event("output_schema_mismatch", %{tool: tool, errors: errors},
-            level: :warning
-          )
+          Logging.client_event("output_schema_mismatch", %{tool: tool, errors: errors}, level: :warning)
 
           GenServer.reply(request.from, {:ok, response})
       end
